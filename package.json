@@ -1,0 +1,16 @@
+{
+  "name": "cellblock-nine",
+  "version": "1.0.0",
+  "description": "An 8-bit prison-escape game where every inmate and guard is voiced by Claude.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.137.0"
+  }
+}
