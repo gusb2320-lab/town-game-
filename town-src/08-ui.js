@@ -146,8 +146,24 @@ function buildTownDom(){
   game.insertAdjacentHTML("beforeend", html);
   for (let i=0;i<10;i++) $("tRumor").append(document.createElement("i"));
 }
+// In-game yes/no box (browser confirm() is blocked inside sandboxed pages).
+function confirmT(msg, yesLabel, onYes, noLabel){
+  let w = $("tWinAsk");
+  if (!w){ w = document.createElement("div"); w.className = "win"; w.id = "tWinAsk"; w.style.zIndex = 50; $("game").append(w); }
+  w.textContent = ""; w.hidden = false;
+  const box = document.createElement("div"); box.className = "wbox"; box.style.width = "min(520px,100%)";
+  const body = document.createElement("div"); body.className = "wbody";
+  body.append(Object.assign(document.createElement("p"),{textContent:msg, style:"font-size:22px;margin:0"}));
+  const row = document.createElement("div"); row.className = "row";
+  const yes = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn", textContent:yesLabel||"Yes"});
+  const no = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:noLabel||"Cancel"});
+  yes.addEventListener("click", ()=>{ w.hidden = true; onYes(); });
+  no.addEventListener("click", ()=>{ w.hidden = true; });
+  row.append(yes, no); body.append(row); box.append(body); w.append(box);
+  setTimeout(()=>yes.focus(), 0);
+}
 const TWINS = ["tWinInv","tWinBox","tWinTrade","tWinShop","tWinGame","tWinJournal","tWinMap","tWinRead","tWinMenu"];
-const anyTWindow = () => TWINS.some(id=>!$(id).hidden) || !$("tScreen").hidden;
+const anyTWindow = () => TWINS.some(id=>!$(id).hidden) || !$("tScreen").hidden || !!($("tWinAsk") && !$("tWinAsk").hidden);
 function closeTWindows(){
   const was = TWINS.some(id=>!$(id).hidden), tr = !$("tWinTrade").hidden;
   if (GAME) closeGame();
@@ -249,7 +265,7 @@ function useItemT(it){
   if (d.wear){ toggleWear(it); return; }
   if (it==="prison jumpsuit"){ pl.wearJumpsuit = !pl.wearJumpsuit; toast(pl.wearJumpsuit ? "You pull on the orange jumpsuit. Bold." : "You take the jumpsuit off.", pl.wearJumpsuit ? "bad" : "", 3); renderHotbarT(); return; }
   if (d.scratch){ scratchTicket(); return; }
-  if (d.badge){ if (confirm("Take the agent's identity? With this badge you could walk right back into Cellblock Nine… as a guard.")) startOperation(); return; }
+  if (d.badge){ closeTWindows(); confirmT("Take the agent's identity? With this badge you could walk right back into Cellblock Nine… as a guard.", "Use the badge", startOperation); return; }
   if (d.gun){ toast(`${it}: select it and press F to fire. ${countIn(pl.inv,"bullets")} bullets left.`, "", 3); return; }
   if (d.read){ readItem(it); return; }
   if (it==="matches") { burnSomething(); return; }

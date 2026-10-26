@@ -1720,7 +1720,7 @@ function openTalkT(n, opts={}){
     else if (first) startTypeT(greetingT(n), n);
     else { const last = [...n.log].reverse().find(l=>l.who==="n"); startTypeT(last && last.d===T.day ? last.text : greetingT(n), n); }
   }
-  if (!document.body.classList.contains("touch")) setTimeout(()=>{ if (T && T.talkId===n.id) $("tdInput").focus(); }, 0);
+  if (!opts.approach && !document.body.classList.contains("touch")) setTimeout(()=>{ if (T && T.talkId===n.id) $("tdInput").focus(); }, 0);
 }
 function greetingT(n){
   const h = hourNow(), part = h<12 ? "morning" : h<17 ? "afternoon" : "evening";
@@ -1950,7 +1950,8 @@ async function askTownNpc(n, {said="", gave=null, approach=null, accuse=false} =
       const code = e && e.code;
       if (code==="cancelled"){ TD.busy = false; return; }
       if (E.AI_OFF.includes(code)){ E.setAiOff(); res = fallbackTown(n, said, gave, approach, accuse); }
-      else { TD.busy = false; startTypeT(code==="rate_limited" ? `${n.first} seems lost in thought. Try again in a minute.` : code==="refused" ? "*stares at you and says nothing*" : "*didn't catch that* Sorry, what?", n); renderGiveT(); return; }
+      else if (code==="refused"){ TD.busy = false; startTypeT("*stares at you and says nothing*", n); renderGiveT(); return; }
+      else { res = fallbackTown(n, said, gave, approach, accuse); if (!T.aiWarned){ T.aiWarned = true; toast(code==="rate_limited" ? "Claude is busy right now; people are using stock lines for a moment." : "Couldn't reach Claude just then; using stock lines.", "", 4); } }
     }
   } else res = fallbackTown(n, said, gave, approach, accuse);
   TD.busy = false;
@@ -3271,8 +3272,24 @@ function buildTownDom(){
   game.insertAdjacentHTML("beforeend", html);
   for (let i=0;i<10;i++) $("tRumor").append(document.createElement("i"));
 }
+// In-game yes/no box (browser confirm() is blocked inside sandboxed pages).
+function confirmT(msg, yesLabel, onYes, noLabel){
+  let w = $("tWinAsk");
+  if (!w){ w = document.createElement("div"); w.className = "win"; w.id = "tWinAsk"; w.style.zIndex = 50; $("game").append(w); }
+  w.textContent = ""; w.hidden = false;
+  const box = document.createElement("div"); box.className = "wbox"; box.style.width = "min(520px,100%)";
+  const body = document.createElement("div"); body.className = "wbody";
+  body.append(Object.assign(document.createElement("p"),{textContent:msg, style:"font-size:22px;margin:0"}));
+  const row = document.createElement("div"); row.className = "row";
+  const yes = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn", textContent:yesLabel||"Yes"});
+  const no = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:noLabel||"Cancel"});
+  yes.addEventListener("click", ()=>{ w.hidden = true; onYes(); });
+  no.addEventListener("click", ()=>{ w.hidden = true; });
+  row.append(yes, no); body.append(row); box.append(body); w.append(box);
+  setTimeout(()=>yes.focus(), 0);
+}
 const TWINS = ["tWinInv","tWinBox","tWinTrade","tWinShop","tWinGame","tWinJournal","tWinMap","tWinRead","tWinMenu"];
-const anyTWindow = () => TWINS.some(id=>!$(id).hidden) || !$("tScreen").hidden;
+const anyTWindow = () => TWINS.some(id=>!$(id).hidden) || !$("tScreen").hidden || !!($("tWinAsk") && !$("tWinAsk").hidden);
 function closeTWindows(){
   const was = TWINS.some(id=>!$(id).hidden), tr = !$("tWinTrade").hidden;
   if (GAME) closeGame();
@@ -3374,7 +3391,7 @@ function useItemT(it){
   if (d.wear){ toggleWear(it); return; }
   if (it==="prison jumpsuit"){ pl.wearJumpsuit = !pl.wearJumpsuit; toast(pl.wearJumpsuit ? "You pull on the orange jumpsuit. Bold." : "You take the jumpsuit off.", pl.wearJumpsuit ? "bad" : "", 3); renderHotbarT(); return; }
   if (d.scratch){ scratchTicket(); return; }
-  if (d.badge){ if (confirm("Take the agent's identity? With this badge you could walk right back into Cellblock Nine… as a guard.")) startOperation(); return; }
+  if (d.badge){ closeTWindows(); confirmT("Take the agent's identity? With this badge you could walk right back into Cellblock Nine… as a guard.", "Use the badge", startOperation); return; }
   if (d.gun){ toast(`${it}: select it and press F to fire. ${countIn(pl.inv,"bullets")} bullets left.`, "", 3); return; }
   if (d.read){ readItem(it); return; }
   if (it==="matches") { burnSomething(); return; }
@@ -4209,7 +4226,7 @@ function interactTargetT(){
   const dep = trainHere();
   if (dep && pl.x>=91 && pl.x<=101 && pl.y>=17 && pl.y<=20) return {kind:"train", label: pl.inv.includes("train ticket") ? `Board the ${fmtT(dep)} train` : "The train's here (you need a ticket)", run:boardTrain};
   // the road out
-  if (pl.x <= 2 && pl.y >= 29 && pl.y <= 32 && T.mode!=="slasher") return {kind:"wild", label:"Walk out of Millbrook for good", run:()=>{ if (confirm("Leave Millbrook on foot and never come back?")) ending("wild"); }};
+  if (pl.x <= 2 && pl.y >= 29 && pl.y <= 32 && T.mode!=="slasher") return {kind:"wild", label:"Walk out of Millbrook for good", run:()=>confirmT("Leave Millbrook on foot and never come back?", "Walk away", ()=>ending("wild"))};
   return null;
 }
 function actionPressT(){
@@ -4326,7 +4343,7 @@ const lightCvT = document.createElement("canvas"), lcT = lightCvT.getContext("2d
 function renderTown(dt){
   const cv = E.cv, ctx = E.ctx, {zoom:z, dpr} = E.view();
   if (tmapDirty){ rebuildTownMap(); collectLamps(); }
-  if (lightCvT.width !== cv.width || lightCvT.height !== cv.height){ lightCvT.width = cv.width; lightCvT.height = cv.height; }
+  const LW = Math.ceil(cv.width/2), LH = Math.ceil(cv.height/2); if (lightCvT.width !== LW || lightCvT.height !== LH){ lightCvT.width = LW; lightCvT.height = LH; }
   const W = cv.width, H = cv.height, pl = T.player, now = performance.now();
   ctx.setTransform(1,0,0,1,0,0); ctx.imageSmoothingEnabled = false; ctx.fillStyle = "#0d0e18"; ctx.fillRect(0,0,W,H);
   const [ppx, ppy] = rposT(pl), vw = W/z, vh = H/z;
@@ -4384,7 +4401,7 @@ function renderTown(dt){
   // night
   const dk = darknessT(T.t);
   if (dk > 0){
-    lcT.setTransform(1,0,0,1,0,0); lcT.globalCompositeOperation = "source-over"; lcT.clearRect(0,0,W,H);
+    lcT.setTransform(.5,0,0,.5,0,0); lcT.globalCompositeOperation = "source-over"; lcT.clearRect(0,0,W,H);
     lcT.fillStyle = `rgba(10,12,34,${dk})`; lcT.fillRect(0,0,W,H);
     lcT.globalCompositeOperation = "destination-out";
     const lights = [];
@@ -4393,7 +4410,7 @@ function renderTown(dt){
     for (const b of BUILDINGS){ if (b===outB) continue; const awake = folk.some(n=>alive(n) && !n.asleep && insideOf(n) && outerOf(insideOf(n))===b.id); if (!awake) continue; for (let y=b.y0;y<=b.y1;y++) for (let x=b.x0;x<=b.x1;x++) if (tmap[y][x]==="x") lights.push([x*TS+8, y*TS+12, 1.6]); }
     lights.push([ppx*TS+8, ppy*TS+8, pl.inv.includes("flashlight") ? 4.6 : 2.2]);
     for (const [wx,wy,r] of lights){ const [sx,sy] = toS(wx,wy), R = r*TS*z; if (sx<-R||sy<-R||sx>W+R||sy>H+R) continue; const gr = lcT.createRadialGradient(sx,sy,R*.15,sx,sy,R); gr.addColorStop(0,"rgba(0,0,0,1)"); gr.addColorStop(1,"rgba(0,0,0,0)"); lcT.fillStyle = gr; lcT.beginPath(); lcT.arc(sx,sy,R,0,7); lcT.fill(); }
-    ctx.drawImage(lightCvT, 0, 0);
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(lightCvT, 0, 0, W, H); ctx.imageSmoothingEnabled = false;
     ctx.globalCompositeOperation = "lighter";
     for (const [wx,wy,r] of lights){ const [sx,sy] = toS(wx,wy), R = r*TS*z*.8; if (sx<-R||sy<-R||sx>W+R||sy>H+R) continue; const gr = ctx.createRadialGradient(sx,sy,0,sx,sy,R); gr.addColorStop(0, `rgba(255,205,117,${.12*dk})`); gr.addColorStop(1,"rgba(0,0,0,0)"); ctx.fillStyle = gr; ctx.fillRect(sx-R,sy-R,R*2,R*2); }
     ctx.globalCompositeOperation = "source-over";
@@ -4482,7 +4499,11 @@ const typingT = e => e.target && (e.target.tagName==="INPUT" && e.target.type!==
 document.addEventListener("keydown", e => {
   if (!TOWN.active || !T) return;
   const k = e.key.toLowerCase();
-  if (typingT(e)){ if (k==="escape"){ if (T.talkId) closeTalkT(); else e.target.blur(); } return; }
+  if (typingT(e)){
+    if (k==="escape"){ if (T.talkId) closeTalkT(); else e.target.blur(); }
+    else if (/^arrow/.test(k) && !e.target.value && T.talkId){ e.preventDefault(); e.target.blur(); closeTalkT(); if (!heldT.includes(k)) heldT.push(k); }
+    return;
+  }
   if (CUT){ if (k===" " || k==="enter" || k==="e"){ e.preventDefault(); nextShot(); } return; }
   if (T.ending || (T.cutscene && T.cutscene!=="choice")) return;
   if (GAME){ e.preventDefault(); if (k==="escape"){ closeGame(); return; } if (!e.repeat) GAME.key && GAME.key(k, true); return; }
@@ -4531,13 +4552,15 @@ function wireTownDom(){
   $("tdFavor").addEventListener("click", () => { const n = byIdT(T.talkId); if (!n || TD.busy) return; const ready = T.tasks.find(t=>t.giver===n.id && t.status==="ready"); if (ready){ payFavorT(ready, n); startTypeT("*counts out the money* As promised.", n); return; } if (n.opinion < -15){ startTypeT("From you? No thanks.", n); return; } offerFavorT(n); });
   $("tdAccuse").addEventListener("click", () => {
     const n = byIdT(T.talkId); if (!n || TD.busy) return;
-    if (!confirm(`Accuse ${n.first} of being the undercover detective? If you're wrong, word will get around.`)) return;
+    confirmT(`Accuse ${n.first} of being the undercover detective? If you're wrong, word will get around.`, "Accuse", () => doAccuse(n));
+  });
+  function doAccuse(n){
     T.det.accusations = (T.det.accusations||0) + 1;
     if (isDet(n)){ T.det.accusedRight = true; T.suspects[n.id] = true; }
     else { T.notoriety = clamp(T.notoriety+8,0,100); }
     const v = $("tdInput").value.trim(); $("tdInput").value = "";
     askTownNpc(n, {said: v || "I know what you are. You're the detective. The one they sent after me.", accuse:true});
-  });
+  }
   $("tdLog").addEventListener("click", () => { const id = T.talkId; closeTalkT(); openJournalT("people", id); });
   $("tdLeave").addEventListener("click", closeTalkT);
   $("ttGo").addEventListener("click", doTradeT);
@@ -4568,7 +4591,7 @@ function wireTownDom(){
   const contB = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", id:"townContBtn", textContent:"Continue in Millbrook"});
   const skipB = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", id:"townSkipBtn", textContent:"Skip to Millbrook (phase two)"});
   contB.addEventListener("click", () => { $("scrTitle").hidden = true; if (!cont()) { $("scrTitle").hidden = false; toast("That save is gone.", "bad"); } });
-  skipB.addEventListener("click", () => { if (loadSavedT() && !confirm("Start a new life in Millbrook? Your current Millbrook save will be lost.")) return; clearSaveT(); $("scrTitle").hidden = true; begin(); });
+  skipB.addEventListener("click", () => { const go = () => { clearSaveT(); $("scrTitle").hidden = true; begin(); }; if (loadSavedT()) confirmT("Start a new life in Millbrook? Your current Millbrook save will be lost.", "Start over", go); else go(); });
   row.append(contB, skipB);
   const opsCont = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:"Continue Operation Birch"});
   opsCont.addEventListener("click", () => { Snd.init(); if (!window.__cb9.continueOps()) toast("That save is gone.", "bad"); });

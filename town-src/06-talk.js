@@ -70,7 +70,7 @@ function openTalkT(n, opts={}){
     else if (first) startTypeT(greetingT(n), n);
     else { const last = [...n.log].reverse().find(l=>l.who==="n"); startTypeT(last && last.d===T.day ? last.text : greetingT(n), n); }
   }
-  if (!document.body.classList.contains("touch")) setTimeout(()=>{ if (T && T.talkId===n.id) $("tdInput").focus(); }, 0);
+  if (!opts.approach && !document.body.classList.contains("touch")) setTimeout(()=>{ if (T && T.talkId===n.id) $("tdInput").focus(); }, 0);
 }
 function greetingT(n){
   const h = hourNow(), part = h<12 ? "morning" : h<17 ? "afternoon" : "evening";
@@ -300,7 +300,8 @@ async function askTownNpc(n, {said="", gave=null, approach=null, accuse=false} =
       const code = e && e.code;
       if (code==="cancelled"){ TD.busy = false; return; }
       if (E.AI_OFF.includes(code)){ E.setAiOff(); res = fallbackTown(n, said, gave, approach, accuse); }
-      else { TD.busy = false; startTypeT(code==="rate_limited" ? `${n.first} seems lost in thought. Try again in a minute.` : code==="refused" ? "*stares at you and says nothing*" : "*didn't catch that* Sorry, what?", n); renderGiveT(); return; }
+      else if (code==="refused"){ TD.busy = false; startTypeT("*stares at you and says nothing*", n); renderGiveT(); return; }
+      else { res = fallbackTown(n, said, gave, approach, accuse); if (!T.aiWarned){ T.aiWarned = true; toast(code==="rate_limited" ? "Claude is busy right now; people are using stock lines for a moment." : "Couldn't reach Claude just then; using stock lines.", "", 4); } }
     }
   } else res = fallbackTown(n, said, gave, approach, accuse);
   TD.busy = false;

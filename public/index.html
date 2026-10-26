@@ -1151,7 +1151,8 @@ function news(text, who=[], quiet){
   if (!quiet && seen){ toast(text, "news", 5); sfx("news"); }
 }
 
-function save(){ if (!S) return; if (S.mode==="cop"){ saveOps(); return; } try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch {} }
+const stateJSON = () => JSON.stringify(S, (k,v) => (k==="scene" || k==="bubble" || k==="emote") ? undefined : v);
+function save(){ if (!S) return; if (S.mode==="cop"){ saveOps(); return; } try { localStorage.setItem(SAVE_KEY, stateJSON()); } catch {} }
 function loadSaved(){ try { return localStorage.getItem(SAVE_KEY); } catch { return null; } }
 function restore(json){
   try {
@@ -2305,7 +2306,7 @@ function openTalk(n, opts={}){
     startType(ready ? "*nods* You did it. I don't forget that." : last ? last.text : (isGuard(n) ? "*looks you over* What." : "*glances up* Yeah?"), n);
     if (ready) payTask(ready, n);
   }
-  if (!document.body.classList.contains("touch")) setTimeout(()=>$("dInput").focus(), 0);
+  if (!opts.approach && !document.body.classList.contains("touch")) setTimeout(()=>$("dInput").focus(), 0);
 }
 function renderDStats(n){
   const el = $("dStats"); el.textContent = "";
@@ -2478,7 +2479,8 @@ async function askNpc(n, {said="", gave=null, approach=null, request=null} = {})
       const code = e && e.code;
       if (code==="cancelled"){ busy = false; returnCarried(n, carried); return; }
       if (AI_OFF.includes(code)){ sample = null; aiMode = "off"; renderAi(); res = fallbackReply(n, said, gave, approach, request); }
-      else { busy = false; returnCarried(n, carried); startType(code==="rate_limited" ? `${d.short} isn't answering right now. Try again in a minute.` : code==="refused" ? "*stares at you and says nothing*" : "*didn't catch that* Say again?", n); renderGive(); return; }
+      else if (code==="refused"){ busy = false; returnCarried(n, carried); startType("*stares at you and says nothing*", n); renderGive(); return; }
+      else { res = fallbackReply(n, said, gave, approach, request); if (!S.aiWarned){ S.aiWarned = true; toast(code==="rate_limited" ? "Claude is busy right now; people are using stock lines for a moment." : "Couldn't reach Claude just then; using stock lines.", "", 4); } }
     }
   } else res = fallbackReply(n, said, gave, approach, request);
   busy = false;
@@ -3508,7 +3510,11 @@ function frame(now){
 const typing = e => e.target && (e.target.tagName==="INPUT" && e.target.type!=="checkbox" || e.target.tagName==="TEXTAREA");
 document.addEventListener("keydown", e => {
   if (window.TOWN && window.TOWN.active) return;
-  if (typing(e)){ if (e.key==="Escape"){ if (S && S.talkId) closeTalk(); else e.target.blur(); } return; }
+  if (typing(e)){
+    if (e.key==="Escape"){ if (S && S.talkId) closeTalk(); else e.target.blur(); }
+    else if (/^Arrow/.test(e.key) && !e.target.value && S && S.talkId){ e.preventDefault(); e.target.blur(); closeTalk(); const k2 = e.key.toLowerCase(); if (!held.includes(k2)) held.push(k2); }
+    return;
+  }
   const k = e.key.toLowerCase();
   if (!$("scrTitle").hidden || !$("scrSolitary").hidden || !$("scrWin").hidden) return;
   if (k==="escape"){ e.preventDefault(); if (!$("winTrade").hidden) closeWindows(); else if (S && S.talkId) closeTalk(); else if (anyWindow()) closeWindows(); else if (S){ $("winMenu").hidden = false; $("newConfirm").hidden = true; sfx("open"); } return; }
@@ -3720,7 +3726,7 @@ function continueOps(){
   banner("OPERATION BIRCH", `Day ${S.day}`, false, 3);
   return true;
 }
-function saveOps(){ if (!isCop() || S.cop.blown || S.cop.extracted) return; try { localStorage.setItem(OPS_KEY, JSON.stringify(S)); } catch {} }
+function saveOps(){ if (!isCop() || S.cop.blown || S.cop.extracted) return; try { localStorage.setItem(OPS_KEY, stateJSON()); } catch {} }
 function copHudLabels(){
   $("heatBox").querySelector(".lbl").textContent = "Suspicion"; $("heatBox").title = "How much the staff suspect you. At 100, you're burned.";
   $("craftBtn").title = "Craft (C)";
@@ -4147,7 +4153,7 @@ window.CB9 = {Snd, sfx, PAL, SUITS, ICONS, iconUrl, iconOf, ITEMS, addIcons, dra
   drawHeart, drawLock, tri, drawEmote, slotsOf, STACKS, STACK_MAX, WEAPONS, HEALS, CONTRA, prisonState:()=>S, prisonCast:()=>CAST, fmtClock, showTitle, opWord, relWord};
 window.__cb9 = {startOps, continueOps, coverAdd, copExtract, get S(){ return S; }, byId, openTalk, triggerLockdown, openCraft, openJournal, openBox, openInv, addItem, offerTask, openTrade, applyAction, askNpc, startCombat, playerAttack, morningTwist, considerApproach};
 const hot = window.claude && window.claude.hot;
-if (hot && hot.snapshot) hot.snapshot(() => ({state: S && !S.won ? JSON.stringify(S) : null}));
+if (hot && hot.snapshot) hot.snapshot(() => ({state: S && !S.won ? (()=>{ try { return stateJSON(); } catch { return null; } })() : null}));
 hot && hot.ready ? hot.ready(boot) : boot((hot && hot.data) || {});
 })();
 </script>
