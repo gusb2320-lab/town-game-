@@ -385,6 +385,8 @@ function doorLockedT(x,y, who){
   if (T.unlocked[k] && T.unlocked[k] > absT()) return false;
   const h = hourNow(), pl = T.player;
   if (bid==="jail") return true;
+  // you can always let yourself out of a building you're standing in
+  if (who===pl && pl && buildingAt(pl.x,pl.y)===bid) return false;
   if (bid==="roomC") return !(who===pl ? pl.inv.includes("room key") : who && isDet(who) && who.order && who.order.lockpick);
   if (bid==="roomA"||bid==="roomB"||bid==="barback"){ if (who && who!==pl && who.home===bid) return false; if (who && isDet(who) && who.order && who.order.lockpick) return false; return true; }
   const bd = bById(bid);
@@ -4614,7 +4616,7 @@ buildTownDom();
 wireTownDom();
 syncTownSound();
 if (matchMedia("(pointer:coarse)").matches){ $("taBtn").style.display = ""; $("tfBtn").style.display = ""; }
-window.__town = {get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot};
+window.__town = {bById, doorLockedT, walkPlayer, get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot};
 
 
 // ===== 11-ops.js =====

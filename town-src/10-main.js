@@ -687,4 +687,4 @@ buildTownDom();
 wireTownDom();
 syncTownSound();
 if (matchMedia("(pointer:coarse)").matches){ $("taBtn").style.display = ""; $("tfBtn").style.display = ""; }
-window.__town = {get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot};
+window.__town = {bById, doorLockedT, walkPlayer, get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot};
