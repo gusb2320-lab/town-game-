@@ -352,7 +352,7 @@ function finishWork(job){
 
 // ---------- shops ----------
 const SHOPS = {
-  store:{keeper:"shopkeeper", name:"Hartley's General", sell:["fishing rod","shovel","mop","bleach","rope","matches","flashlight","flowers","newspaper","lottery ticket","chocolate","hat","sunglasses","reading glasses","kitchen knife","baseball bat","book"], buys:true},
+  store:{keeper:"shopkeeper", name:"Hartley's General", sell:["fishing rod","shovel","mop","bleach","rope","matches","flashlight","flowers","newspaper","lottery ticket","chocolate","hat","sunglasses","reading glasses","kitchen knife","baseball bat","book","hunting rifle","bullets"], buys:true},
   diner:{keeper:"diner owner", alt:"short-order cook", name:"Blue Plate Diner", sell:["burger","sandwich","pie slice","apple pie","donut","coffee","milkshake"]},
   bar:{keeper:"bartender", name:"The Rusty Nail", sell:["beer","whiskey"], services:["round"]},
   barber:{keeper:"barber", name:"Clip Joint", services:["haircut","shave","dye"]},
@@ -403,6 +403,8 @@ function buyItem(it, p, k){
   if (T.money < p){ sfx("nope"); return; }
   if (!canAddT(T.player.inv, it)){ toast("Your pockets are full.", "bad"); sfx("nope"); return; }
   addMoney(-p); k.money += p; addItemT(it, true); sfx("coin");
+  if (it==="bullets"){ for (let i=0;i<5;i++) if (canAddT(T.player.inv, "bullets")) T.player.inv.push("bullets"); toast("A box of six rounds.", "", 2); }
+  if (gunOf(it)){ rememberT(k, `Sold the newcomer a ${it}.`); gossipT(k, `The newcomer bought a ${it}. What does a drifter need with that?`); addEvidenceVia(k, `${k.first} sold the newcomer a ${it}.`, 6); }
   k.opinion = clamp(k.opinion+1,-100,100);
   rememberT(k, `The newcomer bought ${it} from me.`);
   if (["shovel","bleach","rope","kitchen knife"].includes(it)){ T.purchases = (T.purchases||[]).concat({it, day:T.day}); const bad = T.purchases.filter(x=>T.day-x.day<=2 && ["shovel","bleach","rope"].includes(x.it)).length; if (bad >= 2){ rememberT(k, "The newcomer bought bleach AND a shovel. Or rope. Strange shopping list."); gossipT(k, "The newcomer's been buying bleach and shovels. What for?"); addEvidenceVia(k, `${k.first} says the newcomer bought ${T.purchases.slice(-2).map(x=>x.it).join(" and ")}.`, 8); } }

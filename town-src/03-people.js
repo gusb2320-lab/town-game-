@@ -65,7 +65,7 @@ function newPerson(i, jobDef){
   };
   if (pron==="he" && Math.random()<.5) p.strength += 3;
   if (jobDef.pious || Math.random()<.35) p.churchgoer = true;
-  if (p.sheriff){ p.first = pick(["Wade","Della","Boone","Marlene","Hank","Ruth"]); p.strength = 15; p.timid = false; p.maxHp = p.hp = 150; p.inv = ["baseball bat","coffee"]; }
+  if (p.sheriff){ p.first = pick(["Wade","Della","Boone","Marlene","Hank","Ruth"]); p.strength = 15; p.timid = false; p.maxHp = p.hp = 150; p.inv = ["revolver","coffee"]; }
   p.look = genLook(p); p.voice = genVoice(p);
   p.likes.push(pick(["coffee","apple pie","flowers","whiskey"]));
   return p;
@@ -116,6 +116,7 @@ function genTown(){
   det.tells = [tells[0].id, tells[1].id];
   const herrings = shuffle(people.filter(p=>p!==det && !p.teen)).slice(0,3);
   herrings[0].tells = [tells[0].id]; herrings[1].tells = [tells[1].id]; herrings[2].tells = [tells[2].id];
+  det.inv.push("revolver");
   folk = T.folk = people;
   T.det = {id:det.id, suspicion:8, evidence:[{s:"before you arrived", text:"A newcomer shows up the same week #4471 broke out of Cellblock Nine.", w:8, kind:"timing"}],
     notes:[], mode:"blend", modeUntil:0, nextBrain:0, revealed:false, dead:false, lastSeen:null, claims:[], searchCount:0, notesLeft:0, hides:0, agency:"State Bureau of Investigation", realName:`${pick(FIRST.filter(f=>!used.has(f)))} ${pick(LAST.filter(l=>l!==det.last))}`, accusations:0};
@@ -195,6 +196,7 @@ function freePlace(n){
 }
 function routinePlace(n){
   if (n.dead) return null;
+  if (T.mode==="slasher" && (T.panic||0) >= 40) return {place:n.home, sleep: hourNow()>=23 || hourNow()<7};
   const h = hourNow(), hh = h < 4 ? h+24 : h;
   const sleepAt = n.jobDef.nightOwl ? 26 : n.teen ? 23 : 22, wake = n.jobDef.early ? 5 : 7;
   if (hh >= sleepAt || h < wake) return {place:n.home, sleep:true};
@@ -226,7 +228,7 @@ function updateFolk(n, dt){
   if (n.scene) return;
   if (n.talkingToPlayer) return;
   if (n.fight){}
-  else if (n.order){ if (isDet(n) && detRunOrder(n, dt)) {} else runOrderT(n, dt); }
+  else if (n.order){ if (T.mode==="slasher" && ["callhelp","escape","hide"].includes(n.order.type)){ if (absT() > n.order.until) n.order = null; else runSlasherOrder(n, dt); } else if (isDet(n) && detRunOrder(n, dt)) {} else runOrderT(n, dt); }
   if (n.path.length){
     const [x,y] = n.path.shift();
     if (Math.abs(x-n.x)+Math.abs(y-n.y)===1 && npcWalkT(x,y,n)){ stepT(n, x-n.x, y-n.y); n.asleep = false; }

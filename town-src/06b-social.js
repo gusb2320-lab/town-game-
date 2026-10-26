@@ -229,15 +229,15 @@ function approachReasonT(n){
   const fresh = n.memories.slice(-6).filter(m => /newcomer/i.test(m.text) && m.s.includes(today) && !m.talked);
   if (fresh.length && Math.random()<.5){ fresh[0].talked = true; return `Bring this up with them: ${fresh[0].text}`; }
   const want = n.likes.find(w => pl.inv.includes(w));
-  if (want && Math.random()<.4) return `You noticed they're carrying ${want}, which you love. Make them a trade_offer (money is fine).`;
+  if (want && Math.random()<.18) return `You noticed they're carrying ${want}, which you love. Make them a trade_offer (money is fine).`;
   const debt = T.debts.find(d=>d.who===n.id && !d.paid && T.day - d.day >= 2);
   if (debt && Math.random()<.6) return `They owe you $${debt.amount}. Ask for it back.`;
   if (n.partner && Math.random()<.5) return "You're sweethearts. Be affectionate, maybe suggest a date (invite).";
-  if (!favorFor(n) && n.opinion >= 5 && Math.random()<.25) return "FAVOR";
-  if (n.opinion >= 25 && Math.random()<.35) return `You like them. Invite them to do something (${n.hobbies.join(" or ")}) with an invite action.`;
+  if (!favorFor(n) && n.opinion >= 5 && Math.random()<.08) return "FAVOR";
+  if (n.opinion >= 25 && Math.random()<.18) return `You like them. Invite them to do something (${n.hobbies.join(" or ")}) with an invite action.`;
   if (n.nosy && Math.random()<.5) return "You're the town busybody. Pry into the newcomer's business: where they're from, what they do all day.";
-  if (n.teen && Math.random()<.3) return "You're bored. Ask them for money, or dare them to do something.";
-  if (n.job.includes("salesman") && Math.random()<.4) return "Try to sell them something you carry with a trade_offer.";
+  if (n.teen && Math.random()<.12) return "You're bored. Dare them to do something, or tell them something weird you saw.";
+  if (n.job.includes("salesman") && Math.random()<.15) return "Try to sell them something you carry with a trade_offer.";
   const recent = T.news.slice(-4).filter(x=>!x.who.includes(n.id));
   if (recent.length && Math.random()<.3) return `Share your take on this news: ${pick(recent).text}`;
   if (!n.met && Math.random()<.35) return "Introduce yourself to the new face in town.";
@@ -257,7 +257,7 @@ function considerApproachT(){
   const urgent = cands.find(([n,r])=>/^Warn|plans with/.test(r));
   const [n, reason] = urgent || pick(cands);
   n.order = {type:"approach", reason, until:absT()+30}; n.path = [];
-  n.approachCd = now + 140000; approachNextT = now + 45000 + Math.random()*40000;
+  n.approachCd = now + 300000; approachNextT = now + 100000 + Math.random()*80000;
   emoteT(n, "…", 2);
 }
 

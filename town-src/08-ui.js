@@ -53,7 +53,7 @@ function buildTownDom(){
       <div class="favors px" id="tPlans" hidden></div>
     </div>
     <div class="right">
-      <div class="heat px rumor" title="How much the town is whispering about you"><span class="lbl">Rumors</span><div class="segs" id="tRumor"></div></div>
+      <div class="heat px rumor" title="How much the town is whispering about you"><span class="lbl" id="tRumorLbl">Rumors</span><div class="segs" id="tRumor"></div></div>
       <div class="eye px" id="tEye" hidden title="Someone is watching you"><canvas id="tEyeCv" width="12" height="6"></canvas><span id="tEyeTxt">WATCHED</span></div>
       <div class="icons">
         <span class="ai" id="tAi"><i></i><span>…</span></span>
@@ -178,10 +178,12 @@ function renderHudT(){
   const lock = T.lock && T.lock.kind==="chase";
   $("tPlace").textContent = lock ? "RUN · lose them" : T.wanted ? "WANTED · get out of town" : (insideOf(pl)==="roomC" ? "Your room" : placeLabelAt(pl.x,pl.y)) + (T.drunk > 0 ? " · tipsy" : "") + (pl.carrying ? " · carrying a body" : "");
   $("tPlace").style.color = lock || T.wanted || pl.carrying ? "#ff6b7f" : "";
+  if (T.mode==="slasher"){ const left = folk.filter(alive).length; $("tPlace").textContent = `${left} left${T.police ? " · SIRENS AT "+fmtT(T.police.arrive) : ""}${T.phonesCut ? " · phones dead" : ""} · ${insideOf(pl)==="roomC" ? "your room" : placeLabelAt(pl.x,pl.y)}`; $("tPlace").style.color = "#ff6b7f"; }
+  $("tRumorLbl").textContent = T.mode==="slasher" ? "Panic" : "Rumors";
   const hp = Math.round(pl.hp); $("tHp").style.width = hp+"%"; $("tHp").className = hp < 35 ? "low" : "";
   const w = selectedWeapon(); $("tWeapon").textContent = w ? `${w} (${weaponDmg(w)})` : "Fists";
   $("tMoney").textContent = `$${Math.round(T.money)}`;
-  const on = Math.ceil(T.notoriety/10);
+  const on = Math.ceil((T.mode==="slasher" ? T.panic||0 : T.notoriety)/10);
   [...$("tRumor").children].forEach((s,i)=>{ s.className = i<on ? (T.notoriety>=60?"on hot":"on") : ""; });
   // the feeling of being watched: you never learn by whom
   const d = detP(), watched = d && detAlive() && !d.asleep && T.det.suspicion >= 25 && (d.hidden ? insideOf(d)===insideOf(pl) : canSeeT(d, pl.x, pl.y, 12)) && !(T.talkId===d.id);
@@ -247,6 +249,8 @@ function useItemT(it){
   if (d.wear){ toggleWear(it); return; }
   if (it==="prison jumpsuit"){ pl.wearJumpsuit = !pl.wearJumpsuit; toast(pl.wearJumpsuit ? "You pull on the orange jumpsuit. Bold." : "You take the jumpsuit off.", pl.wearJumpsuit ? "bad" : "", 3); renderHotbarT(); return; }
   if (d.scratch){ scratchTicket(); return; }
+  if (d.badge){ if (confirm("Take the agent's identity? With this badge you could walk right back into Cellblock Nine… as a guard.")) startOperation(); return; }
+  if (d.gun){ toast(`${it}: select it and press F to fire. ${countIn(pl.inv,"bullets")} bullets left.`, "", 3); return; }
   if (d.read){ readItem(it); return; }
   if (it==="matches") { burnSomething(); return; }
   toast(d.desc || it, "", 3);
@@ -301,6 +305,7 @@ function renderInvT(){
   if (info.heal || info.drink) btn(info.drink ? "Drink" : "Eat", ()=>{ useItemT(it); renderInvT(); });
   if (info.wear || it==="prison jumpsuit") btn("Wear / remove", ()=>{ useItemT(it); renderInvT(); });
   if (info.read) btn("Read", ()=>useItemT(it));
+  if (info.badge) btn("Use the badge…", ()=>useItemT(it));
   if (info.scratch) btn("Scratch", ()=>{ useItemT(it); renderInvT(); });
   if (pl.inv.includes("matches") && ["prison jumpsuit","letter","creepy note","case file","wallet"].includes(it)) btn("Burn it", ()=>{ burnSomething(); renderInvT(); });
   if (it!=="room key") btn("Throw away", ()=>{ removeItemT(it); if (isEvidence(it)){ const [x,y] = [pl.x,pl.y]; T.litter.push({it, x, y, day:T.day}); } invSelT = null; sfx("stash"); renderInvT(); });

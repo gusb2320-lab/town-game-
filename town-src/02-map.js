@@ -197,7 +197,7 @@ function doorLockedT(x,y, who){
   if (bid==="roomA"||bid==="roomB"||bid==="barback"){ if (who && who!==pl && who.home===bid) return false; if (who && isDet(who) && who.order && who.order.lockpick) return false; return true; }
   const bd = bById(bid);
   if (who && who!==pl){ if (who.home===bid || (who.work===bid)) return false; if (who.sheriff) return false; if (isDet(who) && who.order && who.order.lockpick) return false; }
-  if (bd.kind==="home"){ const night = h>=21 || h<8; return night || !occupied(bid); }
+  if (bd.kind==="home"){ if (T.mode==="slasher" && (T.panic||0) >= 40 && (!who || who===pl)) return true; const night = h>=21 || h<8; return night || !occupied(bid); }
   if (bd.hours){ const [o,c] = bd.hours; const hh = h < 4 ? h+24 : h; return !(hh>=o && hh<c); }
   return false;
 }

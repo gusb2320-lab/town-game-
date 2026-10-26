@@ -71,7 +71,12 @@ const TITEMS = {
   "kitchen knife":["Sharp.",9,{weapon:22}], "baseball bat":["Louisville slugger.",15,{weapon:18}], "wrench":["Heavy.",8,{weapon:16}],
   "wallet":["Someone else's wallet.",0,{evidence:2}], "creepy note":["Unsigned. Someone has been watching you.",0,{read:1}],
   "letter":["A letter.",0,{read:1}], "case file":["A thin folder stamped STATE BUREAU. CONFIDENTIAL.",0,{read:1,evidence:1}],
-  "matches":["A book of matches.",1,{tool:1}], "flashlight":["Lights up dark corners.",12,{tool:1}], "lockpick":["Opens locked doors. Might snap.",0,{evidence:1}]
+  "matches":["A book of matches.",1,{tool:1}],
+  "revolver":["A six-shooter. Loud enough to wake the whole street.",80,{weapon:12, gun:{dmg:46, range:8, cd:700}}],
+  "hunting rifle":["Bolt action. Reaches across the square.",90,{weapon:14, gun:{dmg:64, range:12, cd:1300}}],
+  "shotgun":["Double barrel. Short range, no mistakes.",70,{weapon:14, gun:{dmg:58, range:5, cd:1100, spread:true}}],
+  "bullets":["Loose rounds. Every gun in town takes them, somehow.",2,{ammo:1}],
+  "detective's badge":["STATE BUREAU OF INVESTIGATION. The photo almost looks like you, if you squint.",0,{evidence:4, badge:1}], "flashlight":["Lights up dark corners.",12,{tool:1}], "lockpick":["Opens locked doors. Might snap.",0,{evidence:1}]
 };
 // Items carried over from the prison that would give you away if found on you.
 const PRISON_TELLTALE = new Set(["shiv","sock mace","comb blade","baton","guard uniform","grappling hook","makeshift file","wire cutters","gate key","spare gate key","hooch","dummy","dirt","lockpick","prison jumpsuit"]);
@@ -107,6 +112,11 @@ E.addIcons({
   "wrench":["......ll",".....l.l","....l.ll","...l....","..l.....",".l......","ll......","l......."],
   "wallet":["........","........","kkkkkkkk","kUUUUUUk","kUUyUUUk","kUUUUUUk","kkkkkkkk","........"],
   "creepy note":["........",".kkkkkk.",".kwwwwk.",".kwrrwk.",".kwwwwk.",".kwrwrk.",".kkkkkk.","........"],
+  "revolver":["........","........","kkkkkkk.","klllllkk","kkkkuk..","....uk..","....uk..","....kk.."],
+  "hunting rifle":["........","........","kkkkkkkk","lllllluu","kkkkkuuu",".....uuu","......uu","........"],
+  "shotgun":["........","kkkkkkk.","lllllluu","lllllluu","kkkkkuuu","....uuuu",".....uu.","........"],
+  "bullets":["........","..y..y..",".yy.yy..",".yy.yy..",".uu.uu..",".uu.uu..","........","........"],
+  "detective's badge":["..kkkk..",".kyyyyk.","kyyrryyk","kyrwwryk","kyyrryyk",".kyyyyk.","..kyyk..","...kk..."],
   "case file":["........","kkkkk...","kaaaakkk","kaaaaaak","karrraak","kaaaaaak","kkkkkkkk","........"]
 });
 const FISH = ["perch","bass","catfish","trout","golden carp","old boot"];
@@ -118,8 +128,9 @@ function itemT(it){
   return {desc:p ? p[0] : "", price:p ? p[1]*3 : 1, weapon:w, heal:h, evidence: PRISON_TELLTALE.has(it) ? 2 : 0};
 }
 const weaponDmg = it => itemT(it).weapon || 0;
+const gunOf = it => it && itemT(it).gun || null;
 const isEvidence = it => !!itemT(it).evidence || /'s wallet$/.test(it);
-const STACKT = new Set(["coffee","donut","beer","perch","bass","catfish","trout","old boot","flowers","lottery ticket","newspaper","bleach","burger","milkshake","pie slice","sandwich","matches","dirt"]);
+const STACKT = new Set(["coffee","donut","beer","perch","bass","catfish","trout","old boot","flowers","lottery ticket","newspaper","bleach","burger","milkshake","pie slice","sandwich","matches","dirt","bullets"]);
 function slotsT(inv){
   const order = [], counts = {};
   for (const it of inv){ if (!(it in counts)){ counts[it] = 0; order.push(it); } counts[it]++; }
@@ -378,7 +389,7 @@ function doorLockedT(x,y, who){
   if (bid==="roomA"||bid==="roomB"||bid==="barback"){ if (who && who!==pl && who.home===bid) return false; if (who && isDet(who) && who.order && who.order.lockpick) return false; return true; }
   const bd = bById(bid);
   if (who && who!==pl){ if (who.home===bid || (who.work===bid)) return false; if (who.sheriff) return false; if (isDet(who) && who.order && who.order.lockpick) return false; }
-  if (bd.kind==="home"){ const night = h>=21 || h<8; return night || !occupied(bid); }
+  if (bd.kind==="home"){ if (T.mode==="slasher" && (T.panic||0) >= 40 && (!who || who===pl)) return true; const night = h>=21 || h<8; return night || !occupied(bid); }
   if (bd.hours){ const [o,c] = bd.hours; const hh = h < 4 ? h+24 : h; return !(hh>=o && hh<c); }
   return false;
 }
@@ -599,7 +610,7 @@ function newPerson(i, jobDef){
   };
   if (pron==="he" && Math.random()<.5) p.strength += 3;
   if (jobDef.pious || Math.random()<.35) p.churchgoer = true;
-  if (p.sheriff){ p.first = pick(["Wade","Della","Boone","Marlene","Hank","Ruth"]); p.strength = 15; p.timid = false; p.maxHp = p.hp = 150; p.inv = ["baseball bat","coffee"]; }
+  if (p.sheriff){ p.first = pick(["Wade","Della","Boone","Marlene","Hank","Ruth"]); p.strength = 15; p.timid = false; p.maxHp = p.hp = 150; p.inv = ["revolver","coffee"]; }
   p.look = genLook(p); p.voice = genVoice(p);
   p.likes.push(pick(["coffee","apple pie","flowers","whiskey"]));
   return p;
@@ -650,6 +661,7 @@ function genTown(){
   det.tells = [tells[0].id, tells[1].id];
   const herrings = shuffle(people.filter(p=>p!==det && !p.teen)).slice(0,3);
   herrings[0].tells = [tells[0].id]; herrings[1].tells = [tells[1].id]; herrings[2].tells = [tells[2].id];
+  det.inv.push("revolver");
   folk = T.folk = people;
   T.det = {id:det.id, suspicion:8, evidence:[{s:"before you arrived", text:"A newcomer shows up the same week #4471 broke out of Cellblock Nine.", w:8, kind:"timing"}],
     notes:[], mode:"blend", modeUntil:0, nextBrain:0, revealed:false, dead:false, lastSeen:null, claims:[], searchCount:0, notesLeft:0, hides:0, agency:"State Bureau of Investigation", realName:`${pick(FIRST.filter(f=>!used.has(f)))} ${pick(LAST.filter(l=>l!==det.last))}`, accusations:0};
@@ -729,6 +741,7 @@ function freePlace(n){
 }
 function routinePlace(n){
   if (n.dead) return null;
+  if (T.mode==="slasher" && (T.panic||0) >= 40) return {place:n.home, sleep: hourNow()>=23 || hourNow()<7};
   const h = hourNow(), hh = h < 4 ? h+24 : h;
   const sleepAt = n.jobDef.nightOwl ? 26 : n.teen ? 23 : 22, wake = n.jobDef.early ? 5 : 7;
   if (hh >= sleepAt || h < wake) return {place:n.home, sleep:true};
@@ -760,7 +773,7 @@ function updateFolk(n, dt){
   if (n.scene) return;
   if (n.talkingToPlayer) return;
   if (n.fight){}
-  else if (n.order){ if (isDet(n) && detRunOrder(n, dt)) {} else runOrderT(n, dt); }
+  else if (n.order){ if (T.mode==="slasher" && ["callhelp","escape","hide"].includes(n.order.type)){ if (absT() > n.order.until) n.order = null; else runSlasherOrder(n, dt); } else if (isDet(n) && detRunOrder(n, dt)) {} else runOrderT(n, dt); }
   if (n.path.length){
     const [x,y] = n.path.shift();
     if (Math.abs(x-n.x)+Math.abs(y-n.y)===1 && npcWalkT(x,y,n)){ stepT(n, x-n.x, y-n.y); n.asleep = false; }
@@ -924,6 +937,7 @@ const NOTE_POOL = [
 function suspicionBand(){ const s = T.det.suspicion; return s<30?0:s<55?1:s<80?2:3; }
 
 function addEvidence(text, w, kind){
+  if (T.mode==="slasher") return;
   const D = T.det; if (!D || D.revealed===true && D.mode==="done") return;
   if (!detAlive()){ // the case passes to the sheriff
     D.sheriffFile = (D.sheriffFile||0) + w*.5;
@@ -1295,12 +1309,13 @@ function startFightT(a, b){
     if (a===pl){ T.notoriety = clamp(T.notoriety+12, 0, 100); if (b!==pl){ b.opinion = clamp(b.opinion-50,-100,100); b.trust = 0; gossipT(b, "The newcomer jumped me. Out of nowhere. Dangerous."); } }
   }
 }
-function hitT(att, vic){
+function hitT(att, vic, forced){
   const pl = T.player, w = weaponOfT(att), base = att===pl ? 9 : att.strength;
-  const dmg = Math.round((base + (w ? weaponDmg(w) : 0)) * (.75 + Math.random()*.5) * (att===pl && T.drunk>0 ? .8 : 1));
+  const dmg = forced!=null ? forced : Math.round((base + (w ? weaponDmg(w) : 0)) * (.75 + Math.random()*.5) * (att===pl && T.drunk>0 ? .8 : 1));
   vic.hp = Math.max(0, vic.hp - dmg); vic.hitT = performance.now();
   floatT(vic, "-"+dmg, vic===pl ? "#ff6b7f" : "#ffcd75");
-  sfx("punch"); const [vx,vy] = rposT(vic); T.fx.push({kind:"sparks", x:vx*TS+8, y:vy*TS+2, life:.4});
+  if (forced==null) sfx("punch"); const [vx,vy] = rposT(vic); T.fx.push({kind:"sparks", x:vx*TS+8, y:vy*TS+2, life:.4});
+  if (forced!=null){ for (const [dx,dy] of [[0,0]]) addStain(Math.round(vx)+dx, Math.round(vy)+dy); }
   if (att.fight) att.fight.last = performance.now();
   if (vic!==pl && !vic.fight && alive(vic) && !(vic.order && vic.order.type==="report")) startFightT(vic, att);
   if (vic.hp <= 0){ if (vic===pl) playerDownT(att); else if (att===pl) killPerson(vic, att); else beaten(vic, att); }
@@ -1317,6 +1332,8 @@ function playerAttackT(){
   if (!T || T.ending || anyTWindow() || T.talkId || T.cutscene) return;
   const now = performance.now(); if (now < (T.swingAt||0)) return; T.swingAt = now + 420;
   const pl = T.player; if (pl.carrying){ toast("Put the body down first.", "", 2); return; }
+  if (gunOf(T.sel) && pl.inv.includes(T.sel)){ playerShootT(T.sel); return; }
+  if (T.mode==="slasher" && stealthKillT()) return;
   const [fx,fy] = facingT();
   let t = folk.find(n=>alive(n) && !n.away && !n.hidden && Math.round(rposT(n)[0])===fx && Math.round(rposT(n)[1])===fy);
   if (!t){ const n = nearestFolk(1.45); if (n) t = n; }
@@ -1335,13 +1352,15 @@ function updateFightsT(dt){
     const t = entT(n.fight.target);
     if (!t || (t!==pl && !alive(t)) || absT()-n.fight.since > 90){ n.fight = null; continue; }
     const d = distT(n,t);
+    const gun = n.inv.find(i=>gunOf(i));
+    if (gun && d > 1.4 && d <= gunOf(gun).range && canSeeT(n, Math.round(rposT(t)[0]), Math.round(rposT(t)[1]), gunOf(gun).range+1)){ n.path = []; faceToT(n, t); if (now >= n.fight.next){ n.fight.next = now + gunOf(gun).cd + 500 + Math.random()*500; npcShootT(n, t, gun); } continue; }
     if (d <= 1.3){ n.path = []; faceToT(n, t); if (now >= n.fight.next){ n.fight.next = now + 700 + Math.random()*450; hitT(n, t); } }
     else if (d > 14){ n.fight = null; }
     else goToT(n, t.x, t.y, true);
   }
   // the sheriff steps in
   const sh = sheriff();
-  if (sh && !sh.fight && !sh.asleep && !(T.lock)){
+  if (sh && !sh.fight && !sh.asleep && !(T.lock) && T.mode!=="slasher"){
     if (pl.fight && pl.fight.aggressor && canSeeT(sh, pl.x, pl.y, 10)){
       sayT(sh, "THAT'S ENOUGH!"); sfx("alert");
       sh.order = {type:"arrestPlayer", until:absT()+60, run:true};
@@ -1360,6 +1379,7 @@ function playerDownT(by){
   const pl = T.player; pl.fight = null; pl.carrying = null;
   for (const o of folk) if (o.fight && o.fight.target==="player") o.fight = null;
   if (by && (by.sheriff || isDet(by)) && T.lock){ ending("caught"); return; }
+  if (T.mode==="slasher" && by && by.sheriff){ ending("slasher_caught"); return; }
   if (by && by.sheriff){ pl.hp = 40; jailT("assault"); return; }
   let stolen = null;
   if (by && pl.inv.length && Math.random()<.6){ stolen = pick(pl.inv.filter(i=>i!=="room key")); if (stolen){ pl.inv.splice(pl.inv.indexOf(stolen),1); by.inv.push(stolen); rememberT(by, `I knocked the newcomer out and took their ${stolen}.`); if (isEvidence(stolen)) addEvidenceVia(by, `${by.first} took a ${stolen} off the newcomer.`, 15); } }
@@ -1377,7 +1397,7 @@ function playerDownT(by){
 function addEvidenceVia(n, text, w){ T.pendingEvidence = (T.pendingEvidence||[]).concat({at:absT()+30+Math.random()*60, text, w}); }
 
 // ---------- deaths and bodies ----------
-function killPerson(n, by){
+function killPerson(n, by, kopt={}){
   const pl = T.player, where = placeLabelAt(n.x, n.y);
   n.dead = true; n.hp = 0; n.fight = null; n.order = null; n.asleep = false; n.hidden = false; n.talkingToPlayer = false;
   if (n.scene) finishSceneT(n.scene);
@@ -1385,20 +1405,21 @@ function killPerson(n, by){
   for (const o of folk) if (o.fight && o.fight.target===n.id) o.fight = null;
   T.bodies.push({id:n.id, name:fullT(n), x:n.x, y:n.y, hidden:null, carried:false, diedAt:absT(), discovered:false, inside:buildingAt(n.x,n.y), killer:by===pl ? "player" : by.id});
   for (const [dx,dy] of [[0,0],[1,0],[0,1]]) addStain(n.x+dx, n.y+dy);
-  T.stats.kills++;
+  T.stats.kills++; if (T.mode==="slasher"){ T.slashKills = (T.slashKills||0) + 1; T.slashLog = (T.slashLog||[]).concat({name:fullT(n), job:n.job, where, s:stampT()}); }
   sfx("snap"); T.shake = .4; emoteT(n, "✶", 3);
   toast(`${n.first} goes still. They won't be getting up again.`, "bad", 4);
-  if (isDet(n)){ T.det.dead = true; toast("Something about them was different. A badge glints inside their coat.", "", 6); n.inv.push("case file"); }
+  if (isDet(n)){ T.det.dead = true; toast("Something about them was different. A badge glints inside their coat.", "", 6); n.inv.push("case file","detective's badge"); if (!n.inv.includes("bullets")) n.inv.push("bullets","bullets","bullets","bullets","bullets","bullets"); setTimeout(()=>toast("Their badge could open doors for someone with nerve. Search the body.", "", 6), 3500); }
   // witnesses
   const wits = folk.filter(o=>alive(o) && !o.away && !o.asleep && o!==n && canSeeT(o, n.x, n.y, 9));
   for (const o of wits){
+    if (T.mode==="slasher"){ slasherWitness(o, n, by); continue; }
     rememberT(o, by===pl ? `I SAW THE NEWCOMER KILL ${n.first.toUpperCase()} at ${where}.` : `I saw ${by.first} kill ${n.first}.`);
     sayT(o, pick(["AAAAH!","Oh my God!","MURDER!","No no no no"]), 3); sfx("scream");
     if (o.sheriff){ arrestSequence(`The sheriff watched you kill ${n.first}.`, true); return; }
     if (isDet(o)){ addEvidence(`I watched the newcomer kill ${n.first} at ${where}.`, 100, "murder"); return; }
     o.order = {type:"report", what:"murder", about:by===pl?"player":by.id, victim:n.id, until:absT()+180, run:true}; o.fight = null;
   }
-  if (wits.length) T.notoriety = 100;
+  if (wits.length && T.mode!=="slasher") T.notoriety = 100;
 }
 function addStain(x,y){ if (!WALK_T.has(tileT(x,y)) && tileT(x,y)!=="D") return; if (T.stains.some(s=>s.x===x&&s.y===y&&!s.cleaned)) return; T.stains.push({x,y,day:T.day,inside:!!buildingAt(x,y),cleaned:false,seenBy:[]}); }
 function bodyNear(maxd=1.5){
@@ -1433,6 +1454,7 @@ function diggable(x,y){ return "uv".includes(tileT(x,y)) && !T.graves.some(g=>g.
 // ---------- discovery ----------
 function discoverBody(b, finder, how){
   if (b.discovered) return;
+  if (T.mode==="slasher") T.panic = clamp((T.panic||0) + 20, 0, 100);
   b.discovered = true; b.foundBy = finder ? finder.id : null; b.foundDay = T.day;
   if (b.hidden){
     const k = b.hidden; let pos = null;
@@ -1467,12 +1489,13 @@ function crimeSecondTick(){
   // visible bodies get found
   for (const b of T.bodies){
     if (b.discovered || b.hidden || b.carried) continue;
-    for (const o of folk) if (alive(o) && !o.away && !o.asleep && !o.hidden && canSeeT(o, b.x, b.y, 7)){ discoverBody(b, o); o.order = {type:"report", what:"body", until:absT()+120, run:true}; break; }
+    for (const o of folk) if (alive(o) && !o.away && !o.asleep && !o.hidden && canSeeT(o, b.x, b.y, 7)){ discoverBody(b, o); if (T.mode==="slasher") slasherAlarm(o, "body"); else o.order = {type:"report", what:"body", until:absT()+120, run:true}; break; }
   }
   // someone sees you carrying a body
   if (pl.carrying){
     for (const o of folk) if (alive(o) && !o.away && !o.asleep && !o.hidden && canSeeT(o, pl.x, pl.y, 8)){
       const b = T.bodies.find(x=>x.id===pl.carrying);
+      if (T.mode==="slasher"){ if (o.alarmed!=="murder"){ sayT(o, "Is that… a BODY?!", 3); sfx("scream"); slasherAlarm(o, "murder"); } continue; }
       if (o.sheriff){ arrestSequence(`The sheriff caught you carrying ${b.name}.`, true); return; }
       if (isDet(o)){ addEvidence(`I watched the newcomer carry ${b.name}'s body.`, 120, "carry"); return; }
       if (!o.order || o.order.type!=="report"){ sayT(o, "Is that… is that a BODY?!", 3); sfx("scream"); rememberT(o, `I saw the newcomer carrying ${b.name}'s body!`); o.order = {type:"report", what:"carry", about:"player", victim:b.id, until:absT()+150, run:true}; T.notoriety = 100; }
@@ -1521,7 +1544,7 @@ function missingCheck(){
   for (const b of T.bodies){
     if (b.discovered || T.missing.includes(b.id) || absT() - b.diedAt < 500) continue;
     const v = byIdT(b.id);
-    T.missing.push(b.id);
+    T.missing.push(b.id); if (T.mode==="slasher") T.panic = clamp((T.panic||0) + 6, 0, 100);
     const reporter = folk.find(n=>alive(n) && (n.spouse===v.id || n.home===v.home || n.parent===v.id || n.child===v.id)) || folk.find(n=>alive(n) && relGetT(n.id,v.id) >= 30);
     newsT(`MISSING: ${b.name} hasn't been seen since ${dayName(Math.floor(b.diedAt/1440))}.${reporter ? ` ${reporter.first} is worried sick.` : ""}`, [], false, "missing");
     banner("MISSING PERSON", `${b.name} hasn't been seen in a day.`, false, 5);
@@ -1531,6 +1554,7 @@ function missingCheck(){
   }
 }
 function deliverReport(n, sh, o){
+  if (T.mode==="slasher"){ slasherAlarm(sh, "report"); return; }
   sayT(n, o.what==="murder" ? "Sheriff! I saw it! The newcomer—" : o.what==="body" ? "Sheriff, there's a body!" : "Sheriff, you've got to do something!", 4);
   rememberT(sh, `${n.first} reported: ${o.what} ${o.about==="player" ? "by the newcomer" : ""}.`);
   if (o.about==="player"){
@@ -1560,6 +1584,67 @@ function jailT(why){
 }
 // Cleaning blood.
 function stainHere(){ const pl = T.player, [fx,fy] = facingT(); return T.stains.find(s=>!s.cleaned && ((s.x===pl.x&&s.y===pl.y)||(s.x===fx&&s.y===fy))); }
+
+
+// ===== 05b-guns.js =====
+// Guns: loud, fast, final. Everyone within earshot hears a shot.
+function gunshotHeard(x, y, shooter){
+  T.fx.push({kind:"flash", x:x*TS+8, y:y*TS+6, life:.12});
+  sfx("gunshot"); T.shake = Math.max(T.shake||0, .18);
+  const where = placeLabelAt(Math.round(x), Math.round(y));
+  for (const n of folk){
+    if (!alive(n) || n===shooter || n.away) continue;
+    const d = Math.hypot(n.x-x, n.y-y);
+    if (d > 24) continue;
+    if (n.asleep && d < 14){ n.asleep = false; emoteT(n, "!", 2); }
+    rememberT(n, `Heard a gunshot near ${where} at ${fmtT(T.t)}.`);
+    if (d < 12 && !n.fight && !n.order && !n.sheriff){ emoteT(n, "!", 1.5); if (Math.random() < .5) sayT(n, pick(["Was that a GUNSHOT?!","Get down!","Oh my God!"]), 2.5); }
+    if (T.mode==="slasher") slasherHearShot(n, x, y, shooter);
+  }
+  if (shooter===T.player){
+    T.notoriety = clamp(T.notoriety + 6, 0, 100);
+    const d = detP(); if (d && detAlive() && Math.hypot(d.x-x, d.y-y) < 24) addEvidence(`A gunshot near ${where}, and the newcomer was right there.`, Math.hypot(d.x-x, d.y-y) < 10 ? 14 : 6, "gunshot");
+  }
+}
+// Walk the line of fire from the shooter and hit the first person in it.
+function rayTarget(sx, sy, dir, range, from, spread){
+  let best = null, bd = 1e9;
+  const cands = folk.filter(n=>alive(n) && !n.away && !n.hidden && n!==from).concat(from===T.player ? [] : [T.player]);
+  for (const n of cands){
+    const [nx, ny] = rposT(n), dx = nx - sx, dy = ny - sy;
+    const along = dx*dir[0] + dy*dir[1], side = Math.abs(dx*dir[1] - dy*dir[0]);
+    if (along <= 0 || along > range || side > (spread ? .5 + along*.18 : .6)) continue;
+    let blocked = false; for (let k=1;k<along;k+=.5){ const tx = Math.round(sx+dir[0]*k), ty = Math.round(sy+dir[1]*k); if (SIGHT_T.has(tileT(tx,ty)) || (tileT(tx,ty)==="#")){ blocked = true; break; } }
+    if (!blocked && along < bd){ bd = along; best = n; }
+  }
+  return best;
+}
+function playerShootT(gun){
+  const pl = T.player, g = gunOf(gun), now = performance.now();
+  if (now < (T.shotAt||0)) return; T.shotAt = now + g.cd;
+  if (!pl.inv.includes("bullets")){ sfx("pick"); toast("Click. No bullets. (Hartley's sells them.)", "bad", 2.5); return; }
+  pl.inv.splice(pl.inv.indexOf("bullets"), 1); renderHotbarT();
+  const [sx, sy] = rposT(pl), t = rayTarget(sx, sy, pl.dir, g.range, pl, g.spread);
+  const ex = t ? rposT(t) : [sx + pl.dir[0]*g.range, sy + pl.dir[1]*g.range];
+  T.fx.push({kind:"tracer", x:sx*TS+8, y:sy*TS+6, x2:ex[0]*TS+8, y2:ex[1]*TS+6, life:.15});
+  gunshotHeard(sx, sy, pl);
+  T.stats.shots = (T.stats.shots||0) + 1;
+  if (!t) return;
+  if (t===pl) return;
+  faceToT(pl, t);
+  if (!pl.fight || pl.fight.target!==t.id) startFightT(pl, t);
+  pl.fight.last = now;
+  const dmg = Math.round(g.dmg * (.85 + Math.random()*.3) * (Math.hypot(ex[0]-sx, ex[1]-sy) > g.range*.7 ? .75 : 1));
+  hitT(pl, t, dmg);
+}
+function npcShootT(n, t, gun){
+  const g = gunOf(gun), [sx, sy] = rposT(n), [tx, ty] = rposT(t);
+  const miss = Math.random() < .3;
+  T.fx.push({kind:"tracer", x:sx*TS+8, y:sy*TS+6, x2:tx*TS+8+(miss?20:0), y2:ty*TS+6+(miss?-12:0), life:.15});
+  gunshotHeard(sx, sy, n);
+  sayT(n, pick(["FREEZE!","DROP IT!","Stay down!"]), 1.5);
+  if (!miss) hitT(n, t, Math.round(g.dmg * .55 * (.8 + Math.random()*.4)));
+}
 
 
 // ===== 06-talk.js =====
@@ -1599,6 +1684,7 @@ function resolvePlaceT(s, n){
   for (const [re, id] of PLACE_WORDS) if (re.test(q)) return id;
   return null;
 }
+const artT = it => /s$|^bleach|^coffee|^rope|^matches/.test(it) ? "some" : /^[aeiou]/.test(it) ? "an" : "a";
 const placeName = id => id==="roomC" ? "your room" : PLACES[id] ? (PLACES[id].building && bById(PLACES[id].building) && bById(PLACES[id].building).kind==="home" ? `${(folk.find(f=>f.home===id)||{first:"someone"}).first}'s house` : PLACES[id].label) : "somewhere";
 
 // ---------- the dialog box ----------
@@ -2181,12 +2267,12 @@ function offerFavorT(n, opt={}){
   const others = folk.filter(o=>alive(o) && o!==n && !o.away);
   let f = null;
   const reward = clamp(Math.round(opt.reward || 8 + Math.random()*22), 3, 150);
-  if (opt.item && !opt.target) f = {type:"fetch", item:opt.item, text:`Bring ${n.first} a ${opt.item}.`};
+  if (opt.item && !opt.target) f = {type:"fetch", item:opt.item, text:`Bring ${n.first} ${artT(opt.item)} ${opt.item}.`};
   else if (opt.target && opt.target!=="player"){ const t = byIdT(opt.target); f = opt.item ? {type:"deliver", item:opt.item, to:t.id, text:`Take a ${opt.item} to ${t.first}.`} : {type:"visit", to:t.id, text:`Go talk to ${t.first} for ${n.first}.`}; }
   else {
     const r = Math.random(), friend = bestFriendT(n), rival = others.find(o=>relGetT(n.id,o.id) <= -25);
-    if (r < .3){ const it = pick(n.likes.filter(x=>TITEMS[x])) || "coffee"; f = {type:"fetch", item:it, text:`Bring ${n.first} a ${it}.`}; }
-    else if (r < .45 && n.hobbies.includes("fishing")){ f = {type:"fetch", item:pick(["bass","trout","catfish"]), text:""}; f.text = `Catch ${n.first} a ${f.item}.`; }
+    if (r < .3){ const it = pick(n.likes.filter(x=>TITEMS[x])) || "coffee"; f = {type:"fetch", item:it, text:`Bring ${n.first} ${artT(it)} ${it}.`}; }
+    else if (r < .45 && n.hobbies.includes("fishing")){ f = {type:"fetch", item:pick(["bass","trout","catfish"]), text:""}; f.text = `Catch ${n.first} ${artT(f.item)} ${f.item}.`; }
     else if (r < .65 && friend){ const it = pick(["flowers","letter","apple pie","record","book"]); f = {type:"deliver", item:it, to:friend.id, text:`Take ${it==="letter"?"a letter":"some "+it} to ${friend.first}.`, giveNow: it==="letter"}; }
     else if (r < .8 && rival){ f = {type:"visit", to:rival.id, text:`Go tell ${rival.first} that ${n.first} wants to make peace.`, peace:true}; }
     else if (r < .9){ const t = pick(others); f = {type:"visit", to:t.id, text:`Find out what ${t.first} has been up to.`}; }
@@ -2466,15 +2552,15 @@ function approachReasonT(n){
   const fresh = n.memories.slice(-6).filter(m => /newcomer/i.test(m.text) && m.s.includes(today) && !m.talked);
   if (fresh.length && Math.random()<.5){ fresh[0].talked = true; return `Bring this up with them: ${fresh[0].text}`; }
   const want = n.likes.find(w => pl.inv.includes(w));
-  if (want && Math.random()<.4) return `You noticed they're carrying ${want}, which you love. Make them a trade_offer (money is fine).`;
+  if (want && Math.random()<.18) return `You noticed they're carrying ${want}, which you love. Make them a trade_offer (money is fine).`;
   const debt = T.debts.find(d=>d.who===n.id && !d.paid && T.day - d.day >= 2);
   if (debt && Math.random()<.6) return `They owe you $${debt.amount}. Ask for it back.`;
   if (n.partner && Math.random()<.5) return "You're sweethearts. Be affectionate, maybe suggest a date (invite).";
-  if (!favorFor(n) && n.opinion >= 5 && Math.random()<.25) return "FAVOR";
-  if (n.opinion >= 25 && Math.random()<.35) return `You like them. Invite them to do something (${n.hobbies.join(" or ")}) with an invite action.`;
+  if (!favorFor(n) && n.opinion >= 5 && Math.random()<.08) return "FAVOR";
+  if (n.opinion >= 25 && Math.random()<.18) return `You like them. Invite them to do something (${n.hobbies.join(" or ")}) with an invite action.`;
   if (n.nosy && Math.random()<.5) return "You're the town busybody. Pry into the newcomer's business: where they're from, what they do all day.";
-  if (n.teen && Math.random()<.3) return "You're bored. Ask them for money, or dare them to do something.";
-  if (n.job.includes("salesman") && Math.random()<.4) return "Try to sell them something you carry with a trade_offer.";
+  if (n.teen && Math.random()<.12) return "You're bored. Dare them to do something, or tell them something weird you saw.";
+  if (n.job.includes("salesman") && Math.random()<.15) return "Try to sell them something you carry with a trade_offer.";
   const recent = T.news.slice(-4).filter(x=>!x.who.includes(n.id));
   if (recent.length && Math.random()<.3) return `Share your take on this news: ${pick(recent).text}`;
   if (!n.met && Math.random()<.35) return "Introduce yourself to the new face in town.";
@@ -2494,7 +2580,7 @@ function considerApproachT(){
   const urgent = cands.find(([n,r])=>/^Warn|plans with/.test(r));
   const [n, reason] = urgent || pick(cands);
   n.order = {type:"approach", reason, until:absT()+30}; n.path = [];
-  n.approachCd = now + 140000; approachNextT = now + 45000 + Math.random()*40000;
+  n.approachCd = now + 300000; approachNextT = now + 100000 + Math.random()*80000;
   emoteT(n, "…", 2);
 }
 
@@ -2943,7 +3029,7 @@ function finishWork(job){
 
 // ---------- shops ----------
 const SHOPS = {
-  store:{keeper:"shopkeeper", name:"Hartley's General", sell:["fishing rod","shovel","mop","bleach","rope","matches","flashlight","flowers","newspaper","lottery ticket","chocolate","hat","sunglasses","reading glasses","kitchen knife","baseball bat","book"], buys:true},
+  store:{keeper:"shopkeeper", name:"Hartley's General", sell:["fishing rod","shovel","mop","bleach","rope","matches","flashlight","flowers","newspaper","lottery ticket","chocolate","hat","sunglasses","reading glasses","kitchen knife","baseball bat","book","hunting rifle","bullets"], buys:true},
   diner:{keeper:"diner owner", alt:"short-order cook", name:"Blue Plate Diner", sell:["burger","sandwich","pie slice","apple pie","donut","coffee","milkshake"]},
   bar:{keeper:"bartender", name:"The Rusty Nail", sell:["beer","whiskey"], services:["round"]},
   barber:{keeper:"barber", name:"Clip Joint", services:["haircut","shave","dye"]},
@@ -2994,6 +3080,8 @@ function buyItem(it, p, k){
   if (T.money < p){ sfx("nope"); return; }
   if (!canAddT(T.player.inv, it)){ toast("Your pockets are full.", "bad"); sfx("nope"); return; }
   addMoney(-p); k.money += p; addItemT(it, true); sfx("coin");
+  if (it==="bullets"){ for (let i=0;i<5;i++) if (canAddT(T.player.inv, "bullets")) T.player.inv.push("bullets"); toast("A box of six rounds.", "", 2); }
+  if (gunOf(it)){ rememberT(k, `Sold the newcomer a ${it}.`); gossipT(k, `The newcomer bought a ${it}. What does a drifter need with that?`); addEvidenceVia(k, `${k.first} sold the newcomer a ${it}.`, 6); }
   k.opinion = clamp(k.opinion+1,-100,100);
   rememberT(k, `The newcomer bought ${it} from me.`);
   if (["shovel","bleach","rope","kitchen knife"].includes(it)){ T.purchases = (T.purchases||[]).concat({it, day:T.day}); const bad = T.purchases.filter(x=>T.day-x.day<=2 && ["shovel","bleach","rope"].includes(x.it)).length; if (bad >= 2){ rememberT(k, "The newcomer bought bleach AND a shovel. Or rope. Strange shopping list."); gossipT(k, "The newcomer's been buying bleach and shovels. What for?"); addEvidenceVia(k, `${k.first} says the newcomer bought ${T.purchases.slice(-2).map(x=>x.it).join(" and ")}.`, 8); } }
@@ -3090,7 +3178,7 @@ function buildTownDom(){
       <div class="favors px" id="tPlans" hidden></div>
     </div>
     <div class="right">
-      <div class="heat px rumor" title="How much the town is whispering about you"><span class="lbl">Rumors</span><div class="segs" id="tRumor"></div></div>
+      <div class="heat px rumor" title="How much the town is whispering about you"><span class="lbl" id="tRumorLbl">Rumors</span><div class="segs" id="tRumor"></div></div>
       <div class="eye px" id="tEye" hidden title="Someone is watching you"><canvas id="tEyeCv" width="12" height="6"></canvas><span id="tEyeTxt">WATCHED</span></div>
       <div class="icons">
         <span class="ai" id="tAi"><i></i><span>…</span></span>
@@ -3215,10 +3303,12 @@ function renderHudT(){
   const lock = T.lock && T.lock.kind==="chase";
   $("tPlace").textContent = lock ? "RUN · lose them" : T.wanted ? "WANTED · get out of town" : (insideOf(pl)==="roomC" ? "Your room" : placeLabelAt(pl.x,pl.y)) + (T.drunk > 0 ? " · tipsy" : "") + (pl.carrying ? " · carrying a body" : "");
   $("tPlace").style.color = lock || T.wanted || pl.carrying ? "#ff6b7f" : "";
+  if (T.mode==="slasher"){ const left = folk.filter(alive).length; $("tPlace").textContent = `${left} left${T.police ? " · SIRENS AT "+fmtT(T.police.arrive) : ""}${T.phonesCut ? " · phones dead" : ""} · ${insideOf(pl)==="roomC" ? "your room" : placeLabelAt(pl.x,pl.y)}`; $("tPlace").style.color = "#ff6b7f"; }
+  $("tRumorLbl").textContent = T.mode==="slasher" ? "Panic" : "Rumors";
   const hp = Math.round(pl.hp); $("tHp").style.width = hp+"%"; $("tHp").className = hp < 35 ? "low" : "";
   const w = selectedWeapon(); $("tWeapon").textContent = w ? `${w} (${weaponDmg(w)})` : "Fists";
   $("tMoney").textContent = `$${Math.round(T.money)}`;
-  const on = Math.ceil(T.notoriety/10);
+  const on = Math.ceil((T.mode==="slasher" ? T.panic||0 : T.notoriety)/10);
   [...$("tRumor").children].forEach((s,i)=>{ s.className = i<on ? (T.notoriety>=60?"on hot":"on") : ""; });
   // the feeling of being watched: you never learn by whom
   const d = detP(), watched = d && detAlive() && !d.asleep && T.det.suspicion >= 25 && (d.hidden ? insideOf(d)===insideOf(pl) : canSeeT(d, pl.x, pl.y, 12)) && !(T.talkId===d.id);
@@ -3284,6 +3374,8 @@ function useItemT(it){
   if (d.wear){ toggleWear(it); return; }
   if (it==="prison jumpsuit"){ pl.wearJumpsuit = !pl.wearJumpsuit; toast(pl.wearJumpsuit ? "You pull on the orange jumpsuit. Bold." : "You take the jumpsuit off.", pl.wearJumpsuit ? "bad" : "", 3); renderHotbarT(); return; }
   if (d.scratch){ scratchTicket(); return; }
+  if (d.badge){ if (confirm("Take the agent's identity? With this badge you could walk right back into Cellblock Nine… as a guard.")) startOperation(); return; }
+  if (d.gun){ toast(`${it}: select it and press F to fire. ${countIn(pl.inv,"bullets")} bullets left.`, "", 3); return; }
   if (d.read){ readItem(it); return; }
   if (it==="matches") { burnSomething(); return; }
   toast(d.desc || it, "", 3);
@@ -3338,6 +3430,7 @@ function renderInvT(){
   if (info.heal || info.drink) btn(info.drink ? "Drink" : "Eat", ()=>{ useItemT(it); renderInvT(); });
   if (info.wear || it==="prison jumpsuit") btn("Wear / remove", ()=>{ useItemT(it); renderInvT(); });
   if (info.read) btn("Read", ()=>useItemT(it));
+  if (info.badge) btn("Use the badge…", ()=>useItemT(it));
   if (info.scratch) btn("Scratch", ()=>{ useItemT(it); renderInvT(); });
   if (pl.inv.includes("matches") && ["prison jumpsuit","letter","creepy note","case file","wallet"].includes(it)) btn("Burn it", ()=>{ burnSomething(); renderInvT(); });
   if (it!=="room key") btn("Throw away", ()=>{ removeItemT(it); if (isEvidence(it)){ const [x,y] = [pl.x,pl.y]; T.litter.push({it, x, y, day:T.day}); } invSelT = null; sfx("stash"); renderInvT(); });
@@ -3766,7 +3859,8 @@ function placeHunters(){
 
 // ---------- endings ----------
 function ending(kind, opt={}){
-  if (T.ending) return;
+  if (T.ending && T.ending!=="russia_pending") return;
+  if (kind.startsWith("slasher") || kind==="russia"){ slasherEnding(kind, opt); return; }
   T.ending = kind; closeTalkT(); closeTWindows(); if (GAME) closeGame();
   Snd.track(null); sfx(["caught","dark"].includes(kind) ? "sad" : "fanfare");
   const d = detP(), D = T.det, pl = T.player;
@@ -3815,7 +3909,7 @@ function ending(kind, opt={}){
 
 // ===== 10-main.js =====
 // Main: starting a new life, the clock, the player, interactions, events, rendering, input.
-const MIN_PER_SEC = 1.5;   // a Millbrook day lasts about 16 real minutes
+const MIN_PER_SEC = 2.2;   // a Millbrook day lasts about 11 real minutes
 const TRAINS = [8*60, 14*60, 19*60];
 
 // ---------- extra sounds and music for town ----------
@@ -3826,6 +3920,7 @@ Object.assign(Snd.fx, {
   splash(){ Snd.noise({dur:.5,vol:.18,type:"lowpass",f:1600,f2:300}); Snd.tone({f:300,f2:90,dur:.3,vol:.06,type:"sine"}); },
   stinger(){ Snd.tone({f:Snd.mf(70),dur:1.2,vol:.1,type:"sawtooth",filter:{f:1800}}); Snd.tone({f:Snd.mf(71),dur:1.2,vol:.08,type:"sawtooth",filter:{f:1800}}); Snd.tone({f:Snd.mf(46),dur:1.4,vol:.14,type:"square",filter:{f:400}}); Snd.noise({dur:.6,vol:.1,type:"highpass",f:3000}); },
   train(){ Snd.tone({f:Snd.mf(69),dur:.9,vol:.06,type:"square",filter:{f:1200}}); Snd.tone({f:Snd.mf(73),dur:.9,vol:.05,type:"square",filter:{f:1200}}); Snd.tone({f:Snd.mf(76),dur:.9,vol:.04,type:"square",filter:{f:1200}}); },
+  gunshot(){ Snd.noise({dur:.35,vol:.4,type:"lowpass",f:2400,f2:200}); Snd.noise({dur:.06,vol:.35,type:"highpass",f:1500}); Snd.tone({f:90,f2:40,dur:.3,vol:.2,type:"sine"}); Snd.noise({dur:1.2,vol:.05,type:"bandpass",f:500,at:.15}); },
   knock(){ for (let i=0;i<3;i++) Snd.noise({dur:.05,vol:.16,f:600,at:i*.16}); },
   church(){ for (let i=0;i<3;i++){ Snd.tone({f:392,dur:2,vol:.08,type:"sine",at:i*1.2}); Snd.tone({f:392*2.76,dur:.8,vol:.02,type:"sine",at:i*1.2}); } }
 });
@@ -3838,7 +3933,7 @@ Object.assign(Snd.TRACKS, {
 });
 
 // ---------- starting out ----------
-const TOWN = window.TOWN = {active:false, begin, cont, frame};
+const TOWN = window.TOWN = {active:false, begin, cont, frame, beginSlasher};
 function freshState(){
   return {v:1, day:1, t:7*60+30, alias:"Sam Ellis", money:40, rel:{}, folk:[], det:null, containers:{}, news:[], tasks:[], appts:[], debts:[], secrets:[], warnings:[], clues:[], suspects:{}, seenHabits:{}, gazette:[], mail:[], letters:[], highscores:{}, workDone:{},
     stains:[], bodies:[], graves:[], missing:[], litter:[], unlocked:{}, fx:[], acts:{}, notoriety:0, drunk:0, weather:"clear", event:null, rentPaid:3, lock:null, wanted:false, ending:null,
@@ -3855,6 +3950,7 @@ function begin(){
   // the traveling salesman can get you papers, for a price
   const sales = folk.find(n=>n.job.includes("salesman")); if (sales) sales.inv.push("fake ID");
   const junk = Object.keys(T.containers).filter(k=>T.containers[k].name==="Junk pile"); if (junk.length) T.containers[pick(junk)].items.push("lockpick");
+  const back = Object.keys(T.containers).find(k=>T.containers[k].bid==="barback" && T.containers[k].name==="Wardrobe"); if (back) T.containers[back].items.push("shotgun","bullets","bullets","bullets");
   for (const n of folk) n.suitCols = E.SUITS["t_"+n.id];
   // you: a borrowed shirt off a clothesline, and the jumpsuit stuffed in a bag
   E.SUITS.t_player = ["#7a6a5a","#5a4a3a","#9a8a7a"];
@@ -3870,8 +3966,9 @@ function begin(){
   playCutscene("intro", () => {
     if (T.usedRealName) toast("The hotel keeper writes your real name in the ledger in neat capitals.", "bad", 6);
     banner("MILLBROOK", `${dayName()} morning. Population 212. Plus you.`, false, 5);
-    setTimeout(()=>toast("Talk to anyone (E). Make friends, take odd jobs, play games. Someone in town is not who they say they are.", "", 9), 5200);
-    setTimeout(()=>toast("Get rid of that jumpsuit. Watch for habits. Keep your story straight.", "", 7), 15000);
+    const tip = (txt, ms, secs) => setTimeout(()=>{ if (TOWN.active && T && !T.mode && !T.ending) toast(txt, "", secs); }, ms);
+    tip("Talk to anyone (E). Make friends, take odd jobs, play games. Someone in town is not who they say they are.", 5200, 9);
+    tip("Get rid of that jumpsuit. Watch for habits. Keep your story straight.", 15000, 7);
     const hk = folk.find(n=>n.job==="hotel keeper"); if (hk){ hk.x = hk.fx = 82; hk.y = hk.fy = 26; hk.order = {type:"approach", reason:"Welcome the new guest of Room C to the Millbrook Arms. Their first two nights are paid; rent is $15 a night after that, at the front desk. Ask their name for the ledger.", until:absT()+40}; }
     lastHourT = hourNow(); saveT(); renderHotbarT();
   });
@@ -3887,6 +3984,7 @@ function cont(){
   showTownDom(true);
   TOWN.active = true; document.body.classList.add("in-town");
   lastHourT = hourNow();
+  if (T.mode==="slasher"){ document.body.classList.add("slasher"); slasherMusic(true); banner("LEAVE NO EVIDENCE", `${folk.filter(alive).length} left.`, true, 3); renderHotbarT(); return true; }
   banner(dayName().toUpperCase(), `Day ${T.day} in Millbrook`, false, 3);
   if (T.lock && T.lock.kind==="arrest") setTimeout(()=>showArrestChoice(), 600);
   renderHotbarT();
@@ -3922,10 +4020,10 @@ function tickClock(dt){
 function onHourT(h){
   if (T.ending) return;
   if (h===6) newDayT();
-  if (h===7) printGazette();
-  if (h===8){ missingCheck(); rentCheck(); if (T.day >= 12 && !T.lock && !T.ending) dayTwelve(); }
+  if (h===7 && T.mode!=="slasher") printGazette();
+  if (h===8){ missingCheck(); if (T.mode!=="slasher"){ rentCheck(); if (T.day >= 12 && !T.lock && !T.ending) dayTwelve(); } }
   if (h===9 && dayName()==="Sunday") sfx("church");
-  crimeHourTick(); townLifeTick(); recognitionTick();
+  crimeHourTick(); if (T.mode!=="slasher"){ townLifeTick(); recognitionTick(); }
   if (T.drunk > 0) T.drunk = Math.max(0, T.drunk-1);
   if (T.notoriety > 0 && !T.wanted) T.notoriety = Math.max(0, T.notoriety - .5);
   // the case goes cold if you give it nothing
@@ -4079,6 +4177,13 @@ function interactTargetT(){
     if (bd && bd.kind==="home") return {kind:"knock", label:"Knock", run:()=>knockT(bd, k)};
     return null;
   }
+  if (T.mode==="slasher"){
+    const s = T.spyE;
+    if (s && !s.hidden && !s.dead && ((Math.round(rposT(s)[0])===fx && Math.round(rposT(s)[1])===fy) || Math.hypot(s.x-pl.x, s.y-pl.y) < 1.2)) return {kind:"spy", label:`Talk to ${s.short}`, run:spyMenu};
+    if (s && s.hidden && s.hideKey && (s.hideKey===k || (s.hideKey===here && Math.hypot(s.x-pl.x, s.y-pl.y) < 2))) return {kind:"spy", label:`Whisper to ${s.short}`, run:spyMenu};
+    if (here==="post" && !T.phonesCut && "CH".includes(c)) return {kind:"cut", key:"cutphones", label:"Hold: rip out the phone exchange", hold:true, secs:4, act:"robbing", sound:"cut", done:cutPhones};
+    if (here==="sheriff" && fx===59 && fy===24 && !T.radioSmashed) return {kind:"radio", key:"radio", label:"Hold: smash the sheriff's radio", hold:true, secs:3, sound:"punch", done:()=>{ T.radioSmashed = true; toast("Sparks, then nothing. The sheriff can't call anyone now.", "good", 4); sfx("snap"); }};
+  }
   // furniture
   if (box) return {kind:"box", label: box.mine ? "Open your footlocker" : `Open the ${box.name.toLowerCase()}`, run:()=>openBoxT(k)};
   if (here==="roomC" && fx===86 && fy===15) return {kind:"sleep", label: hourNow()>=20 || hourNow()<6 ? "Sleep until morning" : "Nap for two hours", run:sleepT};
@@ -4104,7 +4209,7 @@ function interactTargetT(){
   const dep = trainHere();
   if (dep && pl.x>=91 && pl.x<=101 && pl.y>=17 && pl.y<=20) return {kind:"train", label: pl.inv.includes("train ticket") ? `Board the ${fmtT(dep)} train` : "The train's here (you need a ticket)", run:boardTrain};
   // the road out
-  if (pl.x <= 2 && pl.y >= 29 && pl.y <= 32) return {kind:"wild", label:"Walk out of Millbrook for good", run:()=>{ if (confirm("Leave Millbrook on foot and never come back?")) ending("wild"); }};
+  if (pl.x <= 2 && pl.y >= 29 && pl.y <= 32 && T.mode!=="slasher") return {kind:"wild", label:"Walk out of Millbrook for good", run:()=>{ if (confirm("Leave Millbrook on foot and never come back?")) ending("wild"); }};
   return null;
 }
 function actionPressT(){
@@ -4176,6 +4281,7 @@ function frame(dt){
       tickClock(dt);
       for (const n of folk) updateFolk(n, dt);
       updateFightsT(dt); updateScenesT(dt); detHidingTick(dt); chaseTick(dt);
+      if (T.mode==="slasher") updateSpyE(dt);
       if (T.lock && T.lock.kind==="brawl"){ const foe = byIdT(T.lock.foe); if (!foe || !alive(foe)){ T.lock = null; banner("SILENCE", "It's over. Now someone has to deal with the body.", true, 5); Snd.track(null); } }
       secAcc += dt; if (secAcc >= 1){ secAcc = 0; perSecondT(); }
     }
@@ -4189,7 +4295,8 @@ function frame(dt){
 function perSecondT(){
   const pl = T.player, D = T.det;
   crimeSecondTick(); detObserve(); tellTick(); apptTick(); considerApproachT();
-  if (D && detAlive() && absT() >= D.nextBrain && !T.lock) detBrain();
+  if (T.mode==="slasher"){ slasherSecond(); if (T.ending) return; }
+  if (D && detAlive() && absT() >= D.nextBrain && !T.lock && T.mode!=="slasher") detBrain();
   for (const n of folk) if (alive(n) && !n.hidden && distT(n,pl) < 5 && canSeeT(pl, n.x, n.y, 6)) n.lastSeenWithPlayer = absT();
   // the face at the window
   const d = detP();
@@ -4198,11 +4305,13 @@ function perSecondT(){
   // the town when you're wanted
   if (T.wanted){ const sh = sheriff(); if (sh && !sh.order && canSeeT(sh, pl.x, pl.y, 10)){ sayT(sh, `${PNUMT}! STOP!`, 3); T.lock = {kind:"chase", reason:"Spotted.", start:absT()}; startChase(); } }
   if (T.lock && T.lock.kind==="chase" && pl.x <= 1 && pl.y >= 28 && pl.y <= 33) ending("wild");
+  if (T.mode==="slasher" && T.wanted) T.wanted = false;
   if (T.money < 0) T.money = 0;
 }
 function musicT(){
   const pl = T.player, inside = insideOf(pl), night = isNightT();
   Snd.setAmbient(inside ? "indoor" : "outside", night, false);
+  if (T.mode==="slasher"){ if (!SLASH && !GAME) slasherMusic(true); if (Math.random() < .08) Snd.tone({f:Snd.mf(40), dur:2, vol:.04, type:"sine", dest:Snd.nodes.amb}); return; }
   if (T.weather==="rain" && !inside && Math.random() < .9) for (let i=0;i<6;i++) Snd.noise({dur:.04,vol:.012,type:"highpass",f:5000,at:Math.random()*.9,dest:Snd.nodes.amb});
   if (GAME && GAME.kind==="dance") return;
   const fighting = pl.fight || folk.some(n=>n.fight && n.fight.target==="player");
@@ -4238,6 +4347,7 @@ function renderTown(dt){
   for (const b of T.bodies){ if (b.hidden || b.carried) continue; const n = byIdT(b.id); ctx.save(); ctx.translate(b.x*TS+8, b.y*TS+10); ctx.rotate(Math.PI/2); drawPerson(ctx, -8, -6, n.look, [0,1], 0, {blink:true}); ctx.restore(); }
   // people
   const ents = folk.filter(n=>!n.dead && !n.away && !n.hidden).map(n=>({e:n, L:n.look})).concat([{e:pl, L:playerLookT(), me:true}]);
+  if (T.mode==="slasher" && T.spyE && !T.spyE.hidden && !T.spyE.dead) ents.push({e:T.spyE, L:T.spyE.look, spy:true});
   ents.sort((a,b)=>rposT(a.e)[1]-rposT(b.e)[1]);
   for (const {e,L,me} of ents){
     const [ex,ey] = rposT(e), moving = e.prog < 1, frame = moving ? Math.floor(e.walkT*2.2)%4 : 0;
@@ -4290,11 +4400,13 @@ function renderTown(dt){
   }
   if (T.lock && (T.lock.kind==="chase" || T.lock.kind==="brawl")){ const pulse = (Math.sin(now/240)+1)/2; ctx.fillStyle = `rgba(${Math.floor(now/400)%2 ? "177,62,83" : "59,93,201"},${.06+.12*pulse})`; ctx.fillRect(0,0,W,H); }
   if (pl.carrying){ ctx.fillStyle = "rgba(120,0,20,.08)"; ctx.fillRect(0,0,W,H); }
+  if (T.mode==="slasher"){ const gr = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.3,W/2,H/2,Math.max(W,H)*.75); gr.addColorStop(0,"rgba(0,0,0,0)"); gr.addColorStop(1,`rgba(70,0,10,${.45 + (T.police ? .15*Math.sin(now/200) : 0)})`); ctx.fillStyle = gr; ctx.fillRect(0,0,W,H); if (T.police && Math.floor(now/400)%2){ ctx.fillStyle = "rgba(59,93,201,.06)"; ctx.fillRect(0,0,W,H); } }
   // labels, bubbles, emotes
   const fpx = Math.round(Math.max(15*dpr, 5.5*z));
   ctx.font = `${fpx}px VT323, monospace`; ctx.textBaseline = "top"; ctx.textAlign = "left";
-  for (const {e, me} of ents){
+  for (const {e, me, spy} of ents){
     const [ex,ey] = rposT(e), [sx,sy] = toS(ex*TS+8, ey*TS-6);
+    if (spy){ if (Math.hypot(ex-ppx,ey-ppy) < 4.5){ const tw = ctx.measureText(e.short).width; ctx.fillStyle = "rgba(60,0,10,.85)"; ctx.fillRect(sx-tw/2-4*dpr, sy-fpx-6*dpr, tw+8*dpr, fpx+2*dpr); ctx.fillStyle = "#ff8a8a"; ctx.textAlign = "center"; ctx.fillText(e.short, sx, sy-fpx-5*dpr); ctx.textAlign = "left"; } continue; }
     if (sx<-300||sx>W+300||sy<-200||sy>H+200) continue;
     if (!me){ const inB = insideOf(e); if (inB && outerOf(inB)!==(here?outerOf(here):null)) continue; }
     const near = Math.hypot(ex-ppx, ey-ppy);
@@ -4321,6 +4433,7 @@ function renderTown(dt){
   ctx.textAlign = "center";
   for (const f of T.fx){
     if (f.kind==="float"){ const [x,y] = toS(f.x, f.y - (1.1-f.life)*14); ctx.globalAlpha = Math.min(1, f.life*2); ctx.fillStyle = PAL.k; ctx.fillText(f.text, x+2*dpr, y+2*dpr); ctx.fillStyle = f.col; ctx.fillText(f.text, x, y); ctx.globalAlpha = 1; }
+    if (f.kind==="tracer"){ const [a,b] = toS(f.x, f.y), [c2,d2] = toS(f.x2, f.y2); ctx.strokeStyle = `rgba(255,230,140,${Math.min(1,f.life*7)})`; ctx.lineWidth = 2*dpr; ctx.beginPath(); ctx.moveTo(a,b); ctx.lineTo(c2,d2); ctx.stroke(); ctx.lineWidth = 1; }
     if (f.kind==="flash"){ const [x,y] = toS(f.x, f.y); ctx.globalCompositeOperation = "lighter"; const R = 40*dpr*f.life*4; const gr = ctx.createRadialGradient(x,y,0,x,y,R); gr.addColorStop(0,"rgba(255,255,255,.9)"); gr.addColorStop(1,"rgba(0,0,0,0)"); ctx.fillStyle = gr; ctx.fillRect(x-R,y-R,R*2,R*2); ctx.globalCompositeOperation = "source-over"; }
     if (f.kind==="whiteout"){ ctx.fillStyle = `rgba(255,255,255,${f.life*2})`; ctx.fillRect(0,0,W,H); }
   }
@@ -4457,6 +4570,21 @@ function wireTownDom(){
   contB.addEventListener("click", () => { $("scrTitle").hidden = true; if (!cont()) { $("scrTitle").hidden = false; toast("That save is gone.", "bad"); } });
   skipB.addEventListener("click", () => { if (loadSavedT() && !confirm("Start a new life in Millbrook? Your current Millbrook save will be lost.")) return; clearSaveT(); $("scrTitle").hidden = true; begin(); });
   row.append(contB, skipB);
+  const opsCont = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:"Continue Operation Birch"});
+  opsCont.addEventListener("click", () => { Snd.init(); if (!window.__cb9.continueOps()) toast("That save is gone.", "bad"); });
+  let opsSave = null; try { opsSave = JSON.parse(localStorage.getItem("cellblock9-ops-v1")||"null"); } catch {}
+  opsCont.hidden = !opsSave; if (opsSave) opsCont.textContent = `Continue Operation Birch · Day ${opsSave.day}`;
+  row.append(opsCont);
+  const det = document.createElement("details"); det.className = "chapters"; det.style.cssText = "width:100%;font-size:20px;color:var(--l)";
+  det.append(Object.assign(document.createElement("summary"),{textContent:"Chapter select", style:"cursor:pointer;font-family:var(--px);font-size:10px;color:var(--y)"}));
+  const crow = document.createElement("div"); crow.className = "row"; crow.style.marginTop = "10px";
+  const chap = (label, fn) => { const b = Object.assign(document.createElement("button"),{type:"button", className:"pbtn", textContent:label}); b.addEventListener("click", fn); crow.append(b); };
+  chap("1 · Cellblock Nine", () => $("startBtn").click());
+  chap("2 · Millbrook", () => skipB.click());
+  chap("3 · Operation Birch", () => { Snd.init(); let snap = null; try { snap = JSON.parse(localStorage.getItem(SNAP_KEY)||"null"); } catch {} const o = snap ? {alias:snap.alias, badgeName:snap.det.realName, look:{skin:snap.player.look.skin, hair:snap.player.look.hair}, disguise:snap.player.disguise, townDay:snap.day} : {alias:"Sam Ellis", badgeName:`${pick(FIRST)} ${pick(LAST)}`}; $("scrTitle").hidden = true; window.__cb9.startOps(o); });
+  chap("4 · Leave No Evidence", () => { $("scrTitle").hidden = true; const cast = E.prisonCast().filter(c=>c.kind==="inmate"); const c = pick(cast); beginSlasher({spy:{id:c.id, name:c.name, short:c.short, look:c.look, voice:c.voice}}); });
+  det.append(crow, Object.assign(document.createElement("p"),{className:"note", textContent:"Each chapter can be started on its own. Playing straight through carries your choices, your kills and your name forward."}));
+  row.after(det);
   const s = loadSavedT(); contB.hidden = !(s && !s.ending); if (s && !s.ending) contB.textContent = `Continue in Millbrook · Day ${s.day}`;
 }
 buildTownDom();
@@ -4464,5 +4592,372 @@ wireTownDom();
 syncTownSound();
 if (matchMedia("(pointer:coarse)").matches){ $("taBtn").style.display = ""; $("tfBtn").style.display = ""; }
 window.__town = {get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot};
+
+
+// ===== 11-ops.js =====
+// Part three's doorway and part four: LEAVE NO EVIDENCE.
+const SNAP_KEY = "cellblock9-town-snap", SLASH_INFO = "cellblock9-slasher-info";
+
+// ---------- leaving Millbrook with a dead agent's badge ----------
+function startOperation(){
+  if (!T || T.ending) return;
+  closeTalkT(); closeTWindows();
+  const snap = JSON.stringify(T, (k,v)=>SKIP_SAVE.has(k) ? undefined : v);
+  try { localStorage.setItem(SNAP_KEY, snap); localStorage.removeItem(TSAVE); } catch {}
+  const opts = {alias:T.alias, badgeName:T.det.realName, look:{skin:T.player.look.skin, hair:T.player.look.hair, beard:T.player.look.beard||null}, disguise:Object.assign({}, T.player.disguise), townDay:T.day};
+  playCutscene("spyreveal", () => {
+    TOWN.active = false; document.body.classList.remove("in-town");
+    showTownDom(false); $("tScreen").hidden = true;
+    if (window.__cb9 && window.__cb9.startOps) window.__cb9.startOps(opts);
+  });
+}
+
+// ---------- part four ----------
+let SLASH = null;   // runtime only: music timer
+function beginSlasher(info){
+  Snd.init();
+  try { localStorage.setItem(SLASH_INFO, JSON.stringify(info||{})); } catch {}
+  let snap = null; try { snap = JSON.parse(localStorage.getItem(SNAP_KEY)||"null"); } catch {}
+  if (snap){ T = snap; buildTown(); folk = T.folk; for (const n of folk){ if (n.suitCols) E.SUITS["t_"+n.id] = n.suitCols; n.scene = null; n.path = []; n.talkingToPlayer = false; n.bubble = null; n.emote = null; n.order = null; n.fight = null; n.away = false; n.hidden = false; n.chasing = false; } E.SUITS.t_player = T.player.suitCols || ["#7a6a5a","#5a4a3a","#9a8a7a"]; }
+  else { T = freshState(); buildTown(); genTown(); T.containers = makeContainers(); for (const n of folk) n.suitCols = E.SUITS["t_"+n.id]; E.SUITS.t_player = ["#7a6a5a","#5a4a3a","#9a8a7a"]; T.player = {x:2, y:30, fx:2, fy:30, prog:1, dir:[1,0], walkT:0, inv:["kitchen knife","room key"], hp:100, fight:null, carrying:null, disguise:{}, wearJumpsuit:false, look:{suit:"t_player", civ:true, skin:"#d49a6a", hair:"#3f2616", style:"short", pants:"#29366f"}, baseStyle:"short", suitCols:E.SUITS.t_player}; T.det.dead = true; const dd = detP(); if (dd){ dd.dead = true; T.bodies.push({id:dd.id, name:fullT(dd), x:60, y:76, hidden:"grave:60,76", carried:false, diedAt:0, discovered:false, inside:null, killer:"player"}); } T.alias = (info && info.alias) || "Sam Ellis"; }
+  tmapDirty = true;
+  const sp = (info && info.spy) || {short:"Nadia", name:"Nadia Petrova", look:{suit:"o", skin:"#f2d0b8", hair:"#ffcd75", style:"long"}, voice:{base:240,wave:"square",range:3,len:.06,slide:.92,formant:1.1,speed:1.1}};
+  E.SUITS.t_spy = ["#3e4c63","#29366f","#566c86"];
+  T.mode = "slasher"; T.ending = null; T.lock = null; T.wanted = false; T.talkId = null; T.cutscene = null; T.game = null; T.fx = [];
+  T.day += 14; T.t = 22*60 + 40; T.event = {day:T.day, kind:"none", text:""}; T.weather = "clear";
+  T.panic = 0; T.police = null; T.phonesCut = false; T.escaped = []; T.slashKills = 0; T.startAlive = folk.filter(alive).length; T.slashStart = absT();
+  T.det.dead = true;
+  T.spyE = {id:"spy", met:true, name:sp.name, short:sp.short, x:2, y:31, fx:2, fy:31, prog:1, dir:[1,0], walkT:0, path:[], hidden:false, hideKey:null, follow:true, look:Object.assign({}, sp.look, {suit:"t_spy", civ:true, pants:"#1a1c2c"}), voice:sp.voice||{base:200,wave:"square",range:3,len:.06,slide:.95,formant:1,speed:1}, hp:100};
+  const pl = T.player; pl.x = pl.fx = 2; pl.y = pl.fy = 30; pl.prog = 1; pl.dir = [1,0]; pl.carrying = null; pl.fight = null; pl.hp = 100; pl.wearJumpsuit = false;
+  pl.inv = pl.inv.filter(i=>i!=="detective's badge" && i!=="case file");
+  if (!pl.inv.includes("lockpick") && canAddT(pl.inv, "lockpick")) pl.inv.push("lockpick");
+  if (!pl.inv.some(i=>weaponDmg(i))){ if (canAddT(pl.inv, "kitchen knife")) pl.inv.push("kitchen knife"); }
+  T.stats.kills = T.stats.kills || 0; T.slashLog = [];
+  // the town remembers
+  for (const n of folk) if (alive(n)){
+    rememberT(n, "The newcomer left Millbrook without a word two weeks ago. Never paid the last of their rent.");
+    if (Math.random() < .5) rememberT(n, `Read in the Gazette: two people walked out of Cellblock Nine, an inmate called ${sp.name} and a new guard. The State Bureau won't say anything.`);
+  }
+  T.gazette.push({day:T.day, headline:"TWO WALK OUT OF CELLBLOCK NINE", stories:[`An inmate, ${sp.name}, and a newly hired officer are missing from Cellblock Nine. Officials deny reports of a 'foreign connection'.`, "Sheriff urges residents to lock their doors. 'Nothing to worry about,' he adds."], weather:"Cold, clear, a full moon."});
+  closeTWindows(); showTownDom(true);
+  TOWN.active = true; document.body.classList.add("in-town"); document.body.classList.add("slasher");
+  playCutscene("nobodies", () => {
+    lastHourT = hourNow();
+    banner("LEAVE NO EVIDENCE", `${folk.filter(alive).length} people left in Millbrook.`, true, 6);
+    const stillHere = () => TOWN.active && T && T.mode==="slasher" && !T.ending;
+    setTimeout(()=>stillHere() && toast(`${sp.short} is with you. Nobody can see them, ever. Hide them somewhere safe (talk to them).`, "bad", 9), 6500);
+    setTimeout(()=>stillHere() && toast("Sleeping people die quietly. So do people looking the other way. Guns wake the whole street.", "", 9), 16000);
+    setTimeout(()=>stillHere() && toast("If anyone reaches a phone, the state police come. If anyone reaches the road or the train, it's over. Cut the phones at the post office.", "", 10), 26000);
+    renderHotbarT(); slasherMusic(true); saveT();
+  });
+}
+function cleanupSlasherDom(){ document.body.classList.remove("slasher"); slasherMusic(false); }
+
+// ---------- the spy, kept out of sight ----------
+function spyWalkable(x,y){ return walkPlayer(x,y); }
+function updateSpyE(dt){
+  const s = T.spyE; if (!s || s.dead) return;
+  if (s.prog < 1){ s.prog = Math.min(1, s.prog + dt*5); s.walkT += dt*5; return; }
+  if (s.hidden) return;
+  const pl = T.player;
+  if (s.follow){
+    const d = Math.hypot(pl.x-s.x, pl.y-s.y);
+    if (d > 1.5){ if (!s.path.length || performance.now() > (s.repath||0)){ s.repath = performance.now()+500; const p = bfsT(s.x, s.y, pl.x, pl.y, spyWalkable, 4000); s.path = p ? p.slice(0, Math.max(0, p.length-1)) : []; if (!p && d > 12){ s.x = s.fx = pl.x - pl.dir[0]; s.y = s.fy = pl.y - pl.dir[1]; } } }
+    else s.path = [];
+  }
+  if (s.path.length){ const [x,y] = s.path.shift(); if (Math.abs(x-s.x)+Math.abs(y-s.y)===1 && spyWalkable(x,y)) stepT(s, x-s.x, y-s.y); else s.path = []; }
+}
+function spySeenCheck(){
+  const s = T.spyE; if (!s || s.hidden || s.dead) return;
+  for (const n of folk){
+    if (!alive(n) || n.asleep || n.away || n.alarmed==="spy") continue;
+    if (!canSeeT(n, s.x, s.y, 7)) continue;
+    sayT(n, pick([`Who's THAT? …Wait. I've seen that face. In the paper!`, "That's the escaped convict! From the Gazette!", "Oh my God. OH MY GOD."]), 3.5); sfx("scream"); emoteT(n, "!", 3);
+    rememberT(n, `I saw ${s.name}, the escaped inmate from the Gazette, with the newcomer!`);
+    slasherAlarm(n, "spy", `saw ${s.name} with the newcomer`);
+  }
+}
+function spyMenu(){
+  const s = T.spyE, pl = T.player, here = insideOf(pl), spot = hideSpotFacing();
+  closeTWindows();
+  $("trTitle").textContent = `${s.short} · codename BIRCH`; const b = $("trBody"); b.textContent = "";
+  b.append(Object.assign(document.createElement("p"),{textContent: pick([`*barely above a whisper* ${folk.filter(alive).length} left. Then home, Sparrow.`, "*watching the window* They lock their doors now. Good. Locks are only wood.", "Leave nothing. Not a print, not a name.", "*cleaning a blade on their sleeve* Davai. Faster."])}));
+  const row = document.createElement("div"); row.className = "row";
+  const btn = (label, fn) => { const x = Object.assign(document.createElement("button"),{type:"button", className:"pbtn", textContent:label}); x.addEventListener("click", ()=>{ fn(); closeTWindows(); }); row.append(x); };
+  if (s.hidden) btn("Come out, follow me", () => { s.hidden = false; s.hideKey = null; s.follow = true; s.x = s.fx = pl.x - pl.dir[0] || pl.x; s.y = s.fy = pl.y - pl.dir[1]; if (!spyWalkable(s.x, s.y)){ s.x = s.fx = pl.x; s.y = s.fy = pl.y; } toast(`${s.short} slips out after you.`, "", 2.5); });
+  else {
+    btn(s.follow ? "Wait here" : "Follow me", () => { s.follow = !s.follow; s.path = []; toast(s.follow ? `${s.short} follows.` : `${s.short} waits.`, "", 2); });
+    const safe = spot ? spot.name.toLowerCase() : (here==="roomC" || here==="barn" || (here && bById(outerOf(here)) && bById(outerOf(here)).kind==="home" && !residentsOf(outerOf(here)).some(alive))) ? placeLabelAt(pl.x,pl.y) : null;
+    if (safe) btn(`Hide in ${spot ? "the "+safe : "here ("+safe+")"}`, () => { s.hidden = true; s.follow = false; s.hideKey = spot ? spot.key : here; s.x = s.fx = pl.x; s.y = s.fy = pl.y; toast(`${s.short} disappears into ${spot ? "the "+safe : safe}.`, "good", 3); saveT(); });
+  }
+  b.append(row);
+  b.append(Object.assign(document.createElement("p"),{className:"note", textContent:"Safe places: wardrobes, freezers and dumpsters (face one), your room, the barn, or a house whose owners are dead."}));
+  $("tWinRead").hidden = false; sfx("open");
+}
+
+// ---------- panic, phones and running ----------
+const PHONES = [{bid:"post", at:[69,23]}, {bid:"sheriff", at:[59,25]}, {bid:"hotel", at:[80,25]}, {bid:"station", at:[95,24]}, {bid:"diner", at:[9,22]}];
+function slasherAlarm(n, kind, why){
+  if (!alive(n) || n.dead) return;
+  T.panic = clamp((T.panic||0) + (kind==="murder" ? 30 : kind==="spy" ? 20 : kind==="body" ? 25 : 8), 0, 100);
+  if (n.alarmed && n.alarmed!=="shot") return;
+  n.alarmed = kind; n.asleep = false;
+  if (n.sheriff){ n.hunting = true; n.order = null; sayT(n, "That's it. I'm getting the rifle out.", 3); if (!T.phonesCut) n.order = {type:"callhelp", until:absT()+400, run:true, radio:true}; return; }
+  n.fight = null; n.scene && finishSceneT(n.scene);
+  n.order = {type: T.phonesCut ? "escape" : "callhelp", until:absT()+600, run:true, why};
+  if (Math.random() < .5) gossipT(n, `The newcomer is back and something is very wrong.`);
+}
+function slasherHearShot(n, x, y, shooter){
+  if (shooter!==T.player) return;
+  const d = Math.hypot(n.x-x, n.y-y);
+  if (d < 10 && canSeeT(n, Math.round(x), Math.round(y), 10)) slasherAlarm(n, "murder", "saw the newcomer shooting");
+  else { T.panic = clamp((T.panic||0) + 3, 0, 100); if (d < 16 && !n.alarmed && Math.random() < .35) slasherAlarm(n, "shot", "heard gunfire"); }
+}
+function nearestPhone(n){ let best = null, bd = 1e9; for (const p of PHONES){ const d = Math.hypot(p.at[0]-n.x, p.at[1]-n.y); if (d < bd){ bd = d; best = p; } } return best; }
+function runSlasherOrder(n, dt){
+  const o = n.order; if (!o) return false;
+  if (o.type==="callhelp"){
+    if (T.phonesCut && !o.radio){ n.order = {type:"escape", until:absT()+600, run:true}; sayT(n, "The phone's dead! THE PHONE'S DEAD!", 3); return true; }
+    const ph = o.radio ? PHONES[1] : (o.ph || (o.ph = nearestPhone(n)));
+    if (Math.hypot(ph.at[0]-n.x, ph.at[1]-n.y) <= 1.5){ callPolice(n); n.order = {type:"hide", until:absT()+900}; return true; }
+    if (!goToT(n, ph.at[0], ph.at[1], true)){ const alt = PHONES.find(p=>p!==ph && bfsT(n.x,n.y,p.at[0],p.at[1],(a,b)=>npcWalkT(a,b,n),3000)); if (alt) o.ph = alt; else n.order = {type:"escape", until:absT()+600, run:true}; }
+    return true;
+  }
+  if (o.type==="escape"){
+    const train = TRAINS.find(dp => T.t >= dp-40 && T.t <= dp+3);
+    const tgt = train !== undefined ? (o.plat || (o.plat = randomSpot("platform"))) : [1, 30];
+    if (Math.abs(n.x-tgt[0]) + Math.abs(n.y-tgt[1]) <= 1){
+      if (train !== undefined && T.t < train-12){ n.path = []; return true; }
+      escapedTown(n, train !== undefined ? "the train" : "the road west"); return true;
+    }
+    goToT(n, tgt[0], tgt[1]); return true;
+  }
+  if (o.type==="hide"){ if (buildingAt(n.x,n.y)!==n.home){ const s = randomSpot(n.home); if (s) goToT(n, s[0], s[1]); } else n.path = []; return true; }
+  return false;
+}
+function callPolice(n){
+  if (T.police) return;
+  T.police = {arrive: absT() + 420, caller:n.id};
+  sayT(n, "Hello? State police? Millbrook. Please hurry!", 4);
+  banner("SOMEONE GOT TO A PHONE", `${n.first} called the state police. Sirens by ${fmtT(T.police.arrive)}.`, true, 6);
+  sfx("stinger");
+  for (const o of folk) if (alive(o)) rememberT(o, `${n.first} called the state police.`);
+}
+function escapedTown(n, how){
+  if (T.ending) return;
+  T.escaped.push(n.id); n.away = true; n.order = null;
+  banner("ONE GOT AWAY", `${n.first} made it out by ${how}.`, true, 4);
+  setTimeout(()=>ending("slasher_escaped", {who:n.first, how}), 2600);
+}
+function cutPhones(){
+  T.phonesCut = true; sfx("snap"); T.shake = .2;
+  banner("THE LINES ARE DEAD", "Every phone in Millbrook just went quiet.", true, 4);
+  for (const n of folk) if (alive(n) && n.order && n.order.type==="callhelp" && !n.order.radio){ n.order = {type:"escape", until:absT()+600, run:true}; }
+}
+
+// ---------- killing quietly ----------
+function stealthKillT(){
+  const pl = T.player, [fx,fy] = facingT();
+  const t = folk.find(n=>alive(n) && !n.away && !n.hidden && Math.round(rposT(n)[0])===fx && Math.round(rposT(n)[1])===fy) || nearestFolk(1.2);
+  if (!t) return false;
+  const w = selectedWeapon() || (pl.inv.includes("rope") ? "rope" : null);
+  if (!w) return false;
+  const behind = t.dir && (Math.sign(pl.x - t.x)===-t.dir[0] && t.dir[0]!==0 || Math.sign(pl.y - t.y)===-t.dir[1] && t.dir[1]!==0);
+  const unaware = t.asleep || (!t.fight && !t.alarmed && (behind || t.scene || t.talkingToPlayer));
+  if (!unaware) return false;
+  faceToT(pl, t);
+  T.fx.push({kind:"sparks", x:t.x*TS+8, y:t.y*TS+4, life:.4});
+  sfx("cut"); setTimeout(()=>sfx("snap"), 120);
+  closeTalkT();
+  killPerson(t, pl, {silent:true});
+  toast(pick([`${t.first} never saw you.`, `${t.first} doesn't make a sound.`, `Quiet. Like you were taught.`]), "bad", 3);
+  return true;
+}
+function slasherWitness(o, n, by){
+  if (by!==T.player) return;
+  rememberT(o, `I SAW THE NEWCOMER KILL ${n.first.toUpperCase()}.`);
+  sayT(o, pick(["AAAAH!","MURDERER!","No no no no no","RUN!"]), 3); sfx("scream");
+  slasherAlarm(o, "murder", `saw the newcomer kill ${n.first}`);
+}
+
+// ---------- each second ----------
+function slasherSecond(){
+  if (!T || T.mode!=="slasher" || T.ending) return;
+  spySeenCheck();
+  const left = folk.filter(alive);
+  if (!left.length){ winSlasher(); return; }
+  if (T.police && absT() >= T.police.arrive){ ending("slasher_police"); return; }
+  // panic changes how the town behaves
+  if (T.panic > 0) T.panic = Math.max(0, T.panic - .015);
+  for (const n of left){
+    if (n.alarmed==="shot" && !n.order && Math.random() < .02) n.alarmed = null;
+    if (T.panic >= 40 && !n.order && !n.fight && !n.sheriff && Math.random() < .05) n.order = {type:"hide", until:absT()+240};
+    if (n.hunting && !n.fight && canSeeT(n, T.player.x, T.player.y, 10)){ sayT(n, "FREEZE!", 2); startFightT(n, T.player); }
+  }
+  if (T.spyE && T.spyE.dead && !T.ending) ending("slasher_spy");
+}
+function winSlasher(){
+  if (T.ending) return;
+  T.ending = "russia_pending";
+  slasherMusic(false);
+  setTimeout(() => { T.ending = null; playCutscene("russia", () => ending("russia")); }, 2500);
+  banner("MILLBROOK IS QUIET", "Nobody left to tell.", true, 3);
+}
+
+// ---------- music: an original, slasher-style 5/4 ostinato ----------
+function slasherMusic(on){
+  if (SLASH && SLASH.timer){ clearInterval(SLASH.timer); SLASH = null; }
+  if (!on) return;
+  Snd.track(null);
+  const ac = Snd.ac; if (!ac) return;
+  const dest = Snd.nodes.mus, step = 60/178;
+  const motif = [69,64,64,69,64, 70,64,64,70,64, 69,64,64,69,64, 67,63,63,67,63];
+  let n = 0, next = Snd.now() + .1;
+  SLASH = {timer: setInterval(() => {
+    if (!Snd.musicOn) return;
+    while (next < Snd.now() + .25){
+      const at = next - Snd.now(), m = motif[n % motif.length], bar = Math.floor(n/5);
+      Snd.tone({f:Snd.mf(m+12), type:"triangle", dur:step*.9, vol:.05, at, dest});
+      Snd.tone({f:Snd.mf(m), type:"square", dur:step*.5, vol:.018, at, dest, filter:{f:1400}});
+      if (n % 5 === 0){ Snd.tone({f:Snd.mf(bar%4===3 ? 43 : 45), type:"sawtooth", dur:step*5, vol:.05, at, dest, filter:{f:300}}); Snd.kick(next, .25); }
+      if (n % 40 === 30) Snd.tone({f:Snd.mf(81), f2:Snd.mf(80), type:"sine", dur:step*8, vol:.03, at, dest});
+      next += step; n++;
+    }
+  }, 40)};
+}
+function evilLaugh(){
+  const v = {base:95, wave:"sawtooth", range:1, len:.13, slide:.8, formant:.78, speed:.7, vib:true};
+  for (let i=0;i<7;i++){ const t = i*.2 + (i>3 ? .15 : 0); Snd.voice(v, "h", {at:t, vol:.9, contour:1.25 - i*.06}); Snd.voice(v, "a", {at:t+.05, vol:1, contour:1.25 - i*.06}); }
+  for (let i=0;i<4;i++) Snd.voice(Object.assign({}, v, {base:70}), "a", {at:1.7 + i*.24, vol:.5, contour:1 - i*.05});
+}
+
+// ---------- cutscenes for part three and four ----------
+Object.assign(CUTS, {
+  spyreveal(){
+    const D = T.det, badge = D.realName;
+    return [
+      {dur:4, sfx:"creak", cap:`Room C, 2 a.m. The badge lies on the bed. ${badge}, State Bureau of Investigation. The photo could be you, if the light is bad.`, draw(g,t){
+        sky(g,"#140c18","#1f1424"); R_(g,0,110,CW,70,"#5e2a3c"); for (let x=0;x<CW;x+=24) R_(g,x,110,1,70,"#4a2030");
+        R_(g,60,96,120,40,"#f4f4f4"); R_(g,60,108,120,28,"#b13e53"); R_(g,64,92,40,12,"#ffffff");
+        const gl = (Math.sin(t*3)+1)/2; R_(g,128,100,22,26,"#3e2a1c"); R_(g,134,104,12,14,"#ffcd75"); g.fillStyle = `rgba(255,240,180,${.3*gl})`; g.beginPath(); g.arc(140,111,16,0,7); g.fill();
+        R_(g,250,30,40,50,"#29366f"); R_(g,252,32,36,46,"#0d0e18"); g.fillStyle = "#f4ecd8"; g.beginPath(); g.arc(270,50,7,0,7); g.fill();
+      }},
+      {dur:3.5, sfx:"bell", cap:"The phone in the hall rings. Nobody has ever called Room C.", enter(){ let i=0; const r = setInterval(()=>{ Snd.tone({f:880,dur:.12,vol:.06}); Snd.tone({f:1100,dur:.12,vol:.05,at:.13}); if (++i>4) clearInterval(r); }, 600); }, draw(g,t){
+        sky(g,"#1a1c2c","#2a1c2c"); R_(g,0,120,CW,60,"#7a3045"); R_(g,140,60,40,60,"#3e2a1c"); R_(g,146,66,28,22,"#1a1c2c");
+        const sh = Math.floor(t*14)%2 ? 1 : -1; R_(g,150+sh,70,20,8,"#b13e53"); R_(g,152+sh,92,16,16,"#b13e53");
+      }},
+      {dur:5, cap:"A man's voice, through static. *“Vorobey. Sparrow. It is time.”*", enter(){ setTimeout(()=>evilVoice("vorobey sparrow it is time"), 300); }, draw(g,t){
+        sky(g,"#0d0e18","#2a0a10"); g.fillStyle = "#b13e53"; for (let x=0;x<CW;x+=2){ const h = Math.sin(x*.15+t*20)*Math.sin(t*3+x*.02)*24*(Math.sin(t*1.7)+1.2); g.fillRect(x, 90-h/2, 1, Math.abs(h)+1); }
+        R_(g,0,0,CW,CH,`rgba(0,0,0,${.15+.1*Math.sin(t*30)})`);
+      }},
+      {dur:5.5, sfx:"stinger", cap:`You were never just ${PNUMT}. Moscow put you inside Cellblock Nine on purpose. The escape was the plan. Millbrook was the wait.`, draw(g,t){
+        sky(g,"#2a0a10","#5a1018"); for (let i=0;i<60;i++){ R_(g,(i*53+t*20)%CW,(i*37+t*30)%CH,1,1,"#f4f4f4"); }
+        g.fillStyle = "#1a0a0e"; g.beginPath(); g.moveTo(40,150); for (const [x,y] of [[60,150],[60,110],[70,100],[80,110],[80,150],[110,150],[110,90],[118,70],[126,90],[126,150],[160,150],[160,120],[175,95],[190,120],[190,150],[230,150],[230,100],[245,80],[260,100],[260,150],[290,150]]) g.lineTo(x,y); g.lineTo(290,CH); g.lineTo(40,CH); g.fill();
+        g.fillStyle = "#e0303a"; const sx = 175, sy = 60, r = 14 + Math.sin(t*2); g.beginPath(); for (let i=0;i<10;i++){ const a = -Math.PI/2 + i*Math.PI/5, rr = i%2 ? r*.42 : r; g.lineTo(sx+Math.cos(a)*rr, sy+Math.sin(a)*rr); } g.fill();
+      }},
+      {dur:5.5, cap:"Operation BIRCH: one of ours is held in Cellblock Nine under a false name. They don't know your face. They know one sentence.", draw(g,t){
+        sky(g,"#2a1c14","#1a120c"); R_(g,50,20,220,140,"#c8a374"); R_(g,54,24,212,132,"#e8d4a8"); gText(g,"СОВЕРШЕННО СЕКРЕТНО",160,30,"#b13e53",7,"center");
+        for (let i=0;i<12;i++){ const x = 66+(i%6)*32, y = 48+Math.floor(i/6)*50; R_(g,x,y,26,32,"#94b0c2"); R_(g,x+8,y+6,10,10,"#566c86"); R_(g,x+5,y+18,16,12,"#566c86"); R_(g,x,y+34,26,3,"#1a1c2c"); }
+        if (t > 2){ gText(g,"?",160,150,"#b13e53",14,"center"); }
+      }},
+      {dur:5.5, cap:`*“${CODE_PHRASE_T}”* They will answer: *“${COUNTER_T}”*`, draw(g,t){
+        sky(g,"#94b0c2","#e8f0f4"); R_(g,0,140,CW,40,"#f4f4f4");
+        for (let i=0;i<9;i++){ const x = 20+i*34+(i%2)*6, h = 90+(i*13)%30; R_(g,x,140-h,5,h,"#f4f4f4"); for (let k=0;k<h;k+=9) R_(g,x+(k%2),140-h+k,3,2,"#1a1c2c"); g.fillStyle = "rgba(167,240,112,.6)"; g.beginPath(); g.arc(x+2,140-h,12,0,7); g.fill(); }
+        for (let i=0;i<40;i++) R_(g,(i*41+t*15)%CW,(i*29+t*25)%CH,1,1,"#ffffff");
+      }},
+      {dur:5, cap:`Find Birch. Make contact. Get them out. You'll walk in as Officer ${badge}, and you will not get caught.`, draw(g,t){
+        sky(g,"#ef7d57","#29366f"); R_(g,0,120,CW,60,"#4a4e5c"); R_(g,0,60,CW,60,"#333c57"); for (let x=0;x<CW;x+=12) R_(g,x,56,8,6,"#333c57");
+        const bx = Math.min(130, -80 + t*70); R_(g,bx,100,80,26,"#ffcd75"); for (let w=0;w<5;w++) R_(g,bx+6+w*14,104,10,8,"#73eff7"); R_(g,bx+8,124,10,8,"#1a1c2c"); R_(g,bx+58,124,10,8,"#1a1c2c");
+        gText(g,"OPERATION BIRCH",160,20,"#ffffff",11,"center");
+      }}
+    ];
+  },
+  nobodies(){
+    const sp = T.spyE;
+    return [
+      {dur:3, cap:"TWO WEEKS LATER", enter(){ Snd.noise({dur:2.5,vol:.05,type:"highpass",f:3000}); }, draw(g,t){ R_(g,0,0,CW,CH,"#000"); for (let y=0;y<CH;y+=3) R_(g,0,y,CW,1,`rgba(255,255,255,${.03+.03*Math.random()})`); R_(g,0,(t*90)%CH,CW,6,"rgba(255,255,255,.08)"); gText(g,"▶ PLAY",20,14,"#f4f4f4",7); }},
+      {dur:5, cap:`A stolen car, lights off on the county road. ${sp.short} in the passenger seat, not speaking.`, enter(){ slasherMusic(true); }, draw(g,t){
+        sky(g,"#05050a","#140810"); g.fillStyle = "#f4ecd8"; g.beginPath(); g.arc(250,40,16,0,7); g.fill(); g.fillStyle = "#05050a"; g.beginPath(); g.arc(258,36,14,0,7); g.fill();
+        R_(g,0,120,CW,60,"#0a0a10"); for (let i=0;i<8;i++){ const x = ((i*70 - t*140) % (CW+70) + CW+70) % (CW+70) - 30; treeC(g, x, 118, 2.2, "#06100a"); }
+        R_(g,110,112,70,16,"#1a1c2c"); R_(g,124,104,40,10,"#1a1c2c"); R_(g,128,106,12,6,"#333c57"); R_(g,146,106,12,6,"#333c57"); R_(g,178,116,4,3,"#b13e53");
+      }},
+      {dur:5.5, cap:"WELCOME TO MILLBROOK", draw(g,t){
+        sky(g,"#05050a","#1a0810"); R_(g,0,130,CW,50,"#0a0a10");
+        R_(g,120,90,4,50,"#3e2a1c"); R_(g,80,70,90,34,"#0a0a10"); R_(g,82,72,86,30,"#1f3a24"); gVT(g,"WELCOME TO",90,72,"#94b0c2",12); gVT(g,"MILLBROOK",90,82,"#c8a374",14);
+        const pop = Math.max(T.startAlive||20, 1) - Math.floor(Math.max(0, t-1.5)*3); gVT(g,`POP. ${t < 1.5 ? 212 : pop}`,124,92,t < 1.5 ? "#94b0c2" : "#ff3040",12);
+        if (Math.random()<.08) R_(g,0,0,CW,CH,"rgba(255,0,0,.12)");
+      }},
+      {dur:4, enter(){ evilLaugh(); }, cap:"", draw(g,t){
+        R_(g,0,0,CW,CH,"#000"); g.save(); g.translate(160,90); g.rotate(-.6); R_(g,-70,-6,120,12,"#c2d3dc"); R_(g,-70,-6,120,3,"#ffffff"); R_(g,50,-8,40,16,"#3e2a1c"); g.restore();
+        const gl = (Math.sin(t*6)+1)/2; g.fillStyle = `rgba(255,255,255,${gl*.5})`; g.beginPath(); g.arc(120,70,3+gl*3,0,7); g.fill();
+      }},
+      {dur:5, hold:false, enter(){ setTimeout(evilLaugh, 400); sfx("stinger"); }, cap:"", draw(g,t){
+        R_(g,0,0,CW,CH,"#000");
+        const txt = ["LEAVE", "NO", "EVIDENCE"];
+        txt.forEach((w,i)=>{ gText(g, w, 160, 40+i*36, "#c0141e", 20, "center"); for (let k=0;k<w.length;k++){ const x = 160 - w.length*10 + k*20 + 6, len = Math.min(26, Math.max(0, (t - .3*i)*12 + (k*7)%9)); R_(g, x, 40+i*36+20, 2, len, "#8a0a12"); } });
+        if (Math.random()<.1) R_(g,0,0,CW,CH,"rgba(255,0,0,.08)");
+      }}
+    ];
+  },
+  russia(){
+    const sp = T.spyE;
+    return [
+      {dur:5, enter(){ slasherMusic(false); Snd.track("soviet"); }, cap:"A private plane out of a county airstrip at dawn. Below, the Atlantic. Behind you, a town with no one left to tell it.", draw(g,t){
+        sky(g,"#ffcd75","#73b8f7"); R_(g,0,130,CW,50,"#3b5dc9"); for (let i=0;i<20;i++) R_(g,(i*37 - t*30 + 400)%CW, 140+(i*11)%36, 10, 1, "#41a6f6");
+        for (let i=0;i<4;i++){ const x = (i*90 - t*20 + 400)%400 - 40; R_(g,x,40+i*14,40,8,"#ffffff"); R_(g,x+8,34+i*14,22,6,"#ffffff"); }
+        const px = 120 + Math.sin(t)*6, py = 80 + Math.sin(t*1.3)*4; R_(g,px,py,60,10,"#f4f4f4"); R_(g,px+50,py-4,14,6,"#f4f4f4"); R_(g,px+16,py-12,8,34,"#d8d6cf"); R_(g,px+4,py+2,46,3,"#b13e53"); for (let w=0;w<5;w++) R_(g,px+12+w*7,py+3,3,3,"#29366f");
+      }},
+      {dur:5.5, cap:"Moscow. The snow is early this year.", draw(g,t){
+        sky(g,"#566c86","#c2d3dc"); R_(g,0,140,CW,40,"#f4f4f4");
+        const dome = (x,y,r,c) => { g.fillStyle = c; g.beginPath(); g.arc(x,y,r,Math.PI,0); g.lineTo(x,y-r*1.9); g.fill(); R_(g,x-r,y,r*2,40,"#b13e53"); R_(g,x-1,y-r*2.4,2,6,"#ffcd75"); };
+        dome(70,110,14,"#38b764"); dome(110,100,18,"#ffcd75"); dome(150,110,14,"#3b5dc9"); dome(190,95,20,"#b13e53"); dome(230,110,14,"#38b764");
+        R_(g,40,140,240,4,"#b13e53"); for (let i=0;i<80;i++) R_(g,(i*41+t*10)%CW,(i*29+t*40)%CH,1,1,"#ffffff");
+      }},
+      {dur:6, cap:`A room without windows. Two medals, two glasses of something clear. ${sp ? sp.short : "Birch"} raises a glass to you. *“Za nas. To us, Sparrow. And to Millbrook.”*`, draw(g,t){
+        sky(g,"#2a1c14","#140c0a"); R_(g,0,120,CW,60,"#3e2a1c"); R_(g,60,100,200,10,"#5e3a24");
+        drawPerson(g, 120, 82, T.player.look, [1,0], 0, {}); if (sp) drawPerson(g, 180, 82, sp.look, [-1,0], 0, {});
+        R_(g,138,90,3,6,"#c2f0ff"); R_(g,176,90,3,6,"#c2f0ff"); R_(g,124,86,4,4,"#ffcd75"); R_(g,184,86,4,4,"#ffcd75");
+        g.fillStyle = "#e0303a"; const sx = 160, sy = 40; g.beginPath(); for (let i=0;i<10;i++){ const a = -Math.PI/2 + i*Math.PI/5, rr = i%2 ? 5 : 12; g.lineTo(sx+Math.cos(a)*rr, sy+Math.sin(a)*rr); } g.fill();
+      }},
+      {dur:4, cap:"MISSION COMPLETE", enter(){ sfx("fanfare"); }, draw(g,t){ R_(g,0,0,CW,CH,"#5a1018"); gText(g,"MISSION COMPLETE",160,70,"#ffcd75",14,"center"); gVT(g,`${T.slashKills||0} in Millbrook · ${T.stats.kills||0} in all`,160,100,"#f4ecd8",16,"center"); }}
+    ];
+  }
+});
+const CODE_PHRASE_T = "The birch trees are early this year.", COUNTER_T = "Only in Leningrad.";
+function evilVoice(text){ const v = {base:88, wave:"sawtooth", range:3, len:.08, slide:.9, formant:.8, speed:.8}; let t = 0; for (let i=0;i<text.length;i++){ const ch = text[i]; if (/[a-z]/.test(ch)) Snd.voice(v, ch, {at:t, vol:.8, contour:contourAt(text, i)}); t += ch===" " ? .06 : .07; } }
+Object.assign(Snd.TRACKS, {
+  soviet:{bpm:96, prog:[[57,60,64],[52,55,59],[53,57,60],[52,56,59]], lead:"square", bass:"triangle", drums:"soft", rest:.3, seed:917, oct:12, arp:true, vol:.9}
+});
+
+// ---------- how part four ends ----------
+function slasherEnding(kind, opt={}){
+  T.ending = kind; closeTalkT(); closeTWindows(); if (GAME) closeGame(); slasherMusic(false); Snd.track(null);
+  const won = kind==="russia";
+  sfx(won ? "fanfare" : "sad");
+  const sp = T.spyE ? T.spyE.short : "Birch";
+  const txt = {
+    russia:["HERO OF NOTHING", `Millbrook is empty. No witnesses, no phone calls, no one to say a newcomer ever came back. In Moscow, two people who never existed are given medals in a room with no windows. ${sp} keeps theirs in a drawer. You wear yours.`],
+    slasher_escaped:["ONE GOT AWAY", `${opt.who || "Someone"} made it out by ${opt.how || "the road"}. By dawn the state police are at the town line, and by noon your face is on every television in the country. ${sp} is taken at a roadblock. You are taken at the pond, still holding the knife.`],
+    slasher_police:["SIRENS", `The state police roll into Millbrook just before dawn. They find the bodies before they find you, but not by much. ${sp} is pulled out of a hiding place without a fight.`],
+    slasher_spy:["BIRCH IS DEAD", "They found the one person you were supposed to keep safe. Moscow will not ask what happened. Moscow already knows."],
+    slasher_caught:["CUFFED IN THE DIRT", `The sheriff's knee is in your back and his revolver is in your ear. The last thing you hear before the car door slams is ${sp}, somewhere behind you, saying your real name.`]
+  }[kind] || ["IT'S OVER", ""];
+  const sc = $("tScreen"); sc.textContent = ""; sc.hidden = false;
+  const box = document.createElement("div"); box.className = "ending";
+  box.append(Object.assign(document.createElement("div"),{className:"eyebrow", textContent:`${won ? "MISSION COMPLETE" : "MISSION FAILED"} · LEAVE NO EVIDENCE`}), Object.assign(document.createElement("h1"),{className:"title", textContent:txt[0]}), Object.assign(document.createElement("p"),{textContent:txt[1]}));
+  const note = document.createElement("div"); note.className = "note2";
+  note.append(Object.assign(document.createElement("b"),{textContent:"MILLBROOK"}));
+  const left = folk.filter(alive);
+  note.append(Object.assign(document.createElement("span"),{textContent:`${T.slashKills||0} on this visit. ${T.stats.kills||0} in all. ${left.length} left alive${left.length ? ": "+left.map(n=>n.first).join(", ") : ""}.`}));
+  for (const k of (T.slashLog||[]).slice(-14)) note.append(Object.assign(document.createElement("span"),{textContent:`${k.name}, the ${k.job} · ${k.where}`}));
+  box.append(note);
+  const row = document.createElement("div"); row.className = "row";
+  if (!won){ const again = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn", textContent:"Try again"}); again.addEventListener("click", ()=>{ let info = {}; try { info = JSON.parse(localStorage.getItem(SLASH_INFO)||"{}"); } catch {} sc.hidden = true; T.ending = null; beginSlasher(info); }); row.append(again); }
+  const title = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:"Title screen"}); title.addEventListener("click", ()=>{ if (won){ try { localStorage.removeItem(SNAP_KEY); localStorage.removeItem(SLASH_INFO); } catch {} } clearSaveT(); location.reload(); });
+  row.append(title); box.append(row); sc.append(box);
+  if (won){ try { localStorage.removeItem(SNAP_KEY); } catch {} }
+  clearSaveT();
+  document.body.classList.remove("slasher");
+}
 
 })();

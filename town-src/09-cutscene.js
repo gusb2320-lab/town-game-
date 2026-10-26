@@ -183,7 +183,8 @@ function placeHunters(){
 
 // ---------- endings ----------
 function ending(kind, opt={}){
-  if (T.ending) return;
+  if (T.ending && T.ending!=="russia_pending") return;
+  if (kind.startsWith("slasher") || kind==="russia"){ slasherEnding(kind, opt); return; }
   T.ending = kind; closeTalkT(); closeTWindows(); if (GAME) closeGame();
   Snd.track(null); sfx(["caught","dark"].includes(kind) ? "sad" : "fanfare");
   const d = detP(), D = T.det, pl = T.player;

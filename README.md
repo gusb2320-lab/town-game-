@@ -2,7 +2,9 @@
 
 An 8-bit prison-escape game in the style of The Escapists. All 17 inmates and guards are voiced by Claude. They remember everything you say, keep relationships with each other, trade, gossip, fight, and act on what you ask them to do.
 
-Escape, and the game goes on: a cutscene carries you to **Millbrook**, a small town where you have to live as someone new while an undercover detective tries to prove you're the escaped convict.
+Escape, and the game goes on: a cutscene carries you to **Millbrook**, a small town where you have to live as someone new while an undercover detective tries to prove you're the escaped convict. Kill that detective and take their badge, and you find out who you really are: part three sends you back into Cellblock Nine in a guard's uniform, and part four brings you back to Millbrook for something much worse.
+
+The title screen has a **Chapter select**, so any part can be started on its own.
 
 This repo runs the game on your own computer. A small Node server serves the game and forwards its requests to the Claude API, so your API key stays on your machine and never reaches the browser.
 
@@ -31,7 +33,25 @@ After you break out (or with **Skip to Millbrook** on the title screen), a truck
 - **Finding them.** The detective has two habits (peppermints, a cherry pipe, green ink, a limp…) and leaves traces of them behind. A few innocent people share one habit each. Watch people, ask around, mark suspects in the journal, and accuse someone to their face if you're sure. Being wrong makes you look paranoid, and being right makes you look guilty.
 - **Life in town.** Houses you can enter (knock, get invited in, or pick the lock), shops, odd jobs, fishing, darts, blackjack, an arcade game with a high-score table, the Saturday barn dance, a daily Gazette, dates, sweethearts, loans, rent, and a WANTED poster with your face on it from day two.
 - **Fights are permanent here.** Anyone you beat doesn't get up. You have to deal with the body: carry it, hide it in a wardrobe, freezer or dumpster, sink it in the pond or bury it, and scrub up the blood. Bodies get found by smell, by the garbage truck on Thursdays, or by someone fishing. People notice who's missing.
+- **Guns.** Hartley's sells a hunting rifle and bullets, the sheriff and the detective carry revolvers, and there's a shotgun in the back room of the Rusty Nail. Shots are loud: everyone within earshot remembers.
 - **Endings.** Survive to day 12 with the detective unconvinced, talk them into closing the case, catch a train (a fake ID helps), walk out of town, deal with the detective permanently, or get taken back to Cellblock Nine.
+
+## Part three: Operation Birch
+
+Kill the detective and search the body for their badge, then use it from your pockets. A phone rings in Room C, and the truth comes out: you were a Russian intelligence officer (codename SPARROW) all along, and the escape was the plan. You go back into Cellblock Nine as a new guard on probation, wearing the dead agent's name.
+
+- **Find Birch.** One random inmate is a fellow agent held under a false name. They don't know who you are. Watch for habits (tea from a glass, humming "Kalinka", counting in Russian, Orthodox crosses, Morse on the pipes at night), read the inmate files in the warden's office and censor the mail in the guard room. A few innocent inmates share one habit each.
+- **Make contact.** Say "The birch trees are early this year." Birch answers "Only in Leningrad." Say it to the wrong person and they'll talk.
+- **Get them out without getting caught.** Your suspicion meter rises when you skip your post, hang around one inmate too much, open cells at night, read files with the warden watching, or get seen passing contraband. Inmates who knew #4471 might recognize you. Two routes: walk Birch out at night in a stolen uniform with a gate key (take the night shift so Kessler goes home, and wait for Dunn's 3 a.m. nap), or forge a transfer order (the warden's stamp, or Ike's steady hand), file it with Dunn and escort Birch to the morning van.
+- **The Ask tab** works here too, and fellow guards will take orders from you.
+
+## Part four: Leave No Evidence
+
+Two weeks later you drive back into Millbrook at night with Birch in the passenger seat. Everyone you killed before is still dead, and everyone else remembers you. Kill every last person in town without getting caught, and keep Birch hidden: anyone who sees them panics.
+
+- People who see a killing, a body or Birch run for a phone. If one gets through, the state police are a few hours out. Cut the phone exchange in the post office and smash the sheriff's radio, and they'll try to run for the road or the train instead. If anyone gets out, it's over.
+- Sleeping people, and people looking the other way, die without a sound. Guns wake the street. Panic sends everyone home behind locked doors, so you'll need your lockpick.
+- When Millbrook is empty, a plane takes you both home to Moscow.
 
 ## Settings
 
@@ -76,4 +96,6 @@ Saves live in your browser's local storage.
 | N · M | Music · All sound |
 | Esc | Menu, or leave a conversation |
 
-In Millbrook, Tab opens the town map, Q puts down a body you're carrying, and the talk box adds Pay, Favor and Accuse buttons.
+The talk box has an **Ask…** tab for direct requests: take something to someone, bring you an item, start a fight, watch your back, distract a guard, raid a cell, or go wait somewhere. People say yes or no based on how much they trust you.
+
+In Millbrook, Tab opens the town map, F fires a selected gun, Q puts down a body you're carrying, and the talk box adds Pay, Favor and Accuse buttons.

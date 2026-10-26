@@ -1,5 +1,5 @@
 // Main: starting a new life, the clock, the player, interactions, events, rendering, input.
-const MIN_PER_SEC = 1.5;   // a Millbrook day lasts about 16 real minutes
+const MIN_PER_SEC = 2.2;   // a Millbrook day lasts about 11 real minutes
 const TRAINS = [8*60, 14*60, 19*60];
 
 // ---------- extra sounds and music for town ----------
@@ -10,6 +10,7 @@ Object.assign(Snd.fx, {
   splash(){ Snd.noise({dur:.5,vol:.18,type:"lowpass",f:1600,f2:300}); Snd.tone({f:300,f2:90,dur:.3,vol:.06,type:"sine"}); },
   stinger(){ Snd.tone({f:Snd.mf(70),dur:1.2,vol:.1,type:"sawtooth",filter:{f:1800}}); Snd.tone({f:Snd.mf(71),dur:1.2,vol:.08,type:"sawtooth",filter:{f:1800}}); Snd.tone({f:Snd.mf(46),dur:1.4,vol:.14,type:"square",filter:{f:400}}); Snd.noise({dur:.6,vol:.1,type:"highpass",f:3000}); },
   train(){ Snd.tone({f:Snd.mf(69),dur:.9,vol:.06,type:"square",filter:{f:1200}}); Snd.tone({f:Snd.mf(73),dur:.9,vol:.05,type:"square",filter:{f:1200}}); Snd.tone({f:Snd.mf(76),dur:.9,vol:.04,type:"square",filter:{f:1200}}); },
+  gunshot(){ Snd.noise({dur:.35,vol:.4,type:"lowpass",f:2400,f2:200}); Snd.noise({dur:.06,vol:.35,type:"highpass",f:1500}); Snd.tone({f:90,f2:40,dur:.3,vol:.2,type:"sine"}); Snd.noise({dur:1.2,vol:.05,type:"bandpass",f:500,at:.15}); },
   knock(){ for (let i=0;i<3;i++) Snd.noise({dur:.05,vol:.16,f:600,at:i*.16}); },
   church(){ for (let i=0;i<3;i++){ Snd.tone({f:392,dur:2,vol:.08,type:"sine",at:i*1.2}); Snd.tone({f:392*2.76,dur:.8,vol:.02,type:"sine",at:i*1.2}); } }
 });
@@ -22,7 +23,7 @@ Object.assign(Snd.TRACKS, {
 });
 
 // ---------- starting out ----------
-const TOWN = window.TOWN = {active:false, begin, cont, frame};
+const TOWN = window.TOWN = {active:false, begin, cont, frame, beginSlasher};
 function freshState(){
   return {v:1, day:1, t:7*60+30, alias:"Sam Ellis", money:40, rel:{}, folk:[], det:null, containers:{}, news:[], tasks:[], appts:[], debts:[], secrets:[], warnings:[], clues:[], suspects:{}, seenHabits:{}, gazette:[], mail:[], letters:[], highscores:{}, workDone:{},
     stains:[], bodies:[], graves:[], missing:[], litter:[], unlocked:{}, fx:[], acts:{}, notoriety:0, drunk:0, weather:"clear", event:null, rentPaid:3, lock:null, wanted:false, ending:null,
@@ -39,6 +40,7 @@ function begin(){
   // the traveling salesman can get you papers, for a price
   const sales = folk.find(n=>n.job.includes("salesman")); if (sales) sales.inv.push("fake ID");
   const junk = Object.keys(T.containers).filter(k=>T.containers[k].name==="Junk pile"); if (junk.length) T.containers[pick(junk)].items.push("lockpick");
+  const back = Object.keys(T.containers).find(k=>T.containers[k].bid==="barback" && T.containers[k].name==="Wardrobe"); if (back) T.containers[back].items.push("shotgun","bullets","bullets","bullets");
   for (const n of folk) n.suitCols = E.SUITS["t_"+n.id];
   // you: a borrowed shirt off a clothesline, and the jumpsuit stuffed in a bag
   E.SUITS.t_player = ["#7a6a5a","#5a4a3a","#9a8a7a"];
@@ -54,8 +56,9 @@ function begin(){
   playCutscene("intro", () => {
     if (T.usedRealName) toast("The hotel keeper writes your real name in the ledger in neat capitals.", "bad", 6);
     banner("MILLBROOK", `${dayName()} morning. Population 212. Plus you.`, false, 5);
-    setTimeout(()=>toast("Talk to anyone (E). Make friends, take odd jobs, play games. Someone in town is not who they say they are.", "", 9), 5200);
-    setTimeout(()=>toast("Get rid of that jumpsuit. Watch for habits. Keep your story straight.", "", 7), 15000);
+    const tip = (txt, ms, secs) => setTimeout(()=>{ if (TOWN.active && T && !T.mode && !T.ending) toast(txt, "", secs); }, ms);
+    tip("Talk to anyone (E). Make friends, take odd jobs, play games. Someone in town is not who they say they are.", 5200, 9);
+    tip("Get rid of that jumpsuit. Watch for habits. Keep your story straight.", 15000, 7);
     const hk = folk.find(n=>n.job==="hotel keeper"); if (hk){ hk.x = hk.fx = 82; hk.y = hk.fy = 26; hk.order = {type:"approach", reason:"Welcome the new guest of Room C to the Millbrook Arms. Their first two nights are paid; rent is $15 a night after that, at the front desk. Ask their name for the ledger.", until:absT()+40}; }
     lastHourT = hourNow(); saveT(); renderHotbarT();
   });
@@ -71,6 +74,7 @@ function cont(){
   showTownDom(true);
   TOWN.active = true; document.body.classList.add("in-town");
   lastHourT = hourNow();
+  if (T.mode==="slasher"){ document.body.classList.add("slasher"); slasherMusic(true); banner("LEAVE NO EVIDENCE", `${folk.filter(alive).length} left.`, true, 3); renderHotbarT(); return true; }
   banner(dayName().toUpperCase(), `Day ${T.day} in Millbrook`, false, 3);
   if (T.lock && T.lock.kind==="arrest") setTimeout(()=>showArrestChoice(), 600);
   renderHotbarT();
@@ -106,10 +110,10 @@ function tickClock(dt){
 function onHourT(h){
   if (T.ending) return;
   if (h===6) newDayT();
-  if (h===7) printGazette();
-  if (h===8){ missingCheck(); rentCheck(); if (T.day >= 12 && !T.lock && !T.ending) dayTwelve(); }
+  if (h===7 && T.mode!=="slasher") printGazette();
+  if (h===8){ missingCheck(); if (T.mode!=="slasher"){ rentCheck(); if (T.day >= 12 && !T.lock && !T.ending) dayTwelve(); } }
   if (h===9 && dayName()==="Sunday") sfx("church");
-  crimeHourTick(); townLifeTick(); recognitionTick();
+  crimeHourTick(); if (T.mode!=="slasher"){ townLifeTick(); recognitionTick(); }
   if (T.drunk > 0) T.drunk = Math.max(0, T.drunk-1);
   if (T.notoriety > 0 && !T.wanted) T.notoriety = Math.max(0, T.notoriety - .5);
   // the case goes cold if you give it nothing
@@ -263,6 +267,13 @@ function interactTargetT(){
     if (bd && bd.kind==="home") return {kind:"knock", label:"Knock", run:()=>knockT(bd, k)};
     return null;
   }
+  if (T.mode==="slasher"){
+    const s = T.spyE;
+    if (s && !s.hidden && !s.dead && ((Math.round(rposT(s)[0])===fx && Math.round(rposT(s)[1])===fy) || Math.hypot(s.x-pl.x, s.y-pl.y) < 1.2)) return {kind:"spy", label:`Talk to ${s.short}`, run:spyMenu};
+    if (s && s.hidden && s.hideKey && (s.hideKey===k || (s.hideKey===here && Math.hypot(s.x-pl.x, s.y-pl.y) < 2))) return {kind:"spy", label:`Whisper to ${s.short}`, run:spyMenu};
+    if (here==="post" && !T.phonesCut && "CH".includes(c)) return {kind:"cut", key:"cutphones", label:"Hold: rip out the phone exchange", hold:true, secs:4, act:"robbing", sound:"cut", done:cutPhones};
+    if (here==="sheriff" && fx===59 && fy===24 && !T.radioSmashed) return {kind:"radio", key:"radio", label:"Hold: smash the sheriff's radio", hold:true, secs:3, sound:"punch", done:()=>{ T.radioSmashed = true; toast("Sparks, then nothing. The sheriff can't call anyone now.", "good", 4); sfx("snap"); }};
+  }
   // furniture
   if (box) return {kind:"box", label: box.mine ? "Open your footlocker" : `Open the ${box.name.toLowerCase()}`, run:()=>openBoxT(k)};
   if (here==="roomC" && fx===86 && fy===15) return {kind:"sleep", label: hourNow()>=20 || hourNow()<6 ? "Sleep until morning" : "Nap for two hours", run:sleepT};
@@ -288,7 +299,7 @@ function interactTargetT(){
   const dep = trainHere();
   if (dep && pl.x>=91 && pl.x<=101 && pl.y>=17 && pl.y<=20) return {kind:"train", label: pl.inv.includes("train ticket") ? `Board the ${fmtT(dep)} train` : "The train's here (you need a ticket)", run:boardTrain};
   // the road out
-  if (pl.x <= 2 && pl.y >= 29 && pl.y <= 32) return {kind:"wild", label:"Walk out of Millbrook for good", run:()=>{ if (confirm("Leave Millbrook on foot and never come back?")) ending("wild"); }};
+  if (pl.x <= 2 && pl.y >= 29 && pl.y <= 32 && T.mode!=="slasher") return {kind:"wild", label:"Walk out of Millbrook for good", run:()=>{ if (confirm("Leave Millbrook on foot and never come back?")) ending("wild"); }};
   return null;
 }
 function actionPressT(){
@@ -360,6 +371,7 @@ function frame(dt){
       tickClock(dt);
       for (const n of folk) updateFolk(n, dt);
       updateFightsT(dt); updateScenesT(dt); detHidingTick(dt); chaseTick(dt);
+      if (T.mode==="slasher") updateSpyE(dt);
       if (T.lock && T.lock.kind==="brawl"){ const foe = byIdT(T.lock.foe); if (!foe || !alive(foe)){ T.lock = null; banner("SILENCE", "It's over. Now someone has to deal with the body.", true, 5); Snd.track(null); } }
       secAcc += dt; if (secAcc >= 1){ secAcc = 0; perSecondT(); }
     }
@@ -373,7 +385,8 @@ function frame(dt){
 function perSecondT(){
   const pl = T.player, D = T.det;
   crimeSecondTick(); detObserve(); tellTick(); apptTick(); considerApproachT();
-  if (D && detAlive() && absT() >= D.nextBrain && !T.lock) detBrain();
+  if (T.mode==="slasher"){ slasherSecond(); if (T.ending) return; }
+  if (D && detAlive() && absT() >= D.nextBrain && !T.lock && T.mode!=="slasher") detBrain();
   for (const n of folk) if (alive(n) && !n.hidden && distT(n,pl) < 5 && canSeeT(pl, n.x, n.y, 6)) n.lastSeenWithPlayer = absT();
   // the face at the window
   const d = detP();
@@ -382,11 +395,13 @@ function perSecondT(){
   // the town when you're wanted
   if (T.wanted){ const sh = sheriff(); if (sh && !sh.order && canSeeT(sh, pl.x, pl.y, 10)){ sayT(sh, `${PNUMT}! STOP!`, 3); T.lock = {kind:"chase", reason:"Spotted.", start:absT()}; startChase(); } }
   if (T.lock && T.lock.kind==="chase" && pl.x <= 1 && pl.y >= 28 && pl.y <= 33) ending("wild");
+  if (T.mode==="slasher" && T.wanted) T.wanted = false;
   if (T.money < 0) T.money = 0;
 }
 function musicT(){
   const pl = T.player, inside = insideOf(pl), night = isNightT();
   Snd.setAmbient(inside ? "indoor" : "outside", night, false);
+  if (T.mode==="slasher"){ if (!SLASH && !GAME) slasherMusic(true); if (Math.random() < .08) Snd.tone({f:Snd.mf(40), dur:2, vol:.04, type:"sine", dest:Snd.nodes.amb}); return; }
   if (T.weather==="rain" && !inside && Math.random() < .9) for (let i=0;i<6;i++) Snd.noise({dur:.04,vol:.012,type:"highpass",f:5000,at:Math.random()*.9,dest:Snd.nodes.amb});
   if (GAME && GAME.kind==="dance") return;
   const fighting = pl.fight || folk.some(n=>n.fight && n.fight.target==="player");
@@ -422,6 +437,7 @@ function renderTown(dt){
   for (const b of T.bodies){ if (b.hidden || b.carried) continue; const n = byIdT(b.id); ctx.save(); ctx.translate(b.x*TS+8, b.y*TS+10); ctx.rotate(Math.PI/2); drawPerson(ctx, -8, -6, n.look, [0,1], 0, {blink:true}); ctx.restore(); }
   // people
   const ents = folk.filter(n=>!n.dead && !n.away && !n.hidden).map(n=>({e:n, L:n.look})).concat([{e:pl, L:playerLookT(), me:true}]);
+  if (T.mode==="slasher" && T.spyE && !T.spyE.hidden && !T.spyE.dead) ents.push({e:T.spyE, L:T.spyE.look, spy:true});
   ents.sort((a,b)=>rposT(a.e)[1]-rposT(b.e)[1]);
   for (const {e,L,me} of ents){
     const [ex,ey] = rposT(e), moving = e.prog < 1, frame = moving ? Math.floor(e.walkT*2.2)%4 : 0;
@@ -474,11 +490,13 @@ function renderTown(dt){
   }
   if (T.lock && (T.lock.kind==="chase" || T.lock.kind==="brawl")){ const pulse = (Math.sin(now/240)+1)/2; ctx.fillStyle = `rgba(${Math.floor(now/400)%2 ? "177,62,83" : "59,93,201"},${.06+.12*pulse})`; ctx.fillRect(0,0,W,H); }
   if (pl.carrying){ ctx.fillStyle = "rgba(120,0,20,.08)"; ctx.fillRect(0,0,W,H); }
+  if (T.mode==="slasher"){ const gr = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.3,W/2,H/2,Math.max(W,H)*.75); gr.addColorStop(0,"rgba(0,0,0,0)"); gr.addColorStop(1,`rgba(70,0,10,${.45 + (T.police ? .15*Math.sin(now/200) : 0)})`); ctx.fillStyle = gr; ctx.fillRect(0,0,W,H); if (T.police && Math.floor(now/400)%2){ ctx.fillStyle = "rgba(59,93,201,.06)"; ctx.fillRect(0,0,W,H); } }
   // labels, bubbles, emotes
   const fpx = Math.round(Math.max(15*dpr, 5.5*z));
   ctx.font = `${fpx}px VT323, monospace`; ctx.textBaseline = "top"; ctx.textAlign = "left";
-  for (const {e, me} of ents){
+  for (const {e, me, spy} of ents){
     const [ex,ey] = rposT(e), [sx,sy] = toS(ex*TS+8, ey*TS-6);
+    if (spy){ if (Math.hypot(ex-ppx,ey-ppy) < 4.5){ const tw = ctx.measureText(e.short).width; ctx.fillStyle = "rgba(60,0,10,.85)"; ctx.fillRect(sx-tw/2-4*dpr, sy-fpx-6*dpr, tw+8*dpr, fpx+2*dpr); ctx.fillStyle = "#ff8a8a"; ctx.textAlign = "center"; ctx.fillText(e.short, sx, sy-fpx-5*dpr); ctx.textAlign = "left"; } continue; }
     if (sx<-300||sx>W+300||sy<-200||sy>H+200) continue;
     if (!me){ const inB = insideOf(e); if (inB && outerOf(inB)!==(here?outerOf(here):null)) continue; }
     const near = Math.hypot(ex-ppx, ey-ppy);
@@ -505,6 +523,7 @@ function renderTown(dt){
   ctx.textAlign = "center";
   for (const f of T.fx){
     if (f.kind==="float"){ const [x,y] = toS(f.x, f.y - (1.1-f.life)*14); ctx.globalAlpha = Math.min(1, f.life*2); ctx.fillStyle = PAL.k; ctx.fillText(f.text, x+2*dpr, y+2*dpr); ctx.fillStyle = f.col; ctx.fillText(f.text, x, y); ctx.globalAlpha = 1; }
+    if (f.kind==="tracer"){ const [a,b] = toS(f.x, f.y), [c2,d2] = toS(f.x2, f.y2); ctx.strokeStyle = `rgba(255,230,140,${Math.min(1,f.life*7)})`; ctx.lineWidth = 2*dpr; ctx.beginPath(); ctx.moveTo(a,b); ctx.lineTo(c2,d2); ctx.stroke(); ctx.lineWidth = 1; }
     if (f.kind==="flash"){ const [x,y] = toS(f.x, f.y); ctx.globalCompositeOperation = "lighter"; const R = 40*dpr*f.life*4; const gr = ctx.createRadialGradient(x,y,0,x,y,R); gr.addColorStop(0,"rgba(255,255,255,.9)"); gr.addColorStop(1,"rgba(0,0,0,0)"); ctx.fillStyle = gr; ctx.fillRect(x-R,y-R,R*2,R*2); ctx.globalCompositeOperation = "source-over"; }
     if (f.kind==="whiteout"){ ctx.fillStyle = `rgba(255,255,255,${f.life*2})`; ctx.fillRect(0,0,W,H); }
   }
@@ -641,6 +660,21 @@ function wireTownDom(){
   contB.addEventListener("click", () => { $("scrTitle").hidden = true; if (!cont()) { $("scrTitle").hidden = false; toast("That save is gone.", "bad"); } });
   skipB.addEventListener("click", () => { if (loadSavedT() && !confirm("Start a new life in Millbrook? Your current Millbrook save will be lost.")) return; clearSaveT(); $("scrTitle").hidden = true; begin(); });
   row.append(contB, skipB);
+  const opsCont = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:"Continue Operation Birch"});
+  opsCont.addEventListener("click", () => { Snd.init(); if (!window.__cb9.continueOps()) toast("That save is gone.", "bad"); });
+  let opsSave = null; try { opsSave = JSON.parse(localStorage.getItem("cellblock9-ops-v1")||"null"); } catch {}
+  opsCont.hidden = !opsSave; if (opsSave) opsCont.textContent = `Continue Operation Birch · Day ${opsSave.day}`;
+  row.append(opsCont);
+  const det = document.createElement("details"); det.className = "chapters"; det.style.cssText = "width:100%;font-size:20px;color:var(--l)";
+  det.append(Object.assign(document.createElement("summary"),{textContent:"Chapter select", style:"cursor:pointer;font-family:var(--px);font-size:10px;color:var(--y)"}));
+  const crow = document.createElement("div"); crow.className = "row"; crow.style.marginTop = "10px";
+  const chap = (label, fn) => { const b = Object.assign(document.createElement("button"),{type:"button", className:"pbtn", textContent:label}); b.addEventListener("click", fn); crow.append(b); };
+  chap("1 · Cellblock Nine", () => $("startBtn").click());
+  chap("2 · Millbrook", () => skipB.click());
+  chap("3 · Operation Birch", () => { Snd.init(); let snap = null; try { snap = JSON.parse(localStorage.getItem(SNAP_KEY)||"null"); } catch {} const o = snap ? {alias:snap.alias, badgeName:snap.det.realName, look:{skin:snap.player.look.skin, hair:snap.player.look.hair}, disguise:snap.player.disguise, townDay:snap.day} : {alias:"Sam Ellis", badgeName:`${pick(FIRST)} ${pick(LAST)}`}; $("scrTitle").hidden = true; window.__cb9.startOps(o); });
+  chap("4 · Leave No Evidence", () => { $("scrTitle").hidden = true; const cast = E.prisonCast().filter(c=>c.kind==="inmate"); const c = pick(cast); beginSlasher({spy:{id:c.id, name:c.name, short:c.short, look:c.look, voice:c.voice}}); });
+  det.append(crow, Object.assign(document.createElement("p"),{className:"note", textContent:"Each chapter can be started on its own. Playing straight through carries your choices, your kills and your name forward."}));
+  row.after(det);
   const s = loadSavedT(); contB.hidden = !(s && !s.ending); if (s && !s.ending) contB.textContent = `Continue in Millbrook · Day ${s.day}`;
 }
 buildTownDom();

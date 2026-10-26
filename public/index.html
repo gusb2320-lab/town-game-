@@ -230,6 +230,10 @@ body.talking .pad,body.talking .abtn,body.talking .hotbar{display:none!important
 body.touch .fbtn{display:block}
 body.talking .fbtn{display:none!important}
 .status{font-size:17px;color:var(--c)}
+.askp{margin-top:8px;background:#eef3ff;border:3px dashed var(--b);padding:8px 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:20px}
+.askp b{font-family:var(--px);font-size:9px;color:var(--b)}
+.askp select,.askp input{font:inherit;font-size:20px;background:#fff;border:2px solid var(--ink);color:var(--ink);padding:1px 4px;max-width:230px;min-width:0}
+.askp .sp{margin-left:auto;display:flex;gap:6px}
 @media (max-width:640px){ .invwrap{grid-template-columns:1fr} .hp .bar{width:80px} }
 </style>
 <script src="claude-shim.js"></script>
@@ -272,6 +276,7 @@ body.talking .fbtn{display:none!important}
     <div class="dtext" id="dText"></div>
     <div class="dmem" id="dMem"></div>
     <div class="offer" id="dOffer" hidden></div>
+    <div class="askp" id="dAsk" hidden></div>
     <form class="dform" id="dForm" autocomplete="off">
       <span>▶</span><input id="dInput" maxlength="300" placeholder="Say anything. Ask them to do something…" aria-label="What you say">
       <button class="pbtn hot" id="dSend" type="submit">Say</button>
@@ -279,6 +284,8 @@ body.talking .fbtn{display:none!important}
     <div class="drow">
       <button class="pbtn" id="dGive" type="button">Give</button>
       <button class="pbtn" id="dTrade" type="button">Trade</button>
+      <button class="pbtn" id="dAskBtn" type="button" title="Ask them to do something for you">Ask…</button>
+      <button class="pbtn" id="dPhrase" type="button" hidden title="Say the recognition phrase">“Birch…”</button>
       <button class="pbtn" id="dFavor" type="button">Favor?</button>
       <button class="pbtn" id="dLog" type="button">File</button>
       <button class="pbtn sp" id="dLeave" type="button">Bye (Esc)</button>
@@ -413,7 +420,7 @@ body.talking .fbtn{display:none!important}
 const TS = 16, MW = 72, MH = 55, CAP = 6;
 const DIRS = [[0,-1],[1,0],[0,1],[-1,0]];
 const SAVE_KEY = "cellblock9-save-v4";
-const PNUM = "#4471";
+let PNUM = "#4471";
 const $ = id => document.getElementById(id);
 const PAL = {k:"#1a1c2c",d:"#333c57",m:"#566c86",l:"#94b0c2",w:"#f4f4f4",o:"#ef7d57",O:"#b85c3c",y:"#ffcd75",g:"#a7f070",G:"#38b764",t:"#257179",n:"#29366f",b:"#3b5dc9",B:"#41a6f6",c:"#73eff7",r:"#b13e53",p:"#5d275d",P:"#e07ab0",u:"#8b5a3c",U:"#5e3a24",a:"#c8a374",e:"#f4ecd8",s:"#f4c7a1"};
 function rnd(x,y,s){ let q=(x*374761393+y*668265263+s*1442695041)|0; q=Math.imul(q^(q>>>13),1274126177); return ((q^(q>>>16))>>>0)/4294967296; }
@@ -1144,7 +1151,7 @@ function news(text, who=[], quiet){
   if (!quiet && seen){ toast(text, "news", 5); sfx("news"); }
 }
 
-function save(){ if (!S) return; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch {} }
+function save(){ if (!S) return; if (S.mode==="cop"){ saveOps(); return; } try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch {} }
 function loadSaved(){ try { return localStorage.getItem(SAVE_KEY); } catch { return null; } }
 function restore(json){
   try {
@@ -1245,6 +1252,7 @@ function updateNpc(n, dt){
   if (n.scene) return;
   if (n.fight) {}
   else if (n.order) runOrder(n, dt);
+  else if (S.lock && isCop()){ const sp = spyN(); if (watching(n) && sp && present(sp) && !inCell(sp, def(sp.id).cell) && canSee(n, sp.x, sp.y, sightRange(n)+3)){ goTo(n, sp.x, sp.y); if (!n.emote) emote(n,"!",1.5); } }
   else if (S.lock && watching(n) && !["warden","dunn"].includes(n.id) && !inOwnCell(pl.x,pl.y) && canSee(n, pl.x, pl.y, sightRange(n))){
     goTo(n, pl.x, pl.y); if (!n.emote) emote(n,"!",1.5);
   }
@@ -1310,6 +1318,7 @@ function runOrder(n, dt){
       if (dist(n,pl) <= 1.4 && !S.talkId){ n.path = []; faceTo(n, pl); handOver(n, o.item); n.order = null; return; }
       goTo(n, pl.x, pl.y, true); return;
     case "follow":
+      if (isCop() && n.id===S.cop.spy && isNight()){ const cl = CELLS[def(n.id).cell]; if (inCell(n, def(n.id).cell) && S.picked[cl.door.join(",")]!==nightId()){ n.path = []; if (!n.bubble && Math.random()<.01) say(n, "*whispers* The door, Sparrow.", 2.5); return; } }
       if (dist(n,pl) > 2.2) goTo(n, pl.x, pl.y, true); else n.path = [];
       if (pl.fight && !n.fight){ const t = pl.fight.target==="player" ? null : byId(pl.fight.target); if (t && !t.ko){ say(n, "Leave 'em alone!"); startCombat(n, t); } }
       for (const e of npcs) if (e.fight && e.fight.target==="player" && e!==n && !n.fight && dist(n,e)<6){ say(n, "Back off!"); startCombat(n, e); break; }
@@ -1422,7 +1431,8 @@ function doorLocked(x,y){
   const t = S.t, night = t>=1350 || t<360;
   if (x===61 && y===5) return !(S.player.inv.includes("gate key") || S.player.inv.includes("spare gate key"));
   if (CELLS.some(cl=>cl.door[0]===x&&cl.door[1]===y)) return S.lock ? false : night;
-  if (x===17 && y===35) return t>=1320 || t<360 || !!S.lock;
+  if (x===17 && y===35) return isCop() ? false : t>=1320 || t<360 || !!S.lock;
+  if (c==="R" && isCop()) return false;
   if (c==="R") return t>=1320 || t<360 || !!S.lock;
   return false;
 }
@@ -1431,6 +1441,7 @@ const playerWalk = (x,y) => WALK.has(tile(x,y)) && !doorLocked(x,y);
 
 // ================= HEAT / LOCKDOWN =================
 function heatAdd(v, msg){
+  if (isCop()){ coverAdd(Math.round(v*.4), msg ? msg.replace(/^.*saw that\.$/, "Someone saw that.") : null); return; }
   const before = S.heat;
   S.heat = clamp(S.heat+v, 0, 100);
   if (msg) toast(msg, v>0?"bad":"");
@@ -1450,17 +1461,18 @@ function witness(text, {contra=false} = {}){
       else pushGossip(n, text.replace("{me}", nm(n.id)));
     }
   }
-  if (guardSaw){ say(guardSaw, "Hey! Drop that!"); emote(guardSaw,"!"); sfx("alert"); heatAdd(35, `${nm(guardSaw.id)} saw that.`); }
+  if (guardSaw && isCop()){ heatAdd(35); }
+  else if (guardSaw){ say(guardSaw, "Hey! Drop that!"); emote(guardSaw,"!"); sfx("alert"); heatAdd(35, `${nm(guardSaw.id)} saw that.`); }
 }
 function triggerLockdown(reason){
   if (!S || S.lock || S.won) return;
   S.lock = {start:absT(), reason, safeAt:null};
   S.heat = 100;
   closeTalk(); closeWindows();
-  for (const n of npcs){ n.path = []; n.wait = 0; if (n.order && n.order.type!=="guard") n.order = null; endSceneFor(n); }
+  for (const n of npcs){ if (isCop() && n.id===S.cop.spy && n.order && n.order.type==="follow") continue; n.path = []; n.wait = 0; if (n.order && n.order.type!=="guard") n.order = null; endSceneFor(n); }
   for (const g of npcs.filter(isGuard)) remember(g, `Lockdown on Day ${S.day}: ${reason}`);
   for (const n of npcs) if (!isGuard(n) && present(n) && Math.random()<.4) say(n, pick(["Here we go again.","Who did it this time?","Move, move!","Not again…"]), 3);
-  banner("LOCKDOWN", "Get back to your cell. Now.", true, 4.5);
+  banner("LOCKDOWN", isCop() ? "All inmates to their cells. All staff to stations." : "Get back to your cell. Now.", true, 4.5);
   toast(reason, "bad", 5);
   news(`Lockdown: ${reason}`, [], true);
 }
@@ -1564,7 +1576,8 @@ function knockOut(e, by){
   remember(e, `${nameOf(by)} knocked me out cold in the ${where}.`);
   if (by!==pl){ remember(by, `I knocked out ${nm(e.id)}.`); relAdd(by.id, e.id, -20); }
   else { e.opinion = -100; for (const o of npcs) if (!isGuard(o) && present(o) && Math.random()<.5) remember(o, `Heard ${PNUM} knocked out ${nm(e.id)}.`); }
-  if (isGuard(e) && by===pl){ setTimeout(()=>{ if (S && !S.lock) triggerLockdown(`Officer down! ${PNUM} knocked out ${nm(e.id)}.`); }, 1500); }
+  if (isGuard(e) && by===pl && isCop()){ coverAdd(55, `You knocked out ${nm(e.id)}. Nobody's going to call that a misunderstanding.`); }
+  else if (isGuard(e) && by===pl){ setTimeout(()=>{ if (S && !S.lock) triggerLockdown(`Officer down! ${PNUM} knocked out ${nm(e.id)}.`); }, 1500); }
 }
 function wakeUp(n){
   n.ko = 0; n.hp = Math.round((MAXHP[n.id]||100)*.5);
@@ -1576,7 +1589,7 @@ function playerKO(by){
   const pl = P();
   pl.fight = null;
   for (const o of npcs) if (o.fight && o.fight.target==="player") o.fight = null;
-  if ((by && isGuard(by)) || S.lock){ pl.hp = 50; solitary("The guards beat you down.", "BEATEN DOWN"); return; }
+  if (!isCop() && ((by && isGuard(by)) || S.lock)){ pl.hp = 50; solitary("The guards beat you down.", "BEATEN DOWN"); return; }
   let stolen = null;
   if (by && pl.inv.length && Math.random()<.7){ stolen = pick(pl.inv); pl.inv.splice(pl.inv.indexOf(stolen),1); by.inv.push(stolen); remember(by, `I knocked out ${PNUM} and took their ${stolen}.`); if (!pl.inv.includes(S.selItem)) S.selItem = null; }
   fade(1.6, () => {
@@ -1621,7 +1634,8 @@ function updateCombat(dt){
   for (const g of npcs){
     if (!watching(g) || g.fight || (g.order && g.order.type==="breakup")) continue;
     const r = sightRange(g);
-    if (pl.fight && pl.fight.aggressor && canSee(g, pl.x, pl.y, r)){
+    if (isCop() && pl.fight && pl.fight.aggressor && canSee(g, pl.x, pl.y, r)){ noteOnce("force"+S.day, () => coverAdd(4, `${nm(g.id)} saw you rough up an inmate.`)); }
+    else if (pl.fight && pl.fight.aggressor && canSee(g, pl.x, pl.y, r)){
       g.fight = {target:"player", next:now+600, aggressor:true, since:absT(), last:now};
       say(g, "DROP IT, 4471!"); emote(g,"!"); sfx("alert"); heatAdd(30, `${nm(g.id)} is coming for you!`);
       remember(g, `I saw ${PNUM} start a fight.`); continue;
@@ -1832,6 +1846,7 @@ function runBeats(){
 // ================= PEOPLE COMING UP TO YOU =================
 let approachNext = performance.now()+15000;
 function approachReason(n){
+  if (isCop()) return copApproachReason(n);
   const pl = P(), d = def(n.id);
   if (S.tasks.find(t=>t.giver===n.id && t.status==="ready")) return "They came through on the favor you asked. Settle up.";
   const fresh = n.memories.slice(-5).filter(m => m.text.includes(PNUM) && m.s.startsWith(`Day ${S.day} `) && !m.talked);
@@ -1844,13 +1859,13 @@ function approachReason(n){
   if (n.opinion <= -40 && Math.random()<.4) return "You have a grudge against them. Make it clear. You might threaten them or start something.";
   if (fresh.length && Math.random()<.5){ fresh[0].talked = true; return `Bring this up with them: ${fresh[0].text}`; }
   const want = d.wants.find(w => pl.inv.includes(w));
-  if (want && Math.random()<.45) return `You noticed they're carrying ${want}, which you want. Make them a trade_offer.`;
-  if (!activeTask(n) && !S.firstTask[n.id] && FIRST_TASK[n.id] && FIRST_TASK[n.id].type!=="none" && n.opinion >= 0 && Math.random()<.35) return "FAVOR";
+  if (want && Math.random()<.18) return `You noticed they're carrying ${want}, which you want. Make them a trade_offer.`;
+  if (!activeTask(n) && !S.firstTask[n.id] && FIRST_TASK[n.id] && FIRST_TASK[n.id].type!=="none" && n.opinion >= 0 && Math.random()<.12) return "FAVOR";
   const recent = S.news.slice(-4).filter(x=>x.who.length && !x.who.includes(n.id));
   if (recent.length && Math.random()<.3) return `Share your take on this news: ${pick(recent).text}`;
   if (n.opinion >= 20 && Math.random()<.3) return "You like them. Chat, share gossip, or suggest something you could do together.";
   if (n.id==="rosa" && Math.random()<.4) return "You have fresh gossip and can't keep it in.";
-  if (["shay","nadia","ledger"].includes(n.id) && Math.random()<.2) return "You have a proposition for them. Ask them to do something for you, or offer to do something for them.";
+  if (["shay","nadia","ledger"].includes(n.id) && Math.random()<.08) return "You have a proposition for them. Ask them to do something for you, or offer to do something for them.";
   return null;
 }
 function considerApproach(){
@@ -1866,7 +1881,7 @@ function considerApproach(){
   if (!cands.length) return;
   const [n, reason] = pick(cands);
   n.order = {type:"approach", reason, until:absT()+30}; n.path = [];
-  n.approachCd = now + 150000; approachNext = now + 50000 + Math.random()*40000;
+  n.approachCd = now + 320000; approachNext = now + 120000 + Math.random()*90000;
   emote(n, "…", 2);
 }
 
@@ -1925,6 +1940,7 @@ function updateWorld(dt){
   updateScenes(dt);
   considerApproach();
   const z = zoneOf(pl.x, pl.y);
+  if (isCop()){ copWorld(dt, before); return; }
 
   if (S.lock){
     const L = S.lock;
@@ -2088,6 +2104,7 @@ function checkTaskOnGive(n, item){
 }
 function renderFavors(){
   if (!S) return;
+  if (isCop()){ const box = $("favorBox"), c = S.cop; box.hidden = false; box.textContent = ""; box.append(Object.assign(document.createElement("b"),{textContent:"OPERATION BIRCH"})); const line = t => box.append(Object.assign(document.createElement("span"),{textContent:t})); if (!c.revealed) line("Find Birch. Say the phrase."); else { line(`Birch: ${nm(c.spy)}`); line(c.transfer ? "Van tomorrow 08:00" : "Get them out (J → Operation)"); } return; }
   const box = $("favorBox"), act = S.tasks.filter(t=>t.status!=="done").slice(-3);
   box.hidden = !act.length; box.textContent = "";
   if (!act.length) return;
@@ -2183,6 +2200,7 @@ function updatePlayer(dt){
 function arrived(){
   const pl = P();
   if (S.openBox && !S.openBox.startsWith("npc:")){ const [bx,by] = S.openBox.split(",").map(Number); if (Math.abs(bx-pl.x)+Math.abs(by-pl.y) > 2) closeWindows(); }
+  if (isCop()){ if (tile(pl.x,pl.y)==="o"){ const sp = spyN(); if (sp && present(sp) && dist(sp, pl) <= 3.2) copExtract(); else noteOnce("alone"+S.day+Math.floor(S.t/30), ()=>toast("Not without Birch.", "", 3)); } return; }
   if (tile(pl.x,pl.y)==="o" && !S.won) win(pl.x >= 71 ? "gate" : "wall");
   const z = zoneOf(pl.x,pl.y);
   if (RESTRICTED.has(z)) noteOnce("restr"+z+S.day, ()=>toast(`${zoneLabel(z)}: staff only.`, "bad", 2.5));
@@ -2201,8 +2219,10 @@ function interactTarget(){
   if (c==="E" && has("grappling hook")) return {kind:"hold", label:"Hold: climb the wall"};
   if (c==="F" && (has("wire cutters")||has("makeshift file")||has("file"))) return {kind:"hold", label:`Hold: cut ${Math.round((S.fence[fx+","+fy]||0)*100)}%`};
   if ((c==="D"||c==="R") && doorLocked(fx,fy) && (has("lockpick")||has("crowbar"))) return {kind:"hold", label: has("lockpick") ? "Hold: pick lock" : "Hold: force door"};
+  if (isCop() && (c==="G" || c==="D")){ if (c==="G") return {kind:"gate", label:"Unlock the front gate"}; const t = copInteract(fx, fy, c); if (t) return t; }
   if (n) return {kind:"talk", npc:n, label:`Talk to ${nm(n.id)}${n.scene?" (interrupt)":""}`};
   if (ko && ko.ko) return {kind:"loot", npc:ko, label:`Search ${nm(ko.id)}'s pockets`};
+  if (isCop()){ const t = copInteract(fx, fy, c); if (t) return t; }
   const dg = CELLS[0].dig;
   if (pl.x===dg[0] && pl.y===dg[1]){
     if (S.tunnel >= 1 && !S.covered) return {kind:"tunnel", label:"Crawl into the tunnel"};
@@ -2218,7 +2238,7 @@ function interactTarget(){
   }
   const k = boxKey(fx,fy);
   if (S.containers[k]) return {kind:"box", key:k, label:`Search ${S.containers[k].name.toLowerCase()}`};
-  if ("WMSL".includes(c) && activityAt(S.t)==="work" && (S.jobs[S.day]||0) < 3) return {kind:"hold", label:"Hold: work for cigarettes"};
+  if (!isCop() && "WMSL".includes(c) && activityAt(S.t)==="work" && (S.jobs[S.day]||0) < 3) return {kind:"hold", label:"Hold: work for cigarettes"};
   if (c==="G") return {kind:"gate", label:"Try the front gate"};
   return null;
 }
@@ -2237,6 +2257,7 @@ function actionPress(){
   else if (t.kind==="cover"){ removeItem("fake floor"); S.covered = true; sfx("stash"); toast("The fake floor fits. You'd never know.", "good"); save(); }
   else if (t.kind==="uncover"){ if (addItem("fake floor")) S.covered = false; }
   else if (t.kind==="tunnel") win("tunnel");
+  else if (["cell","files","roster","mail","bunk"].includes(t.kind)) copDoInteract(t);
 }
 function sleep(){
   fade(1.4, () => {
@@ -2263,7 +2284,8 @@ const DLG = {full:"", shown:0, acc:0, done:true, think:0};
 function openTalk(n, opts={}){
   if (n.scene) finishScene(n.scene);
   if (n.order && n.order.type==="approach") n.order = null;
-  S.talkId = n.id; closeWindows(); pendingOffer = null; renderOffer();
+  S.talkId = n.id; closeWindows(); pendingOffer = null; renderOffer(); askOpen = false; renderAsk();
+  $("dPhrase").hidden = !isCop(); if (isCop()) copRecognition(n);
   const pl = P(); faceTo(n, pl); pl.dir = [-n.dir[0], -n.dir[1]];
   document.body.classList.add("talking");
   $("dialog").hidden = false; sfx("talk");
@@ -2295,7 +2317,7 @@ function renderDStats(n){
 function closeTalk(){
   if (!S || !S.talkId) return;
   if (ctl) ctl.abort();
-  S.talkId = null; busy = false; DLG.done = true; pendingOffer = null; renderOffer();
+  S.talkId = null; busy = false; DLG.done = true; pendingOffer = null; renderOffer(); askOpen = false; renderAsk();
   $("dialog").hidden = true; document.body.classList.remove("talking");
   if (document.activeElement===$("dInput")) $("dInput").blur();
   renderHotbar();
@@ -2336,7 +2358,7 @@ function renderGive(){
   b.textContent = "";
   if (it){ const im = new Image(); im.src = iconOf(it); im.alt = ""; b.append("Give", im, it); b.disabled = busy; }
   else { b.append("Give (pick a slot)"); b.disabled = true; }
-  $("dSend").disabled = busy; $("dFavor").disabled = busy; $("dTrade").disabled = busy;
+  $("dSend").disabled = busy; $("dFavor").disabled = busy; $("dTrade").disabled = busy; $("dAskBtn").disabled = busy;
 }
 function perceive(n){
   const pl = P(), around = [];
@@ -2364,7 +2386,8 @@ const ACTIONS_DOC = `ACTIONS — things you actually DO, right now, in the world
 {"type":"teach_recipe","item":"recipe"} {"type":"offer_task","item":"thing you want brought"} {"type":"report"} snitch to the guards
 {"type":"other","text":"anything else you do, narrated in a few words"}`;
 const GUARD_DOC = `GUARD-ONLY ACTIONS: {"type":"frisk"} {"type":"confiscate","item":"x"} {"type":"look_away","minutes":60} (you ignore what they do for a while) {"type":"unlock","place":"gatehouse|office|guard room|yard door|cell"} (you quietly leave that door open tonight)`;
-function buildPrompt(n, said, gave, approach){
+function buildPrompt(n, said, gave, approach, request){
+  if (isCop()) return copPrompt(n, said, gave, approach, request);
   const d = def(n.id), guard = d.kind==="guard", pl = P();
   const others = CAST.filter(c=>c.id!==n.id).map(c=>{ const r = relGet(n.id,c.id); const o = byId(c.id); return `- ${c.name}: ${c.pub}. You: ${relWord(r)} (${r}).${o && !present(o) ? " [in solitary/away]" : ""}`; }).join("\n");
   const mems = n.memories.slice(-90).map(m=>`- [${m.s}] ${m.text}`).join("\n") || "- Nothing. You've never dealt with them.";
@@ -2372,6 +2395,7 @@ function buildPrompt(n, said, gave, approach){
   const z = zoneLabel(zoneOf(pl.x,pl.y)), sees = perceive(n);
   const now = approach ? `[You walk up to ${PNUM} and start the conversation yourself. Why: ${approach}]`
     : gave && !said ? `[${PNUM} hands you: ${gave}]` : gave ? `[${PNUM} hands you: ${gave}] and says: "${said}"` : `${PNUM} says: "${said}"`;
+  const reqLine = request ? `\n[THIS IS A DIRECT REQUEST. ${PNUM} is asking you to: ${requestText(request)}.${request.type==="deliver" ? ` They've put the ${request.item} in your hands to carry.` : ""} Decide in character. If you agree, include exactly this action: ${JSON.stringify(requestAction(request))}. You may refuse, haggle, or ask for something first (then leave the action out). If you refuse a delivery, you hand the item back.]` : "";
   const teach = d.teach.filter(r=>!S.known.includes(r)).map(r=>{ const R = RECIPES.find(x=>x.out===r); return `${r} = ${R.need.join(" + ")}`; });
   const task = activeTask(n);
   const corrupt = guard ? (corruptible(n)
@@ -2403,7 +2427,7 @@ LATEST ON THE GRAPEVINE: ${S.news.slice(-5).map(x=>x.text).join(" | ")}
 RECENT CONVERSATION, WORD FOR WORD:
 ${recent}
 
-NEW: ${now}
+NEW: ${now}${reqLine}
 
 Answer as ${d.short}. React to what's actually around you and what you remember. You have your own agenda: you can ask them for things, make deals, refuse, threaten, or surprise them. Keep it under 45 words; a short *action* is fine.
 
@@ -2416,20 +2440,31 @@ Reply with only this JSON:
 - remember: first-person note of anything worth remembering (facts, name, promises, deals, lies, threats, gifts). Empty if nothing new.
 - gossip: something you'd pass on about ${PNUM}, or empty.`;
 }
-function fallbackReply(n, said, gave, approach){
+function fallbackReply(n, said, gave, approach, request){
+  if (isCop()) return copFallback(n, said, gave, approach, request);
   const d = def(n.id);
   const r = {reply:pick(d.fallback), mood:n.mood, opinion_change:0, trust_change:0, remember:"", gossip:"", actions:[]};
+  if (request){
+    const ok = requestWilling(n, request);
+    if (ok){ r.reply = pick(REQ_YES[request.type] || ["Alright."]); r.actions = [requestAction(request)]; r.remember = `${PNUM} asked me to ${requestText(request)}. I agreed.`; r.trust_change = 1; }
+    else { r.reply = pick(isGuard(n) && !(S.mode==="cop") ? ["You don't give orders here, inmate.","Nice try.","Back to your area."] : ["What's in it for me?","Not a chance.","I don't know you well enough for that.","Ask me again when you've earned it."]); r.remember = `${PNUM} asked me to ${requestText(request)}. I said no.`; }
+    return r;
+  }
   if (approach) r.reply = isGuard(n) ? "You. A word." : pick(["Hey. Got a minute?","You. C'mere.","Psst. Over here."]);
   if (gave){ r.reply = `*takes the ${gave}* Appreciated.`; r.opinion_change = d.wants.includes(gave) ? 10 : 4; r.trust_change = 2; r.remember = `${PNUM} gave me ${gave}.`; }
   else if (said && /follow|back|protect/i.test(said) && n.trust >= 40) { r.reply = "Alright. I'll stick close."; r.actions = [{type:"follow", minutes:90}]; }
   else if (said && /name is|i'm |i am /i.test(said)) r.remember = `${PNUM} introduced themselves: "${said.slice(0,80)}"`;
   return r;
 }
-async function askNpc(n, {said="", gave=null, approach=null} = {}){
+async function askNpc(n, {said="", gave=null, approach=null, request=null} = {}){
   if (busy) return;
   const d = def(n.id);
+  let carried = null;
+  if (request && request.type==="deliver" && request.item){ if (!removeItem(request.item)) return; n.inv.push(request.item); carried = request.item; logLine(n, "e", `You hand ${d.short} the ${request.item} to carry.`); }
   if (gave){ if (!removeItem(gave)) return; n.inv.push(gave); n.gifts += gave==="hooch" ? 2 : 1; logLine(n, "e", `You hand ${d.short} the ${gave}.`); sfx("stash"); const handled = checkTaskOnGive(n, gave); if (!handled && d.wants.includes(gave)) n.trust = clamp(n.trust+2,0,100); }
   if (said) logLine(n, "p", said);
+  if (isCop() && said) copPhraseCheck(n, said);
+  if (isCop() && gave) copOnGive(n, gave);
   const dis = S.tasks.find(t=>t.type==="distract" && t.status==="active" && t.target===n.id);
   if (dis && said){ dis.talks = (dis.talks||0)+1; if (dis.talks >= 2){ dis.status = "ready"; toast(`That should do it. Go see ${nm(dis.giver)}.`, "good"); renderFavors(); } }
   $("dYou").textContent = (gave ? `[gave ${gave}] ` : "") + (said ? `You: ${said}` : "");
@@ -2438,17 +2473,18 @@ async function askNpc(n, {said="", gave=null, approach=null} = {}){
   let res = null;
   if (sample){
     ctl = new AbortController();
-    try { res = await sample.json(buildPrompt(n, said, gave, approach), {modelTier:$("optDeep").checked ? "default" : "quick", cache:false, signal:ctl.signal}); }
+    try { res = await sample.json(buildPrompt(n, said, gave, approach, request), {modelTier:$("optDeep").checked ? "default" : "quick", cache:false, signal:ctl.signal}); }
     catch (e){
       const code = e && e.code;
-      if (code==="cancelled"){ busy = false; return; }
-      if (AI_OFF.includes(code)){ sample = null; aiMode = "off"; renderAi(); res = fallbackReply(n, said, gave, approach); }
-      else { busy = false; startType(code==="rate_limited" ? `${d.short} isn't answering right now. Try again in a minute.` : code==="refused" ? "*stares at you and says nothing*" : "*didn't catch that* Say again?", n); renderGive(); return; }
+      if (code==="cancelled"){ busy = false; returnCarried(n, carried); return; }
+      if (AI_OFF.includes(code)){ sample = null; aiMode = "off"; renderAi(); res = fallbackReply(n, said, gave, approach, request); }
+      else { busy = false; returnCarried(n, carried); startType(code==="rate_limited" ? `${d.short} isn't answering right now. Try again in a minute.` : code==="refused" ? "*stares at you and says nothing*" : "*didn't catch that* Say again?", n); renderGive(); return; }
     }
-  } else res = fallbackReply(n, said, gave, approach);
+  } else res = fallbackReply(n, said, gave, approach, request);
   busy = false;
-  if (!res || S.talkId!==n.id) return;
+  if (!res || S.talkId!==n.id){ returnCarried(n, carried); return; }
   applyResult(n, res, said);
+  if (carried && !(n.order && n.order.type==="deliver" && n.order.item===carried)) returnCarried(n, carried, true);
   renderGive(); renderDStats(n); save();
 }
 function applyResult(n, r, said){
@@ -2467,10 +2503,12 @@ function applyResult(n, r, said){
   if (typeof r.gossip==="string" && r.gossip.trim()) pushGossip(n, r.gossip.trim());
   const acts = (Array.isArray(r.actions) ? r.actions : r.action ? [r.action] : []).slice(0,3);
   for (const a of acts){ const m = applyAction(n, a, {said}); if (m) memos.push(m); }
+  copApplyExtra(n, r);
   $("dMem").textContent = memos.join(" ");
 }
 function applyAction(n, a, ctx={}){
   if (!a || typeof a!=="object") return "";
+  if (isCop()){ const m = copAction(n, a); if (m!==null) return m; }
   const d = def(n.id), pl = P(), guard = isGuard(n), type = String(a.type||"").toLowerCase().replace(/[\s-]/g,"_");
   const item = typeof a.item==="string" ? a.item.trim().toLowerCase() : "";
   const mins = clamp(Math.round(Number(a.minutes)||60), 10, 240);
@@ -2614,6 +2652,84 @@ function declineOffer(){
   pendingOffer = null; renderOffer(); sfx("nope");
 }
 
+// ================= ASK: requests in a structured tab =================
+const REQ_TYPES = [
+  ["deliver","Take something to someone"],["fetch","Bring me an item"],["attack","Start a fight with someone"],["follow","Watch my back"],
+  ["distract","Keep a guard busy"],["steal","Raid someone's desk"],["go_to","Go wait somewhere"]
+];
+const REQ_YES = {deliver:["Sure, I'll run it over.","Consider it delivered.","Give it here."], fetch:["I'll see what I can dig up.","Leave it with me.","Might take a while."], attack:["With pleasure.","They had it coming.","Alright. Watch this."], follow:["I've got your back.","Lead the way.","Nobody touches you while I'm around."], distract:["I'll talk their ear off.","Leave it to me.","One sob story, coming up."], steal:["Quick in, quick out.","Keep an eye out for me.","Fine. But you owe me."], go_to:["I'll be there.","Fine, I'll wait.","On my way."]};
+const REQ_COST = {deliver:8, go_to:8, fetch:20, follow:28, distract:35, steal:45, attack:50};
+function requestText(q){
+  const who = q.target==="player" ? "you" : q.target ? nm(q.target) : "someone";
+  return q.type==="deliver" ? `take the ${q.item} to ${who}` : q.type==="fetch" ? `find and bring them ${/^[aeiou]/.test(q.item||"")?"an":"a"} ${q.item}` : q.type==="attack" ? `go start a fight with ${who}` : q.type==="follow" ? "stick close and watch their back" : q.type==="distract" ? `keep ${who} busy talking` : q.type==="steal" ? `sneak into ${who}'s cell and take ${q.item ? "their "+q.item : "something worth having"}` : q.type==="go_to" ? `go wait in the ${zoneLabel(q.place).toLowerCase()}` : q.type;
+}
+function requestSay(q){
+  const who = q.target ? nm(q.target) : "them";
+  return q.type==="deliver" ? `Could you take this ${q.item} to ${who} for me?` : q.type==="fetch" ? `Could you find me ${/^[aeiou]/.test(q.item||"")?"an":"a"} ${q.item}?` : q.type==="attack" ? `I need you to go start something with ${who}.` : q.type==="follow" ? "Watch my back for a while?" : q.type==="distract" ? `Can you keep ${who} busy for me?` : q.type==="steal" ? `Get into ${who}'s cell and grab ${q.item ? "their "+q.item : "whatever's worth having"} for me.` : q.type==="go_to" ? `Go wait for me in the ${zoneLabel(q.place).toLowerCase()}.` : "";
+}
+function requestAction(q){
+  if (q.type==="deliver") return {type:"deliver", item:q.item, target:q.target};
+  if (q.type==="fetch") return {type:"fetch", item:q.item};
+  if (q.type==="attack") return {type:"attack", target:q.target};
+  if (q.type==="follow") return {type:"follow", minutes:90};
+  if (q.type==="distract") return {type:"distract", target:q.target};
+  if (q.type==="steal") return {type:"steal", target:q.target, item:q.item||""};
+  if (q.type==="go_to") return {type:"go_to", place:q.place, minutes:60};
+  return {type:"other"};
+}
+function requestWilling(n, q){
+  let score = n.trust + n.opinion*.3 + (isGuard(n) ? -25 : 0);
+  if (S.mode==="cop"){ score += isGuard(n) ? 30 : 20; if (S.cop && S.cop.revealed && n.id===S.cop.spy) score += 100; }
+  if (q.target && q.target!=="player" && (q.type==="attack" || q.type==="steal")) score -= relGet(n.id, q.target)*.6;
+  if (q.type==="attack" && q.target && isGuard(byId(q.target)) && S.mode!=="cop") score -= 40;
+  return score >= (REQ_COST[q.type]||20);
+}
+function returnCarried(n, item, say2){
+  if (!item) return; const k = n.inv.lastIndexOf(item); if (k<0) return;
+  n.inv.splice(k,1); addItem(item, true); if (say2){ logLine(n, "e", `${nm(n.id)} hands the ${item} back.`); $("dMem").textContent += ` ${nm(n.id)} hands the ${item} back.`; }
+}
+let askOpen = false, askType = "deliver";
+function toggleAsk(){ askOpen = !askOpen; renderAsk(); }
+function renderAsk(){
+  const el = $("dAsk"); el.textContent = ""; el.hidden = !askOpen || !S || !S.talkId;
+  if (el.hidden) return;
+  const n = byId(S.talkId), pl = P();
+  const sel = (opts, val) => { const s2 = document.createElement("select"); for (const [v,l] of opts){ const o = document.createElement("option"); o.value = v; o.textContent = l; if (v===val) o.selected = true; s2.append(o); } return s2; };
+  const typeSel = sel(REQ_TYPES, askType); typeSel.addEventListener("change", ()=>{ askType = typeSel.value; renderAsk(); });
+  el.append(Object.assign(document.createElement("b"),{textContent:"ASK"}), typeSel);
+  const people = npcs.filter(o=>o!==n && present(o)).map(o=>[o.id, nm(o.id)]);
+  let who = null, item = null, place = null;
+  if (askType==="deliver"){
+    const mine = [...new Set(pl.inv)]; if (!mine.length){ el.append("Your pockets are empty."); return; }
+    item = sel(mine.map(i=>[i,i]), S.selItem && mine.includes(S.selItem) ? S.selItem : mine[0]); who = sel(people, null);
+    el.append(item, "to", who);
+  } else if (askType==="fetch"){
+    item = Object.assign(document.createElement("input"),{placeholder:"item, e.g. wire cutters"}); item.setAttribute("list","askItems");
+    let dl = $("askItems"); if (!dl){ dl = document.createElement("datalist"); dl.id = "askItems"; document.body.append(dl); for (const k of Object.keys(ITEMS)){ const o = document.createElement("option"); o.value = k; dl.append(o); } }
+    el.append(item);
+  } else if (askType==="attack" || askType==="steal"){
+    const list = askType==="steal" ? people.filter(([id])=>!isGuard(byId(id))) : people;
+    who = sel(list, null); el.append(who);
+    if (askType==="steal"){ item = Object.assign(document.createElement("input"),{placeholder:"what (optional)"}); el.append(item); }
+  } else if (askType==="distract"){
+    who = sel(people.filter(([id])=>isGuard(byId(id))), null); el.append(who);
+  } else if (askType==="go_to"){
+    place = sel(ZONES.filter(z=>!z.id.startsWith("cell") && z.id!=="outside" && z.id!=="nomans").map(z=>[z.id, z.label]), "yard"); el.append(place);
+  }
+  const sp = document.createElement("span"); sp.className = "sp";
+  const go = Object.assign(document.createElement("button"),{type:"button", className:"pbtn go", textContent:"Ask"});
+  go.addEventListener("click", () => {
+    if (busy) return;
+    const q = {type:askType, target: who ? who.value : null, item: item ? String(item.value||"").trim().toLowerCase() : null, place: place ? place.value : null};
+    if ((askType==="fetch" && !q.item) || (["deliver","attack","steal","distract"].includes(askType) && !q.target)){ sfx("nope"); return; }
+    askOpen = false; renderAsk();
+    const extra = $("dInput").value.trim(); $("dInput").value = "";
+    askNpc(n, {said: `${extra ? extra+" " : ""}${requestSay(q)}`, request:q});
+  });
+  const cancel = Object.assign(document.createElement("button"),{type:"button", className:"pbtn", textContent:"Cancel"}); cancel.addEventListener("click", toggleAsk);
+  sp.append(go, cancel); el.append(sp);
+}
+
 // ================= TRADE WINDOW =================
 let tradeWith = null, tGet = [], tGive = [];
 function openTrade(){
@@ -2685,11 +2801,12 @@ function renderHud(){
   $("dayLbl").textContent = "DAY " + S.day + (S.event && S.event.day===S.day && S.event.key ? " · " + TWISTS[S.event.key].label : "");
   $("clockLbl").textContent = fmtClock(S.t);
   const a = ACT[activityAt(S.t)];
-  $("actLbl").textContent = S.lock ? "LOCKDOWN · Get to your cell" : `${a.label} · ${a.where}`;
+  if (isCop()){ const post = copPost(activityAt(S.t)); $("actLbl").textContent = S.lock ? "LOCKDOWN · Find the missing inmate" : `${a.label} · ${post ? "Post: "+zoneLabel(post) : "Off duty"}`; }
+  else $("actLbl").textContent = S.lock ? "LOCKDOWN · Get to your cell" : `${a.label} · ${a.where}`;
   $("actLbl").style.color = S.lock ? "#ff6b7f" : "";
-  const on = Math.ceil(S.heat/10);
-  [...$("heatSegs").children].forEach((s,i)=>{ s.className = i<on ? (S.heat>=60?"on hot":"on") : ""; });
-  $("heatBox").classList.toggle("flash", S.heat>=80 || !!S.lock);
+  const hv = isCop() ? S.cop.cover : S.heat, on = Math.ceil(hv/10);
+  [...$("heatSegs").children].forEach((s,i)=>{ s.className = i<on ? (hv>=60?"on hot":"on") : ""; });
+  $("heatBox").classList.toggle("flash", hv>=80 || !!S.lock);
   const hp = Math.round(P().hp); $("hpFill").style.width = hp+"%"; $("hpFill").className = hp < 35 ? "low" : "";
   const w = weaponOf(P()); $("weaponLbl").textContent = w ? `${w} (${WEAPONS[w]})` : "Fists";
   drawSun();
@@ -2867,11 +2984,12 @@ function openJournal(id, tab){ closeWindows(); if (id) jSel = id; if (tab) jTab 
 function renderJournal(){
   const tabs = $("jTabs"); tabs.textContent = "";
   const active = S.tasks.filter(t=>t.status!=="done").length;
-  for (const [k,l] of [["people","People"],["favors",`Favors${active?" ("+active+")":""}`],["news","Grapevine"]]){
+  for (const [k,l] of (isCop() ? [["ops","Operation"]] : []).concat([["people","People"],["favors",`Favors${active?" ("+active+")":""}`],["news","Grapevine"]])){
     const b = document.createElement("button"); b.type = "button"; b.textContent = l; b.setAttribute("aria-selected", jTab===k?"true":"false");
     b.addEventListener("click", ()=>{ jTab = k; sfx("select"); renderJournal(); }); tabs.append(b);
   }
   const body = $("jBody"); body.textContent = "";
+  if (jTab==="ops" && isCop()){ renderOpsTab(body); return; }
   if (jTab==="favors"){
     const ul = document.createElement("ul"); ul.className = "mems";
     if (!S.tasks.length) ul.append(Object.assign(document.createElement("li"),{textContent:"No favors yet. Ask people \"Favor?\" in conversation. Doing them builds trust, and trust opens doors."}));
@@ -3159,8 +3277,8 @@ function shade(hex, amt){
   const f = v => clamp(Math.round(amt<0 ? v*(1+amt) : v+(255-v)*amt),0,255);
   return "#"+[f(r),f(gg),f(b)].map(v=>v.toString(16).padStart(2,"0")).join("");
 }
-const lookOf = n => def(n.id).look;
-const playerLook = () => P().uniform ? {suit:"n",skin:"#d49a6a",hair:"#3f2616",style:"cap"} : {suit:"o",skin:"#d49a6a",hair:"#3f2616",style:"short"};
+const lookOf = n => n.disguised ? SPY_GUARD(n) : def(n.id).look;
+const playerLook = () => isCop() ? copLook() : P().uniform ? {suit:"n",skin:"#d49a6a",hair:"#3f2616",style:"cap"} : {suit:"o",skin:"#d49a6a",hair:"#3f2616",style:"short"};
 function drawPortrait(canvas, n){ const c = canvas.getContext("2d"); c.clearRect(0,0,16,20); c.fillStyle = "#333c57"; c.fillRect(0,0,16,20); drawPerson(c, 0, 4, lookOf(n), [0,1], 0, {}); }
 
 const parts = [];
@@ -3197,6 +3315,7 @@ function render(dt){
   ctx.drawImage(mapCv, 0, 0);
   const now = performance.now();
   for (const [x,y] of DOORS) drawDoor(ctx, x, y);
+  if (isCop() && S.cop.vanDay===S.day){ const X = 71*TS, Y = 2*TS+4; ctx.fillStyle = PAL.k; ctx.fillRect(X-1, Y-1, TS+2, TS*3+2); ctx.fillStyle = "#e8ecf0"; ctx.fillRect(X, Y, TS, TS*3); ctx.fillStyle = "#29366f"; ctx.fillRect(X, Y+TS, TS, 4); ctx.fillStyle = "#73eff7"; ctx.fillRect(X+3, Y+3, TS-6, 8); ctx.fillStyle = PAL.r; ctx.fillRect(X+2, Y+TS*3-6, 4, 3); }
   const b0 = CELLS[0].bed, dg = CELLS[0].dig;
   if (S.dummy){ const X = b0[0]*TS, Y = b0[1]*TS; ctx.fillStyle = PAL.k; ctx.fillRect(X+4,Y+1,8,6); ctx.fillStyle = "#d49a6a"; ctx.fillRect(X+5,Y+2,6,4); ctx.fillStyle = "#3f2616"; ctx.fillRect(X+5,Y+2,6,2); ctx.fillStyle = "#5a7aa8"; ctx.fillRect(X+3,Y+7,10,3); }
   if (S.tunnel > 0){ const X = dg[0]*TS, Y = dg[1]*TS;
@@ -3425,6 +3544,8 @@ $("dForm").addEventListener("submit", e => {
 });
 $("dGive").addEventListener("click", () => { const it = S.selItem; if (!it || busy || !P().inv.includes(it)) return; const v = $("dInput").value; $("dInput").value = ""; const n = byId(S.talkId); if (n) askNpc(n, {said:v.trim(), gave:it}); });
 $("dTrade").addEventListener("click", openTrade);
+$("dAskBtn").addEventListener("click", toggleAsk);
+$("dPhrase").addEventListener("click", () => { if (busy || !S || !S.talkId) return; const n = byId(S.talkId); const v = $("dInput").value.trim(); $("dInput").value = ""; askNpc(n, {said:(v ? v+" " : "") + CODE_PHRASE}); });
 $("dFavor").addEventListener("click", () => { const n = byId(S.talkId); if (n && !busy) offerTask(n); });
 $("dLeave").addEventListener("click", closeTalk);
 $("dLog").addEventListener("click", () => { const id = S.talkId; closeTalk(); jSub = "mem"; openJournal(id, "people"); });
@@ -3478,6 +3599,538 @@ function boot(data){
   connectClaude();
   requestAnimationFrame(frame);
 }
+// ================= OPERATION BIRCH: back inside, as a guard =================
+// Part three. The player returns to Cellblock Nine wearing a dead agent's badge. They are, and always were,
+// a Russian intelligence officer (codename SPARROW). One inmate is BIRCH, a fellow agent who doesn't know them.
+const OPS_KEY = "cellblock9-ops-v1", OPS_OPTS = "cellblock9-ops-opts";
+const CODE_PHRASE = "The birch trees are early this year.", COUNTERSIGN = "Only in Leningrad.";
+const RU_TELLS = [
+  {id:"tea", habit:"drinks black tea from a glass, never coffee", show:["*sips tea from a glass*","*stirs tea with a spoon left in the glass*"]},
+  {id:"kalinka", habit:"hums 'Kalinka' under their breath", show:["♪ ka-lin-ka, ka-lin-ka… ♪","*hums a folk tune, speeding up*"]},
+  {id:"count", habit:"counts under their breath in Russian", show:["*mutters* …odin, dva, tri…","*counts the guards: chetyre, pyat*"]},
+  {id:"chess", habit:"plays chess with old Soviet openings and mutters about Karpov", show:["*studies a chessboard* Karpov would never…","*moves a pawn* The Sicilian. Of course."]},
+  {id:"cyrillic", habit:"doodles backwards-looking letters (Cyrillic) in the margins", show:["*doodles a backwards R and a Ж*","*scribbles something, then scratches it out*"]},
+  {id:"cross", habit:"crosses themself right to left, Orthodox style", show:["*crosses themself, right shoulder first*","*touches forehead, chest, right, left*"]},
+  {id:"cold", habit:"never complains about the cold, laughs at people who do", show:["Cold? *laughs* This is spring.","*sleeves rolled up in the draft*"]},
+  {id:"bread", habit:"saves bread crusts and won't waste a crumb", show:["*pockets a crust of bread*","*sweeps crumbs into a palm and eats them*"]}
+];
+const OPS_ITEMS = {
+  "blank transfer form":["Form 27-B: Inmate Transfer. Unsigned.",4], "warden's stamp":["APPROVED · H. ASHBY. Heavy brass.",6],
+  "transfer order":["A transfer order, stamped and signed. It looks real. Mostly.",8], "keyring":["Every cell door in Block C. Not the gate.",0],
+  "radio":["Staff radio. Crackles.",3], "inmate files":["Photocopied files. You shouldn't have these.",2]
+};
+function copSetupItems(){
+  Object.assign(ITEMS, OPS_ITEMS);
+  addIcons({
+    "blank transfer form":[".kkkkkk.",".kwwwwk.",".kwkkwk.",".kwwwwk.",".kwkkwk.",".kwwwwk.",".kwwkkk.",".kkkkkk."],
+    "warden's stamp":["...kk...","..kuuk..","..kuuk..","...kk...",".kkkkkk.","kuuuuuuk","krrrrrrk",".kkkkkk."],
+    "transfer order":[".kkkkkk.",".kwwwwk.",".kwkkwk.",".kwwwwk.",".kwrrwk.",".krrrrk.",".kwrrwk.",".kkkkkk."],
+    "keyring":["..kkk...",".ky.yk..",".k...k..",".ky.yk..","..kkk...","...kyk..","...kyyk.","...kyk.."],
+    "radio":["....k...","....k...",".kkkkkk.",".kddddk.",".kdccdk.",".kddddk.",".kdyydk.",".kkkkkk."]
+  });
+  if (!RECIPES.find(r=>r.out==="transfer order")) RECIPES.push({out:"transfer order", need:["blank transfer form","warden's stamp","pen"], known:true});
+}
+const COP_DUTY = {night:null, rollcall:"corridor", meal:"canteen", work:null, yard:"yard", free:"hall"};
+const isCop = () => S && S.mode==="cop";
+const spyN = () => S && S.cop ? byId(S.cop.spy) : null;
+function coverAdd(v, msg){
+  if (!isCop() || S.cop.blown) return;
+  const c = S.cop, before = c.cover;
+  c.cover = clamp(c.cover + v, 0, 100);
+  if (msg) toast(msg, v>0 ? "bad" : "good", 3.5);
+  if (v>0 && Math.floor(c.cover/10)>Math.floor(before/10)) sfx("heat");
+  if (c.cover >= 50 && before < 50) setTimeout(()=>{ if (isCop()) { const w = byId("warden"); if (w && present(w)) w.order = {type:"approach", reason:`There have been complaints about Officer ${c.name}. Call them in, ask pointed questions about where they've been and who they talk to. Remind them they're on probation.`, until:absT()+120}; } }, 800);
+  if (c.cover >= 75 && before < 75) setTimeout(staffSearch, 1500);
+  if (c.cover >= 100) copBlown(msg || "Your cover is blown.");
+}
+// ---------- a new life, as a guard ----------
+function newCopGame(o){
+  copSetupItems();
+  mods = []; buildMap();
+  const prev = (() => { try { return JSON.parse(localStorage.getItem(SAVE_KEY)||"null"); } catch { return null; } })();
+  const name = o.badgeName || "Kit Nakamura";
+  S = {v:4, mode:"cop", name:o.alias || "Sam Reyes", day:1, t:7*60+5, heat:0,
+    player:{x:40,y:7,fx:40,fy:7,prog:1,dir:[0,1],inv:["baton","keyring","radio","coffee"],uniform:true,walkT:0,hp:120,fight:null},
+    selItem:null, corrupt:{}, event:null, containers:freshContainers(), mods, fence:{}, picked:{}, jobs:{}, known:RECIPES.filter(r=>r.known).map(r=>r.out),
+    dummy:false, tunnel:0, covered:false, shovelWear:0, lastFrisk:-999, rollChecked:0, inspected:0, headcount:{}, noted:{}, lock:null, won:null, refilled:1,
+    rel:{}, news:[], tasks:[], firstTask:{}, beats:{}, npcs:CAST.map(spawnNpc)};
+  npcs = S.npcs;
+  for (const b of BEATS) S.beats[b.id] = true;
+  for (const c of CAST) S.firstTask[c.id] = true;
+  for (const id in CORRUPT_CHANCE) S.corrupt[id] = Math.random() < CORRUPT_CHANCE[id] + .15;
+  for (let i=0;i<CAST.length;i++) for (let j=i+1;j<CAST.length;j++){ const k = relKey(CAST[i].id, CAST[j].id); S.rel[k] = REL_SEED[k] ?? Math.round(Math.random()*24-8); }
+  // pick Birch
+  const inmates = CAST.filter(c=>c.kind==="inmate" && c.id!=="viktor");
+  const spy = pick(inmates);
+  const tells = shuffle(RU_TELLS.slice());
+  const herrings = shuffle(CAST.filter(c=>c.kind==="inmate" && c.id!==spy.id)).slice(0,3);
+  if (!herrings.find(h=>h.id==="nadia") && spy.id!=="nadia") herrings[2] = def("nadia");
+  S.cop = {name, badgeName:name, alias:o.alias||"Sam Reyes", look:o.look||null, disguise:o.disguise||{}, spy:spy.id, revealed:false, cover:6, blown:false,
+    tells:{[spy.id]:[tells[0].id, tells[1].id, tells[2].id]}, seen:{}, suspects:{}, files:false, mail:[], mailDay:0, codeTold:[], nightShift:0,
+    duty:{act:null, present:0, total:0}, seenWithSpy:{}, knew:{}, transfer:null, vanDay:0, spyDummy:false, attempts:0, offPostWarned:{}, dunnNap:true,
+    stampMissing:false, extracted:false, log:[], day1:true, townDay:o.townDay||0};
+  herrings.forEach((h,i)=>{ S.cop.tells[h.id] = [tells[3+i].id]; });
+  // Birch knows the phrase. Everyone else knows a new guard came in on a State Bureau transfer.
+  for (const n of npcs){
+    const d = def(n.id);
+    if (d.kind==="guard") remember(n, `A new officer, ${name}, transferred in from the State Bureau today. Probation period. Day shift.`);
+    else remember(n, `There's a new guard, Officer ${name}. Came in from some state bureau.`);
+    if (d.kind==="inmate"){ n.trust = Math.max(0, n.trust-5); n.opinion = Math.round(n.opinion*.5); }
+    if (prev && Array.isArray(prev.npcs)){ const p = prev.npcs.find(x=>x.id===n.id); if (p && p.memories && p.memories.some(m=>/4471/.test(m.text))){ S.cop.knew[n.id] = Math.round(p.opinion); remember(n, `I knew ${PNUM_PRISON}, the inmate who escaped last month. ${p.opinion>=20 ? "Liked them, honestly." : p.opinion<=-20 ? "Good riddance." : "Didn't know them well."}`); } }
+    else if (d.kind==="inmate" && Math.random()<.5){ S.cop.knew[n.id] = Math.round(Math.random()*40-15); remember(n, `I remember ${PNUM_PRISON}, the one who broke out last month.`); }
+  }
+  remember(byId(spy.id), `I have been waiting a long time. Someone will come. They will say: "${CODE_PHRASE}"`);
+  for (const id of ["brandt","warden"]) remember(byId(id), `Officer ${name} came with a thin file and a very good badge. Keep an eye on the new one.`);
+  news(`New officer ${name} starts today in Block C.`, [], true);
+  news(`Still no sign of escaped inmate ${PNUM_PRISON}.`, [], true);
+  // cop-only items around the admin wing
+  S.containers["55,3"].items.push("blank transfer form", "warden's stamp");
+  S.containers["50,1"].items.push("blank transfer form");
+  if (!S.containers["37,1"].items.includes("guard uniform")) S.containers["37,1"].items.push("guard uniform");
+  for (const k in S.containers) S.containers[k].items = S.containers[k].items.slice(0, CAP);
+  try { localStorage.setItem(OPS_OPTS, JSON.stringify(o)); } catch {}
+}
+const PNUM_PRISON = "#4471";
+function startOps(o){
+  PNUM = "Officer " + (o.badgeName || "Nakamura").split(" ").slice(-1)[0];
+  newCopGame(o);
+  PNUM = "Officer " + S.cop.name.split(" ").slice(-1)[0];
+  $("scrTitle").hidden = true; $("scrWin").hidden = true; $("scrSolitary").hidden = true;
+  document.body.classList.remove("in-town"); document.body.classList.add("cop-mode");
+  afterBoot();
+  copHudLabels();
+  banner("OPERATION BIRCH", `Day 1. Officer ${S.cop.name}. Find Birch. Say nothing you can't take back.`, false, 6);
+  const tip = (txt, ms, secs) => setTimeout(()=>{ if (isCop() && !S.cop.extracted && !S.cop.blown && !(window.TOWN && window.TOWN.active)) toast(txt, "", secs); }, ms);
+  tip("Your post changes through the day (top left). Being where you should be keeps your cover clean.", 6500, 8);
+  tip(`The recognition phrase: "${CODE_PHRASE}" Say it to the wrong inmate and people will talk.`, 15000, 9);
+  tip("Watch for Russian habits, read the inmate files in the warden's office, censor the mail in the guard room. J → Operation.", 25000, 9);
+  saveOps();
+}
+function continueOps(){
+  copSetupItems();
+  let d = null; try { d = JSON.parse(localStorage.getItem(OPS_KEY)||"null"); } catch {}
+  if (!d || d.mode!=="cop") return false;
+  S = d; npcs = S.npcs; mods = S.mods||[]; S.mods = mods;
+  for (const n of npcs){ n.bubble=null; n.emote=null; n.path=[]; n.prog=1; n.fx=n.x; n.fy=n.y; n.scene=null; n.fight=null; if (n.order && n.order.type==='approach') n.order=null; }
+  S.player.fight = null; S.player.prog=1; S.player.fx=S.player.x; S.player.fy=S.player.y;
+  buildMap();
+  PNUM = "Officer " + S.cop.name.split(" ").slice(-1)[0];
+  $("scrTitle").hidden = true; document.body.classList.add("cop-mode");
+  afterBoot(); copHudLabels();
+  banner("OPERATION BIRCH", `Day ${S.day}`, false, 3);
+  return true;
+}
+function saveOps(){ if (!isCop() || S.cop.blown || S.cop.extracted) return; try { localStorage.setItem(OPS_KEY, JSON.stringify(S)); } catch {} }
+function copHudLabels(){
+  $("heatBox").querySelector(".lbl").textContent = "Suspicion"; $("heatBox").title = "How much the staff suspect you. At 100, you're burned.";
+  $("craftBtn").title = "Craft (C)";
+}
+const copLook = () => { const L = S.cop.look || {skin:"#d49a6a", hair:"#3f2616"}; return {suit:"n", skin:L.skin||"#d49a6a", hair:L.hair||"#3f2616", style:"cap", glasses:!!(S.cop.disguise && S.cop.disguise.glasses), beard:L.beard||null}; };
+const SPY_GUARD = n => ({suit:"n", skin:def(n.id).look.skin, hair:def(n.id).look.hair, style:"cap"});
+
+// ---------- the shift ----------
+function copPost(act){ if (act==="work"){ if (!S.cop.workPost || S.cop.workPostDay!==S.day){ S.cop.workPost = pick(["workshop","laundry","kitchen","library"]); S.cop.workPostDay = S.day; } return S.cop.workPost; } if (act==="night") return S.cop.nightShift===nightId() ? "corridor" : null; return COP_DUTY[act]; }
+function copTick(dt, before){
+  const c = S.cop, pl = P(), act = activityAt(S.t), z = zoneOf(pl.x, pl.y), gm = dt*3;
+  if (c.blown || c.extracted) return;
+  // duty
+  if (c.duty.act !== act){
+    if (c.duty.act && c.duty.total > 20){
+      const post = c.duty.post, ratio = c.duty.present / c.duty.total;
+      const boss = ["brandt","warden"].map(byId).find(b=>b && present(b) && !b.ko);
+      if (post && ratio < .35 && boss){ coverAdd(5, `${nm(boss.id)} noticed you weren't at your post (${zoneLabel(post).toLowerCase()}).`); remember(boss, `Officer ${c.name} wasn't at their post during ${ACT[c.duty.act].label.toLowerCase()} on Day ${S.day}.`); }
+      else if (post && ratio > .7) coverAdd(-3);
+    }
+    c.duty = {act, post:copPost(act), present:0, total:0};
+    if (c.duty.post) toast(`Your post: ${zoneLabel(c.duty.post)}.`, "", 3);
+  }
+  c.duty.total += gm; if (c.duty.post && z===c.duty.post) c.duty.present += gm;
+  if (c.duty.post && z===c.duty.post) c.cover = Math.max(0, c.cover - .004*gm);
+  // night: Kessler goes home if you took the night shift; Dunn naps
+  const kes = byId("kessler");
+  if (act==="night" && c.nightShift===nightId() && kes && present(kes) && !kes.ko){ kes.awayUntil = S.day*1440 + 360 + (S.t < 360 ? 0 : 1440); kes.path = []; }
+  const dunn = byId("dunn"); if (dunn) dunn.asleep = c.dunnNap && (S.t >= 150 && S.t < 240) && !S.lock;
+  if (dunn && dunn.asleep) dunn.lookAwayUntil = absT() + 2;
+  // off-duty wandering at night
+  if (act==="night" && c.nightShift!==nightId() && !["guardroom","office","gatehouse","outside"].includes(z)){
+    const g = npcs.find(n=>watching(n) && n.id!=="dunn" && canSee(n, pl.x, pl.y, sightRange(n)));
+    if (g) noteOnce("offnight"+nightId()+g.id, () => { coverAdd(3, `${nm(g.id)} wonders why you're on the block after hours.`); remember(g, `Officer ${c.name} was wandering the cell block at ${fmtClock(S.t)}, off shift.`); });
+  }
+  // time seen with Birch
+  const sp = spyN();
+  if (sp && present(sp) && dist(sp, pl) < 2.5 && !isNight()){
+    const g = npcs.find(n=>watching(n) && canSee(n, pl.x, pl.y, sightRange(n)));
+    if (g){ c.seenWithSpy[S.day] = (c.seenWithSpy[S.day]||0) + gm; if (c.seenWithSpy[S.day] > 120) noteOnce("spyclose"+S.day, () => { coverAdd(6, `${nm(g.id)} has noticed you spend a lot of time with ${nm(sp.id)}.`); remember(g, `Officer ${c.name} spends a lot of time with ${nm(sp.id)}. Too much.`); }); }
+  }
+  // Birch out of their cell when they shouldn't be
+  if (sp && present(sp) && !sp.ko && !c.extracted){
+    const out = act==="night" && !inCell(sp, def(sp.id).cell);
+    const sz = zoneOf(sp.x, sp.y), odd = RESTRICTED.has(sz) && !(c.transfer && c.transfer.day===S.day-1 && S.t < 600);
+    if ((out || odd) && !S.lock){
+      for (const g of npcs){
+        if (!watching(g) || g.id===sp.id) continue;
+        if (!canSee(g, sp.x, sp.y, sightRange(g))) continue;
+        const d = dist(g, sp);
+        if (sp.disguised && (d > 2.6 || Math.random() > dt*.9)) continue;
+        say(g, sp.disguised ? "Hold on… who ARE you?" : `${nm(sp.id)}! Out of your cell?!`, 3); emote(g, "!"); sfx("alert");
+        triggerLockdown(`${def(sp.id).name} is out of their cell${sp.disguised ? " in a stolen uniform" : ""}!`);
+        if (dist(pl, sp) < 6) coverAdd(35, "You were right there with them.");
+        break;
+      }
+    }
+  }
+  // the staff check on the warden's stamp
+  if (before < 480 && S.t >= 480 && c.stampTaken && !c.stampMissing){ c.stampMissing = true; remember(byId("warden"), "My APPROVED stamp is missing from my desk."); news("The warden is furious: someone took his stamp.", ["warden"]); coverAdd(4); }
+  // morning mail
+  if (before < 420 && S.t >= 420 && c.mailDay !== S.day){ c.mailDay = S.day; c.mailFresh = true; }
+  // the transfer van
+  if (c.transfer && S.day === c.transfer.day + 1){
+    if (before < 480 && S.t >= 480){ c.vanDay = S.day; setTile(70,5,"g"); banner("TRANSFER VAN", "A prison van idles outside the front gate. Escort Birch out before 09:00.", false, 6); sfx("door"); }
+    if (before < 540 && S.t >= 540 && c.vanDay===S.day){ c.vanDay = 0; revertTiles(m => m.c==="g"); toast("The van leaves without anyone.", "bad", 4); c.transfer = null; }
+    if (c.vanDay===S.day && sp && zoneOf(sp.x,sp.y)==="gatehouse" && !c.warnCheck){
+      c.warnCheck = true;
+      const w = byId("warden"), risk = c.cover/120 + (c.stampMissing ? .25 : 0) + (c.transfer.forged ? .1 : 0);
+      if (w && present(w) && Math.random() < risk){ say(w, "Wait. I never signed this."); emote(w, "!"); revertTiles(m => m.c==="g"); c.vanDay = 0; coverAdd(45, "The warden is looking at the transfer order very closely."); triggerLockdown("A forged transfer order at the gatehouse!"); }
+    }
+  }
+  // tapping on the pipes at night
+  if (act==="night" && sp && present(sp) && !sp.ko && zoneOf(pl.x,pl.y)==="corridor" && Math.abs(pl.x - CELLS[def(sp.id).cell].door[0]) < 6 && Math.random() < dt*.08){
+    say(sp, pick(["*tap · tap-tap · tap*","*tap-tap-tap · tap*","*· — — ·*"]), 2.5); for (let i=0;i<4;i++) Snd.tone({f:1800,dur:.02,vol:.03,at:i*.18+(i===2?.2:0)});
+    copSeeTell(sp.id, "tapping");
+  }
+  // habits on show
+  if (Math.random() < dt*.25){
+    for (const n of npcs){
+      const t = c.tells[n.id]; if (!t || !present(n) || n.ko || n.bubble || n.scene || dist(n, pl) > 7 || !canSee(pl, n.x, n.y, 8)) continue;
+      if (Math.random() > (n.id===c.spy ? .4 : .25)) continue;
+      const id = pick(t), tl = RU_TELLS.find(x=>x.id===id); say(n, pick(tl.show), 3.2); copSeeTell(n.id, id); break;
+    }
+  }
+  // the spy's handler-voice: Birch approaches once revealed, with updates
+  if (c.revealed && sp && !sp.order && present(sp) && !sp.ko && !S.talkId && Math.random() < dt*.004 && dist(sp, pl) < 9){
+    const reason = !hasSpyUniform() ? "Quietly tell Sparrow you'll need a guard uniform to walk out at night, or proper transfer papers to leave by day." : !c.spyDummy ? "Quietly suggest a dummy for your bed (bedsheet + toothpaste + comb) so the night headcount doesn't notice you're gone." : "Quietly tell Sparrow you are ready, and ask when.";
+    sp.order = {type:"approach", reason, until:absT()+30};
+  }
+  if (Math.random() < dt*.05) saveOps();
+}
+const inCell = (n, ci) => { const cl = CELLS[ci]; const r = cl.top ? [cl.x0,1,cl.x1,4] : [cl.x0,7,cl.x1,10]; return n.x>=r[0] && n.x<=r[2] && n.y>=r[1] && n.y<=r[3]; };
+function copSeeTell(id, tell){ const c = S.cop; c.seen[id] = c.seen[id] || []; if (!c.seen[id].includes(tell)){ c.seen[id].push(tell); if (tell==="tapping") toast(`Someone in ${zoneLabel("cell"+def(id).cell)} is tapping on the pipes. It sounds like Morse.`, "news", 5); } }
+function hasSpyUniform(){ const sp = spyN(); if (!sp) return false; return sp.inv.includes("guard uniform") || (S.containers[CELLS[def(sp.id).cell].desk.join(",")]||{items:[]}).items.includes("guard uniform"); }
+function staffSearch(){
+  if (!isCop() || S.cop.blown) return;
+  const pl = P(), bad = pl.inv.filter(i=>["gate key","spare gate key","warden's stamp","transfer order","blank transfer form","inmate files","shiv","hooch","wire cutters","lockpick"].includes(i));
+  const b = byId("brandt");
+  banner("STAFF SEARCH", "Brandt wants your locker open and your pockets out.", true, 4);
+  if (b) say(b, "Pockets, Officer. Now.", 3);
+  if (bad.length){ takeFromPockets(bad); confiscate(bad); coverAdd(25, `Brandt found: ${bad.join(", ")}.`); if (b) remember(b, `Searched Officer ${S.cop.name}. Found ${bad.join(", ")}. Reported to the warden.`); }
+  else { coverAdd(-10, "Clean. Brandt looks almost disappointed."); if (b) remember(b, `Searched Officer ${S.cop.name}. Clean.`); }
+  renderHotbar();
+}
+function copBlown(why){
+  if (S.cop.blown) return;
+  S.cop.blown = true; closeTalk(); closeWindows();
+  try { localStorage.removeItem(OPS_KEY); } catch {}
+  Snd.track(null); sfx("sad");
+  setTimeout(() => {
+    $("winEyebrow").textContent = `OPERATION BIRCH · DAY ${S.day}, ${fmtClock(S.t)}`;
+    $("winTitle").textContent = "BURNED";
+    $("winText").textContent = `${why} Brandt cuffs you in the guard room. Somewhere in Moscow, a file is closed. ${def(S.cop.spy).name} — Birch — watches you go and says nothing at all. They never learn who you were.`;
+    const ul = $("winPeople"); ul.textContent = "";
+    for (const n of npcs.filter(x=>x.memories.some(m=>m.text.includes(S.cop.name)))){ const li = document.createElement("li"); const last = n.memories.filter(m=>m.text.includes(S.cop.name)).slice(-1)[0]; li.append(Object.assign(document.createElement("small"),{textContent:def(n.id).name}), `“${last.text}”`); ul.append(li); }
+    $("townBtn").textContent = "Try the operation again"; $("townBtn").onclick = (e) => { e.stopImmediatePropagation(); let o = {}; try { o = JSON.parse(localStorage.getItem(OPS_OPTS)||"{}"); } catch {} $("scrWin").hidden = true; startOps(o); };
+    $("againBtn").textContent = "Title screen"; $("againBtn").onclick = (e) => { e.stopImmediatePropagation(); location.reload(); };
+    $("lingerBtn").hidden = true;
+    $("scrWin").hidden = false;
+  }, 900);
+}
+function copExtract(){
+  const c = S.cop; if (c.extracted) return;
+  c.extracted = true; closeTalk(); closeWindows();
+  try { localStorage.removeItem(OPS_KEY); } catch {}
+  const sp = def(c.spy);
+  sfx("fanfare");
+  news(`${sp.name} and Officer ${c.name} are gone.`, [], true);
+  banner("BIRCH IS OUT", `${sp.name} walks out of Cellblock Nine beside you.`, false, 4);
+  setTimeout(() => {
+    document.body.classList.remove("cop-mode");
+    if (window.TOWN && window.TOWN.beginSlasher) window.TOWN.beginSlasher({spy:{id:sp.id, name:sp.name, short:sp.short, look:sp.look, voice:sp.voice}, badgeName:c.name, days:S.day, attempts:c.attempts});
+  }, 3800);
+}
+
+// ---------- talking, as a guard ----------
+function copPrompt(n, said, gave, approach, request, extra={}){
+  const d = def(n.id), guard = d.kind==="guard", c = S.cop, me = `Officer ${c.name}`, isSpy = n.id===c.spy;
+  const mems = n.memories.slice(-80).map(m=>`- [${m.s}] ${m.text}`).join("\n") || "- Nothing yet.";
+  const recent = n.log.slice(-22).map(l => l.who==="p" ? `${me}: ${l.text}` : l.who==="n" ? `You: ${l.text}` : `[${l.text}]`).join("\n") || "(You haven't spoken before.)";
+  const sees = perceive(n), z = zoneLabel(zoneOf(P().x,P().y));
+  const now = approach ? `[You walk up to ${me} and start the conversation. Why: ${approach}]` : gave && !said ? `[${me} hands you: ${gave}]` : gave ? `[${me} hands you: ${gave}] and says: "${said}"` : `${me} says: "${said}"`;
+  const reqLine = request ? `\n[DIRECT REQUEST from ${me}: ${requestText(request)}. If you agree, include exactly: ${JSON.stringify(requestAction(request))}. As an inmate, refusing a guard has consequences, but you can stall or bargain.]` : "";
+  const others = CAST.filter(o=>o.id!==n.id).map(o=>`- ${o.name}: ${o.pub}. You: ${relWord(relGet(n.id,o.id))}.`).join("\n");
+  const knew = c.knew[n.id]!=null && !guard ? `\nSOMETHING NAGS AT YOU: this new guard reminds you of ${PNUM_PRISON}, the inmate who escaped last month${n.recognized ? ". You're now SURE it's them. You can keep that to yourself, use it as leverage, or tell someone" : ` (you only half-notice; the face is different${c.disguise && Object.keys(c.disguise).length ? ", new hair, new look" : ""})`}. You ${c.knew[n.id]>=20 ? "liked" : c.knew[n.id]<=-20 ? "disliked" : "barely knew"} ${PNUM_PRISON}.` : "";
+  const spyRole = isSpy ? (c.revealed
+    ? `\nYOUR REAL IDENTITY: you are an officer of Russian foreign intelligence, codename BIRCH, held here for years under the name ${d.name}. ${me} is SPARROW, your contact from Moscow: they gave the recognition phrase. You trust them completely and will do what the extraction needs (follow them, hide things, put on a uniform, play sick). When anyone else can hear (around you: ${sees.around.join(", ") || "nobody"}), speak in harmless, veiled terms. You may slip into a Russian word when it's safe.`
+    : `\nYOUR REAL IDENTITY (never reveal it): you are an officer of Russian foreign intelligence, codename BIRCH, held here for years under the name ${d.name}. Moscow promised to send someone. You don't know who, or when. The recognition phrase is "${CODE_PHRASE}" and the answer is "${COUNTERSIGN}". ONLY if someone says that phrase (or something unmistakably close), answer quietly with the countersign and accept them as your contact. Until then trust nobody, least of all a new guard; deny anything about Russia. Your habits: ${(c.tells[n.id]||[]).map(id=>RU_TELLS.find(t=>t.id===id).habit).join("; ")} (let one slip now and then).`)
+    : (c.tells[n.id] ? `\nYour habit: ${RU_TELLS.find(t=>t.id===c.tells[n.id][0]).habit}. You are NOT a spy of any kind; you'd be baffled by spy talk.` : "");
+  const guardRole = guard ? `\n${me} is a new colleague on probation, transferred in from the State Bureau. ${["brandt","warden"].includes(n.id) ? "You're responsible for judging whether they're fit for the job, and you notice irregularities." : ""} Current staff suspicion of them: ${Math.round(c.cover)}/100. You know nothing about spies; only that new staff sometimes get too friendly with inmates, smuggle things, or take money.` : "";
+  return `You are voicing ${d.name} (${d.role}) in "Cellblock Nine: Operation Birch", an 8-bit game. Stay completely in character. Never mention AI or games.
+
+WHO YOU ARE: ${d.bio}
+WHAT YOU WANT: ${d.wants_text}
+YOUR OTHER SECRET: ${d.secret}
+HOW YOU TALK: ${d.style}
+YOU CARRY: ${n.inv.join(", ") || "nothing"}${spyRole}${guardRole}${knew}
+PEOPLE HERE:
+${others}
+
+YOU AND ${me.toUpperCase()}: opinion ${Math.round(n.opinion)}/100, trust ${Math.round(n.trust)}/100. Mood: ${n.mood}. ${guard ? "They're a colleague." : "They're a guard. Inmates are careful with guards, though some guards can be bargained with."}
+EVERYTHING YOU REMEMBER:
+${mems}
+
+RIGHT NOW: Day ${S.day} of the new officer's posting, ${fmtClock(S.t)}, ${ACT[activityAt(S.t)].label.toLowerCase()}, in the ${z}.${S.lock?" LOCKDOWN.":""}
+AROUND YOU: ${sees.around.join(", ") || "nobody else"}.
+GRAPEVINE: ${S.news.slice(-5).map(x=>x.text).join(" | ")}
+
+RECENT CONVERSATION:
+${recent}
+
+NEW: ${now}${reqLine}
+
+Answer as ${d.short}. Under 45 words; a short *action* is fine.
+
+${ACTIONS_DOC}
+${guard ? `COLLEAGUE ACTIONS: {"type":"go_to","place":"...","minutes":60} (cover a post / take a break somewhere) {"type":"look_away","minutes":60} (only if corrupt and bribed)` : ""}${n.id==="ike" ? `\nFORGER ACTION: {"type":"forge"} if you agree to forge the warden's signature on a blank transfer form you've been handed.` : ""}${isSpy ? `\nBIRCH ACTIONS: {"type":"countersign"} include ONLY when you answer the recognition phrase and accept them as your contact. {"type":"wear_uniform"} if you have a guard uniform and agree to put it on now.` : ""}
+
+Reply with only this JSON:
+{"reply":"what you say","mood":"one word","opinion_change":0,"trust_change":0,"remember":"","gossip":"","actions":[]${guard ? ',"cover_change":0' : ""}}
+- opinion_change -15..15; trust_change -20..10.${guard ? `\n- cover_change -5..15: how much more (or less) suspicious this makes you of Officer ${c.name}. Talk of Russia, odd questions about one inmate, offering contraband or bribes raise it. Normal shop talk lowers it a little.` : ""}
+- remember: first-person note of anything worth remembering. gossip: something you'd pass on about Officer ${c.name}, or empty.`;
+}
+function copFallback(n, said, gave, approach, request){
+  const c = S.cop, d = def(n.id), s = (said||"").toLowerCase(), isSpy = n.id===c.spy, guard = d.kind==="guard";
+  const r = {reply:pick(d.fallback), mood:n.mood, opinion_change:0, trust_change:0, remember:"", gossip:"", actions:[]};
+  if (approach){ r.reply = isSpy && c.revealed ? "*barely moving their lips* Sparrow. Listen." : guard ? pick(["Got a sec, rookie?","New guy. Word.","Officer. A moment."]) : pick(["Officer? Can I ask something?","Hey. Boss. Got a minute?","*glances around* You're the new one."]); return r; }
+  if (request){ const ok = requestWilling(n, request); r.reply = ok ? pick(REQ_YES[request.type]||["Yes, Officer."]) : pick(["With respect, no.","That's not my job.","You'll have to make it worth my while."]); if (ok) r.actions = [requestAction(request)]; return r; }
+  if (gave){
+    r.reply = `*takes the ${gave}* ${guard ? "Huh. Thanks." : "…From a guard? What's the catch?"}`; r.opinion_change = 4; r.trust_change = 3;
+    if (n.id==="ike" && gave==="blank transfer form"){ if (n.trust >= 25){ r.reply = "*studies the form* The warden signs with a loop on the A. Give me a minute."; r.actions = [{type:"forge"}]; } else r.reply = "*slides it back* I don't know you, Officer."; }
+    if (isSpy && c.revealed && gave==="guard uniform"){ r.reply = "*tucks it under their shirt* It will be in my desk. Spasibo."; }
+    return r;
+  }
+  if (/birch/.test(s)){
+    if (isSpy){ r.reply = `*goes very still* …${COUNTERSIGN} *barely a whisper* I had stopped believing you were real.`; r.actions = [{type:"countersign"}]; r.trust_change = 10; }
+    else r.reply = guard ? "Birch trees? Are you feeling alright, rookie?" : pick(["…Okay? Trees. Sure, boss.","Is that a riddle? I hate riddles.","*squints* You drinking on shift?"]);
+    return r;
+  }
+  if (/russia|moscow|kgb|comrade|soviet|spy|leningrad/.test(s)){ r.reply = isSpy ? "*shrugs* Russia? Never been. Cold, I hear." : guard ? "Russia? What are you on about?" : "Russia? I've never been further than Tulsa."; r.cover_change = guard ? 6 : 0; return r; }
+  if (isSpy && c.revealed){ r.reply = pick(["*quietly* Not here. Too many ears.","Davai. Tell me what you need.","The uniform, the door, the gate. One at a time.","*nods once* I am ready when you are."]); return r; }
+  if (guard) r.reply = pick(["Quiet shift so far.","Don't let the warden catch you without coffee.","Keep your head down, rookie. Probation's a long month.","Brandt's in a mood. Fair warning."]);
+  return r;
+}
+function copApplyExtra(n, r){
+  if (!isCop()) return;
+  const c = S.cop, d = def(n.id);
+  if (d.kind==="guard"){ const cc = clamp(Math.round(Number(r.cover_change)||0), -5, 15); if (cc) coverAdd(cc, cc >= 6 ? `${d.short} gives you a long look.` : null); }
+}
+function copAction(n, a){
+  const c = S.cop, type = String(a.type||"").toLowerCase();
+  if (type==="countersign" && n.id===c.spy){
+    if (!c.revealed){ c.revealed = true; n.trust = 100; n.opinion = Math.max(n.opinion, 60); remember(n, `Officer ${c.name} is SPARROW. My contact. They said the phrase.`); sfx("fanfare"); banner("CONTACT", `${def(n.id).name} is Birch.`, false, 5); setTimeout(()=>toast("Now get them out without getting caught. J → Operation has the plan.", "good", 7), 3000); }
+    return "Birch knows who you are.";
+  }
+  if (type==="wear_uniform" && n.id===c.spy){ const k = n.inv.indexOf("guard uniform"); if (k<0) return ""; n.disguised = true; return "Birch is wearing a guard uniform."; }
+  if (type==="forge" && n.id==="ike"){ const k = n.inv.indexOf("blank transfer form"); if (k<0) return ""; n.inv.splice(k,1); addItem("transfer order"); c.forged = true; remember(n, `I forged the warden's signature on a transfer order for Officer ${c.name}. They owe me.`); return "Ike hands you a transfer order with a very convincing signature."; }
+  return null;
+}
+// Saying the phrase to the wrong person has consequences.
+function copPhraseCheck(n, said){
+  const c = S.cop; if (!/birch/i.test(said||"")) return;
+  if (n.id===c.spy) return;
+  c.codeTold.push(n.id);
+  const d = def(n.id);
+  remember(n, `Officer ${c.name} said something weird to me: "${said.slice(0,90)}". Like a password.`);
+  if (d.kind==="guard") coverAdd(12, `${d.short} will remember that odd remark.`);
+  else if (n.id==="viktor"){ n.pending = {text:`The new guard, Officer ${c.name}, whispered some kind of password at me: "${said.slice(0,80)}".`, at:absT()+40}; coverAdd(4); }
+  else { pushGossip(n, `The new guard, Officer ${c.name}, whispered some weird password about birch trees at me.`); coverAdd(6, "That landed wrong."); }
+}
+function copOnGive(n, gave){
+  const c = S.cop, pl = P();
+  if (["guard uniform","gate key","spare gate key","hooch","shiv","wire cutters","lockpick","dummy","transfer order"].includes(gave) && def(n.id).kind==="inmate"){
+    let seen = null; for (const g of npcs) if (watching(g) && g!==n && canSee(g, pl.x, pl.y, sightRange(g))){ seen = g; break; }
+    if (seen){ remember(seen, `I saw Officer ${c.name} pass ${nm(n.id)} a ${gave}.`); coverAdd(15, `${nm(seen.id)} saw you slip ${nm(n.id)} something.`); }
+  }
+  if (gave==="dummy" && n.id===c.spy){ c.spyDummy = true; toast("Birch will tuck the dummy into their bed when they leave.", "good", 4); }
+  if (gave==="transfer order" && n.id==="dunn"){
+    c.transfer = {day:S.day, forged:!!c.forged}; remember(n, `Officer ${c.name} filed a transfer order for ${def(c.spy).name}. Van comes tomorrow at 08:00.`);
+    toast(`Filed. The van comes tomorrow at 08:00. Escort ${def(c.spy).short} to the gatehouse.`, "good", 7); sfx("quest");
+  }
+}
+// Recognition: inmates who knew #4471 might see through the uniform.
+function copRecognition(n){
+  const c = S.cop; if (c.knew[n.id]==null || n.recognized || n.recogChecked) return;
+  n.recogChecked = true;
+  const disg = Object.values(c.disguise||{}).filter(Boolean).length;
+  if (Math.random() > .32 - disg*.07) return;
+  n.recognized = true;
+  remember(n, `I'm SURE of it now: Officer ${c.name} is ${PNUM_PRISON}. The one who escaped. Back here in a guard's uniform.`);
+  setTimeout(() => { if (!S || !isCop()) return; emote(n, "!", 3); toast(`${nm(n.id)} is staring at you. Hard.`, "bad", 4);
+    if (c.knew[n.id] >= 15){ n.order = {type:"approach", reason:`You recognized this 'officer' as ${PNUM_PRISON}, who you liked. Let them know you know. Maybe you'll keep quiet, maybe you want something for it.`, until:absT()+60}; }
+    else { n.pending = {text:`The new guard is ${PNUM_PRISON}! The escaped one! I'd swear to it.`, at:absT()+60}; pushGossip(n, `The new guard is ${PNUM_PRISON}. I'd know that walk anywhere.`); }
+  }, 2500);
+}
+function copInteract(fx, fy, c){
+  const pl = P(), cl = CELLS.findIndex(x=>x.door[0]===fx && x.door[1]===fy);
+  if (cl >= 0){ const open = S.picked[fx+","+fy]===nightId(); return {kind:"cell", key:fx+","+fy, idx:cl, label:`${open ? "Lock" : "Unlock"} ${zoneLabel("cell"+cl).replace("Your cell","Cell 1")}`}; }
+  if (c==="L" && fy===1 && fx>=50 && fx<=53) return {kind:"files", label:"Read the inmate files"};
+  if (c==="T" && fy===5 && (fx===41 || fx===42)) return {kind:"roster", label: S.cop.nightShift===nightId() ? "Duty roster (you're on tonight)" : "Duty roster: take tonight's night shift"};
+  if (c==="T" && fy===5 && fx===43) return {kind:"mail", label: S.cop.mailFresh ? "Censor the inmates' mail" : "Mail tray (empty until 07:00)"};
+  if (c==="U" && zoneOf(fx,fy)==="guardroom") return {kind:"bunk", label:"Sleep in the staff bunk room"};
+  return null;
+}
+function copDoInteract(t){
+  const c = S.cop, pl = P();
+  if (t.kind==="cell"){
+    const k = t.key, open = S.picked[k]===nightId();
+    if (open) delete S.picked[k]; else S.picked[k] = nightId();
+    sfx("unlock");
+    toast(open ? "Locked." : "Unlocked. The bolt slides back.", "", 2);
+    if (!open && isNight()){ const g = npcs.find(n=>watching(n) && canSee(n, pl.x, pl.y, sightRange(n))); if (g && !(c.nightShift===nightId() && g.id!=="brandt")) noteOnce("cellopen"+k+nightId(), () => { coverAdd(8, `${nm(g.id)} saw you unlock a cell after lights out.`); remember(g, `Officer ${c.name} unlocked ${zoneLabel("cell"+t.idx)} at ${fmtClock(S.t)}.`); }); }
+    save(); return;
+  }
+  if (t.kind==="files"){ c.files = true; const w = byId("warden"); if (w && present(w) && canSee(w, pl.x, pl.y, 8)) noteOnce("files"+S.day, () => { coverAdd(6, "The warden watches you go through the inmate files."); remember(w, `Caught Officer ${c.name} reading inmate files. Unauthorized.`); }); openJournal(null, "ops"); opsSub = "files"; renderJournal(); return; }
+  if (t.kind==="roster"){ if (c.nightShift===nightId()){ toast("You're down for tonight: the cell corridor. Kessler gets the night off.", "", 4); return; } c.nightShift = S.t < 360 ? S.day-1 : S.day; remember(byId("kessler"), `Officer ${c.name} took my night shift on Day ${S.day}. Owe 'em one.`); byId("kessler").opinion += 6; sfx("quest"); toast("Signed. Tonight you walk the cell corridor alone. Kessler's thrilled.", "good", 5); if (c.nightShift && (c.nightShifts||0) >= 2) coverAdd(3, "Three night shifts in a row raises an eyebrow."); c.nightShifts = (c.nightShifts||0)+1; return; }
+  if (t.kind==="mail"){ if (!c.mailFresh){ toast("Nothing yet. Mail comes at 07:00.", "", 2.5); return; } c.mailFresh = false; const batch = copMailBatch(); c.mail.push(...batch); toast(`You read ${batch.length} letters. (J → Operation → Mail)`, "news", 5); sfx("news"); return; }
+  if (t.kind==="bunk"){ fade(1.4, () => { const night = S.t >= 1260 || S.t < 300; if (night){ if (S.t >= 1260) S.day += 1; S.t = 6*60; } else S.t += 120; S.noted = {}; P().hp = 120; toast(night ? "You sleep in the bunk room. Brandt's snoring." : "A two-hour nap on a hard bunk.", "", 3); save(); }, "Z z z"); return; }
+}
+function copMailBatch(){
+  const c = S.cop, out = [], sp = def(c.spy);
+  const ins = shuffle(CAST.filter(x=>x.kind==="inmate")).slice(0,4);
+  if (!ins.includes(sp) && Math.random() < .6) ins[0] = sp;
+  const fam = ["Mom","your sister","Aunt May","your cousin Danny","Pastor Jim","an old friend"];
+  for (const d of ins){
+    let text;
+    if (d===sp) text = pick([`To ${d.name}, from "cousin Olga" (Brighton Beach): The birch trees are early this year, they say. Uncle Sasha asks if you still play chess. 7-4-1-1-9. We have not forgotten you.`, `To ${d.name}: A postcard of onion domes, no message but a row of numbers: 22 · 14 · 7 · 7 · 31. Postmarked Helsinki.`, `To ${d.name}, from "Aunt Lyuda": The bread is rationed here too, ha ha. Your sparrow will come when the weather turns. Keep warm.`]);
+    else if (c.tells[d.id] && Math.random() < .6) text = pick([`To ${d.name}: Grandma's samovar finally broke. She cried for a week. — your sister`, `To ${d.name}: Here's the chess column you asked for. Kasparov wins again. — Danny`, `To ${d.name}: The church choir sang the Orthodox Easter hymn for you. — Mom`]);
+    else text = `To ${d.name}, from ${pick(fam)}: ${pick(["We miss you. The dog still waits by the door.","Your court date got pushed again. Hang in there.","I'm sending socks. Don't trade them.","Your nephew learned to ride a bike!","The roof's leaking but we're managing."])}`;
+    out.push({day:S.day, to:d.id, text});
+  }
+  return out;
+}
+// Inmate files, as the records office has them.
+function inmateFile(d){
+  const c = S.cop;
+  const base = {tooth:"Armed bank robbery, 2003. Twenty-five years.", rosa:"Wire fraud. Eight years.", ledger:"Embezzlement, $2.1M. Eight years.", viktor:"Burglary. Five years. Note: cooperative.", pip:"Grand theft auto. Two years.", biglou:"Aggravated assault. Ten years.", marcus:"Gaming fraud (casino surveillance tampering). Six years.", doc:"Diversion of controlled substances. Five years.", ike:"Forgery, counterfeiting. Four years.", shay:"Armed robbery. Twelve years.", nadia:"Theft; two escape attempts. Sentence extended.", hollis:"Second-degree murder. Life."}[d.id] || "—";
+  let odd = "Family contacts on file. Regular visitors.";
+  if (d.id===c.spy) odd = pick(["Transferred from FEDERAL custody, origin redacted. Prior records SEALED. No visitors in four years. Fingerprint request to INTERPOL withdrawn by order of 'State Dept. liaison'.", "Name may be an alias (\"identity not independently verified\"). Speaks four languages per intake officer. Arrived with no personal effects.", "Arrest record begins at age 34. Nothing before that. Birth certificate: 'issued late'. Visitor log: one visit, 'Olga', no surname."]);
+  else if (c.tells[d.id] && d.id!=="nadia") odd = pick(["Grandparents emigrated from Odessa. Regular letters from family.", "Speaks some Russian (grandmother). Volunteers in the library.", "Requested Orthodox chaplain on intake."]);
+  else if (d.id==="nadia") odd = "Born in Kyiv, naturalized at 12. Two escape attempts. FLAGGED: flight risk.";
+  return `${d.name} — ${base} ${odd}`;
+}
+let opsSub = "plan";
+function renderOpsTab(body){
+  const c = S.cop, sp = def(c.spy), H = t => Object.assign(document.createElement("span"),{className:"lbl", textContent:t}), P_ = (t, cls) => Object.assign(document.createElement("p"),{className:cls||"note", textContent:t});
+  const tabs = document.createElement("div"); tabs.className = "tabs2";
+  for (const [k,l] of [["plan","The plan"],["suspects","Suspects"],["files","Files"],["mail","Mail"]]){ const b = document.createElement("button"); b.type = "button"; b.textContent = l; b.setAttribute("aria-selected", opsSub===k?"true":"false"); b.addEventListener("click", ()=>{ opsSub = k; renderJournal(); }); tabs.append(b); }
+  body.append(tabs);
+  body.append(P_(`Cover: ${100-Math.round(c.cover)}% intact. At 100 suspicion you're burned.`, c.cover >= 60 ? "status" : "note"));
+  if (opsSub==="plan"){
+    const step = (done, text) => P_(`${done ? "✓" : "☐"} ${text}`, done ? "status" : "note");
+    body.append(H("1 · Find Birch"), step(c.revealed, c.revealed ? `Birch is ${sp.name}.` : "One inmate is Birch. Watch for Russian habits, read the files (warden's office bookshelf), censor the mail (guard room). Don't ask about one inmate too often."));
+    body.append(H("2 · Make contact"), step(c.revealed, `Say the phrase to them, ideally where nobody else can hear: “${CODE_PHRASE}” They answer “${COUNTERSIGN}”`));
+    body.append(H("3 · Get them out"));
+    const has = it => P().inv.includes(it);
+    body.append(P_("Route A · The night walk-out"), step(has("gate key")||has("spare gate key"), "A gate key (warden's desk, the gatehouse, or a bribable guard)."), step(hasSpyUniform(), "A guard uniform in Birch's hands or desk (locker room, laundry)."), step(c.spyDummy, "Optional: a dummy for Birch's bed, to fool the 01:00 and 03:00 headcounts."), step(c.nightShift===nightId(), "Optional: take the night shift (guard-room roster). Kessler goes home; Dunn naps around 03:00."), step(false, "After lights out: unlock Birch's cell, ask them to follow you, walk out through the gatehouse."));
+    body.append(P_("Route B · The paper trail"), step(has("blank transfer form")||has("transfer order"), "A blank transfer form (warden's desk or office bookshelf)."), step(has("transfer order")||!!c.transfer, "Make it a transfer order: the warden's stamp + a pen (craft), or hand Ike the blank form."), step(!!c.transfer, "File it with Dunn at the gatehouse."), step(false, "Next morning 08:00–09:00: escort Birch to the gatehouse and out to the van."));
+    return;
+  }
+  if (opsSub==="suspects"){
+    body.append(P_("Habits you've noticed. Birch has three. A few innocent inmates share one."));
+    for (const cdef of CAST.filter(x=>x.kind==="inmate")){
+      const seen = c.seen[cdef.id] || [], row = document.createElement("div"); row.className = "rels";
+      const t = document.createElement("div"); t.append(cdef.short, Object.assign(document.createElement("span"),{className: seen.length>=2 ? "neg" : seen.length ? "pos" : "", textContent: seen.length ? seen.map(id=>id==="tapping" ? "taps Morse" : RU_TELLS.find(x=>x.id===id).id).join(", ") : "—"}));
+      const mark = Object.assign(document.createElement("button"),{type:"button", className:"pbtn", textContent:c.suspects[cdef.id] ? "★" : "☆"}); mark.addEventListener("click", ()=>{ c.suspects[cdef.id] = !c.suspects[cdef.id]; renderJournal(); });
+      t.append(mark); row.append(t); body.append(row);
+    }
+    if (c.codeTold.length) body.append(P_(`You've said the phrase to the wrong people: ${c.codeTold.map(nm).join(", ")}.`, "status"));
+    return;
+  }
+  if (opsSub==="files"){
+    if (!c.files){ body.append(P_("The inmate files are on the bookshelf in the warden's office. Better if the warden isn't watching.")); return; }
+    const ul = document.createElement("ul"); ul.className = "mems";
+    for (const cdef of CAST.filter(x=>x.kind==="inmate")){ const li = document.createElement("li"); li.textContent = inmateFile(cdef); ul.append(li); }
+    body.append(ul); return;
+  }
+  if (opsSub==="mail"){
+    if (!c.mail.length){ body.append(P_("No letters read yet. The mail tray is in the guard room; it fills at 07:00.")); return; }
+    const ul = document.createElement("ul"); ul.className = "mems";
+    for (const m of c.mail.slice().reverse()){ const li = document.createElement("li"); li.append(Object.assign(document.createElement("small"),{textContent:`Day ${m.day}`}), m.text); ul.append(li); }
+    body.append(ul);
+  }
+}
+function copWorld(dt, before){
+  const c = S.cop, pl = P(), sp = spyN();
+  copTick(dt, before);
+  if (c.blown || c.extracted) return;
+  // Birch on the move at night: grabs the uniform from the desk, leaves the dummy
+  if (sp && c.revealed && sp.order && sp.order.type==="follow" && isNight()){
+    const desk = S.containers[CELLS[def(sp.id).cell].desk.join(",")];
+    if (!sp.inv.includes("guard uniform") && desk.items.includes("guard uniform")){ desk.items.splice(desk.items.indexOf("guard uniform"),1); sp.inv.push("guard uniform"); }
+    if (sp.inv.includes("guard uniform") && !sp.disguised){ sp.disguised = true; say(sp, "*buttons a guard's jacket*", 2.5); }
+    if (c.spyDummy && !inCell(sp, def(sp.id).cell)) c.spyDummyPlaced = nightId();
+  }
+  if (S.lock){
+    const L = S.lock;
+    if (sp && present(sp) && !inCell(sp, def(sp.id).cell)){
+      for (const g of npcs) if (watching(g) && g.id!=="warden" && dist(g, sp) <= 1.1){
+        say(g, "GOT 'EM!", 3); sfx("alert");
+        sp.order = null; sp.disguised = false; sp.path = []; sp.awayUntil = (S.t>=360 ? (S.day+1)*1440 : S.day*1440) + 420;
+        c.attempts++; coverAdd(dist(pl, sp) < 7 ? 30 : 12, `They caught ${nm(sp.id)}. Solitary till morning.`);
+        remember(g, `Caught ${nm(sp.id)} out of their cell during the lockdown on Day ${S.day}.`);
+        news(`${def(sp.id).name} was caught out of their cell and thrown in solitary.`, [], false);
+        copEndLockdown(); return;
+      }
+    }
+    if (absT() - L.start > 90) copEndLockdown();
+    return;
+  }
+  // headcounts
+  for (const hc of [60, 180]){
+    const key = S.day+":"+hc;
+    if (before < hc && S.t >= hc && !S.headcount[key]){
+      S.headcount[key] = true;
+      if (sp && present(sp) && !inCell(sp, def(sp.id).cell)){
+        if (c.spyDummyPlaced===nightId()) toast("Night headcount. A flashlight sweeps Birch's bunk. The dummy holds.", "good", 4);
+        else if (c.nightShift===nightId()) toast("You do the headcount yourself tonight. Everyone present, you write.", "good", 4);
+        else { triggerLockdown(`Night headcount: ${def(sp.id).name} is missing from their cell.`); return; }
+      }
+    }
+  }
+  // tips passed to Brandt
+  for (const n of npcs) if (n.pending && absT() >= n.pending.at){ remember(byId("brandt"), `${nm(n.id)} told me: ${n.pending.text}`); coverAdd(n.recognized ? 30 : 10, "You get the feeling someone's been talking about you."); n.pending = null; }
+  for (const n of npcs) if (present(n) && !n.ko && !n.scene && !n.fight && !n.bubble && Math.random() < dt/60 && dist(n,pl) < 7 && !isNight()) say(n, pick(def(n.id).barks), 3);
+}
+function copEndLockdown(){
+  endLockdown();
+  const sp = spyN(), c = S.cop; if (!sp) return;
+  const desk = S.containers[CELLS[def(sp.id).cell].desk.join(",")];
+  const found = desk.items.filter(i=>["guard uniform","gate key","spare gate key","transfer order","dummy","wire cutters"].includes(i)).concat(sp.inv.filter(i=>["guard uniform","gate key","spare gate key","transfer order"].includes(i)));
+  for (const it of found){ let k = desk.items.indexOf(it); if (k>=0) desk.items.splice(k,1); else { k = sp.inv.indexOf(it); if (k>=0) sp.inv.splice(k,1); } }
+  if (found.length){ confiscate(found); coverAdd(14, `They tossed ${nm(sp.id)}'s cell and found: ${found.join(", ")}. Questions will be asked.`); c.spyDummy = false; }
+  sfx("allclear"); banner("ALL CLEAR", found.length ? `Contraband found in ${nm(sp.id)}'s cell.` : "Back to normal. For now.", false, 4);
+}
+function copApproachReason(n){
+  const c = S.cop, d = def(n.id);
+  if (n.id===c.spy) return null;
+  if (d.kind==="guard"){
+    if (n.id==="kessler" && Math.random()<.2) return "You're a tired, corrupt guard. Feel out whether the new officer is the kind who'd look the other way. Or would lend you money.";
+    if (n.id==="brandt" && c.cover >= 30 && Math.random()<.35) return `You don't trust the new officer. Question them about something you remember. Be clipped and formal.`;
+    if (n.id==="dunn" && Math.random()<.25) return "You're bored in the gatehouse. Chat with the new officer, maybe ask them to play cards.";
+    if (n.id==="okoye" && Math.random()<.15) return "Give the new officer a fair, practical tip about the job.";
+    return null;
+  }
+  if (Math.random()<.12) return pick(["You have a complaint about another inmate and want a guard to do something.","You want a small favor from the new guard (an extra phone call, a book, a candy bar). Feel out if they're soft.","You're testing the new guard to see what kind of officer they are."]);
+  return null;
+}
+
 function addIcons(obj){
   Object.assign(ICONS, obj);
   const c = document.createElement("canvas"); c.width = 10; c.height = 10; const g2 = c.getContext("2d");
@@ -3492,7 +4145,7 @@ function addIcons(obj){
 window.CB9 = {Snd, sfx, PAL, SUITS, ICONS, iconUrl, iconOf, ITEMS, addIcons, drawPerson, shade, wrap, contourAt, toast, banner, $, clamp, pick, rnd, mulberry, shuffle,
   cv, ctx, view:()=>({zoom, dpr}), resize, getSample:()=>sample, aiOn:()=>!!sample && aiMode==="on", setAiOff:()=>{ sample = null; aiMode = "off"; renderAi(); }, AI_OFF,
   drawHeart, drawLock, tri, drawEmote, slotsOf, STACKS, STACK_MAX, WEAPONS, HEALS, CONTRA, prisonState:()=>S, prisonCast:()=>CAST, fmtClock, showTitle, opWord, relWord};
-window.__cb9 = {get S(){ return S; }, byId, openTalk, triggerLockdown, openCraft, openJournal, openBox, openInv, addItem, offerTask, openTrade, applyAction, askNpc, startCombat, playerAttack, morningTwist, considerApproach};
+window.__cb9 = {startOps, continueOps, coverAdd, copExtract, get S(){ return S; }, byId, openTalk, triggerLockdown, openCraft, openJournal, openBox, openInv, addItem, offerTask, openTrade, applyAction, askNpc, startCombat, playerAttack, morningTwist, considerApproach};
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({state: S && !S.won ? JSON.stringify(S) : null}));
 hot && hot.ready ? hot.ready(boot) : boot((hot && hot.data) || {});

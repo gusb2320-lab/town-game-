@@ -34,6 +34,7 @@ function resolvePlaceT(s, n){
   for (const [re, id] of PLACE_WORDS) if (re.test(q)) return id;
   return null;
 }
+const artT = it => /s$|^bleach|^coffee|^rope|^matches/.test(it) ? "some" : /^[aeiou]/.test(it) ? "an" : "a";
 const placeName = id => id==="roomC" ? "your room" : PLACES[id] ? (PLACES[id].building && bById(PLACES[id].building) && bById(PLACES[id].building).kind==="home" ? `${(folk.find(f=>f.home===id)||{first:"someone"}).first}'s house` : PLACES[id].label) : "somewhere";
 
 // ---------- the dialog box ----------
@@ -616,12 +617,12 @@ function offerFavorT(n, opt={}){
   const others = folk.filter(o=>alive(o) && o!==n && !o.away);
   let f = null;
   const reward = clamp(Math.round(opt.reward || 8 + Math.random()*22), 3, 150);
-  if (opt.item && !opt.target) f = {type:"fetch", item:opt.item, text:`Bring ${n.first} a ${opt.item}.`};
+  if (opt.item && !opt.target) f = {type:"fetch", item:opt.item, text:`Bring ${n.first} ${artT(opt.item)} ${opt.item}.`};
   else if (opt.target && opt.target!=="player"){ const t = byIdT(opt.target); f = opt.item ? {type:"deliver", item:opt.item, to:t.id, text:`Take a ${opt.item} to ${t.first}.`} : {type:"visit", to:t.id, text:`Go talk to ${t.first} for ${n.first}.`}; }
   else {
     const r = Math.random(), friend = bestFriendT(n), rival = others.find(o=>relGetT(n.id,o.id) <= -25);
-    if (r < .3){ const it = pick(n.likes.filter(x=>TITEMS[x])) || "coffee"; f = {type:"fetch", item:it, text:`Bring ${n.first} a ${it}.`}; }
-    else if (r < .45 && n.hobbies.includes("fishing")){ f = {type:"fetch", item:pick(["bass","trout","catfish"]), text:""}; f.text = `Catch ${n.first} a ${f.item}.`; }
+    if (r < .3){ const it = pick(n.likes.filter(x=>TITEMS[x])) || "coffee"; f = {type:"fetch", item:it, text:`Bring ${n.first} ${artT(it)} ${it}.`}; }
+    else if (r < .45 && n.hobbies.includes("fishing")){ f = {type:"fetch", item:pick(["bass","trout","catfish"]), text:""}; f.text = `Catch ${n.first} ${artT(f.item)} ${f.item}.`; }
     else if (r < .65 && friend){ const it = pick(["flowers","letter","apple pie","record","book"]); f = {type:"deliver", item:it, to:friend.id, text:`Take ${it==="letter"?"a letter":"some "+it} to ${friend.first}.`, giveNow: it==="letter"}; }
     else if (r < .8 && rival){ f = {type:"visit", to:rival.id, text:`Go tell ${rival.first} that ${n.first} wants to make peace.`, peace:true}; }
     else if (r < .9){ const t = pick(others); f = {type:"visit", to:t.id, text:`Find out what ${t.first} has been up to.`}; }

@@ -10,6 +10,7 @@ const NOTE_POOL = [
 function suspicionBand(){ const s = T.det.suspicion; return s<30?0:s<55?1:s<80?2:3; }
 
 function addEvidence(text, w, kind){
+  if (T.mode==="slasher") return;
   const D = T.det; if (!D || D.revealed===true && D.mode==="done") return;
   if (!detAlive()){ // the case passes to the sheriff
     D.sheriffFile = (D.sheriffFile||0) + w*.5;

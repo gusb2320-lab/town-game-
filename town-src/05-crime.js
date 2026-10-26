@@ -33,12 +33,13 @@ function startFightT(a, b){
     if (a===pl){ T.notoriety = clamp(T.notoriety+12, 0, 100); if (b!==pl){ b.opinion = clamp(b.opinion-50,-100,100); b.trust = 0; gossipT(b, "The newcomer jumped me. Out of nowhere. Dangerous."); } }
   }
 }
-function hitT(att, vic){
+function hitT(att, vic, forced){
   const pl = T.player, w = weaponOfT(att), base = att===pl ? 9 : att.strength;
-  const dmg = Math.round((base + (w ? weaponDmg(w) : 0)) * (.75 + Math.random()*.5) * (att===pl && T.drunk>0 ? .8 : 1));
+  const dmg = forced!=null ? forced : Math.round((base + (w ? weaponDmg(w) : 0)) * (.75 + Math.random()*.5) * (att===pl && T.drunk>0 ? .8 : 1));
   vic.hp = Math.max(0, vic.hp - dmg); vic.hitT = performance.now();
   floatT(vic, "-"+dmg, vic===pl ? "#ff6b7f" : "#ffcd75");
-  sfx("punch"); const [vx,vy] = rposT(vic); T.fx.push({kind:"sparks", x:vx*TS+8, y:vy*TS+2, life:.4});
+  if (forced==null) sfx("punch"); const [vx,vy] = rposT(vic); T.fx.push({kind:"sparks", x:vx*TS+8, y:vy*TS+2, life:.4});
+  if (forced!=null){ for (const [dx,dy] of [[0,0]]) addStain(Math.round(vx)+dx, Math.round(vy)+dy); }
   if (att.fight) att.fight.last = performance.now();
   if (vic!==pl && !vic.fight && alive(vic) && !(vic.order && vic.order.type==="report")) startFightT(vic, att);
   if (vic.hp <= 0){ if (vic===pl) playerDownT(att); else if (att===pl) killPerson(vic, att); else beaten(vic, att); }
@@ -55,6 +56,8 @@ function playerAttackT(){
   if (!T || T.ending || anyTWindow() || T.talkId || T.cutscene) return;
   const now = performance.now(); if (now < (T.swingAt||0)) return; T.swingAt = now + 420;
   const pl = T.player; if (pl.carrying){ toast("Put the body down first.", "", 2); return; }
+  if (gunOf(T.sel) && pl.inv.includes(T.sel)){ playerShootT(T.sel); return; }
+  if (T.mode==="slasher" && stealthKillT()) return;
   const [fx,fy] = facingT();
   let t = folk.find(n=>alive(n) && !n.away && !n.hidden && Math.round(rposT(n)[0])===fx && Math.round(rposT(n)[1])===fy);
   if (!t){ const n = nearestFolk(1.45); if (n) t = n; }
@@ -73,13 +76,15 @@ function updateFightsT(dt){
     const t = entT(n.fight.target);
     if (!t || (t!==pl && !alive(t)) || absT()-n.fight.since > 90){ n.fight = null; continue; }
     const d = distT(n,t);
+    const gun = n.inv.find(i=>gunOf(i));
+    if (gun && d > 1.4 && d <= gunOf(gun).range && canSeeT(n, Math.round(rposT(t)[0]), Math.round(rposT(t)[1]), gunOf(gun).range+1)){ n.path = []; faceToT(n, t); if (now >= n.fight.next){ n.fight.next = now + gunOf(gun).cd + 500 + Math.random()*500; npcShootT(n, t, gun); } continue; }
     if (d <= 1.3){ n.path = []; faceToT(n, t); if (now >= n.fight.next){ n.fight.next = now + 700 + Math.random()*450; hitT(n, t); } }
     else if (d > 14){ n.fight = null; }
     else goToT(n, t.x, t.y, true);
   }
   // the sheriff steps in
   const sh = sheriff();
-  if (sh && !sh.fight && !sh.asleep && !(T.lock)){
+  if (sh && !sh.fight && !sh.asleep && !(T.lock) && T.mode!=="slasher"){
     if (pl.fight && pl.fight.aggressor && canSeeT(sh, pl.x, pl.y, 10)){
       sayT(sh, "THAT'S ENOUGH!"); sfx("alert");
       sh.order = {type:"arrestPlayer", until:absT()+60, run:true};
@@ -98,6 +103,7 @@ function playerDownT(by){
   const pl = T.player; pl.fight = null; pl.carrying = null;
   for (const o of folk) if (o.fight && o.fight.target==="player") o.fight = null;
   if (by && (by.sheriff || isDet(by)) && T.lock){ ending("caught"); return; }
+  if (T.mode==="slasher" && by && by.sheriff){ ending("slasher_caught"); return; }
   if (by && by.sheriff){ pl.hp = 40; jailT("assault"); return; }
   let stolen = null;
   if (by && pl.inv.length && Math.random()<.6){ stolen = pick(pl.inv.filter(i=>i!=="room key")); if (stolen){ pl.inv.splice(pl.inv.indexOf(stolen),1); by.inv.push(stolen); rememberT(by, `I knocked the newcomer out and took their ${stolen}.`); if (isEvidence(stolen)) addEvidenceVia(by, `${by.first} took a ${stolen} off the newcomer.`, 15); } }
@@ -115,7 +121,7 @@ function playerDownT(by){
 function addEvidenceVia(n, text, w){ T.pendingEvidence = (T.pendingEvidence||[]).concat({at:absT()+30+Math.random()*60, text, w}); }
 
 // ---------- deaths and bodies ----------
-function killPerson(n, by){
+function killPerson(n, by, kopt={}){
   const pl = T.player, where = placeLabelAt(n.x, n.y);
   n.dead = true; n.hp = 0; n.fight = null; n.order = null; n.asleep = false; n.hidden = false; n.talkingToPlayer = false;
   if (n.scene) finishSceneT(n.scene);
@@ -123,20 +129,21 @@ function killPerson(n, by){
   for (const o of folk) if (o.fight && o.fight.target===n.id) o.fight = null;
   T.bodies.push({id:n.id, name:fullT(n), x:n.x, y:n.y, hidden:null, carried:false, diedAt:absT(), discovered:false, inside:buildingAt(n.x,n.y), killer:by===pl ? "player" : by.id});
   for (const [dx,dy] of [[0,0],[1,0],[0,1]]) addStain(n.x+dx, n.y+dy);
-  T.stats.kills++;
+  T.stats.kills++; if (T.mode==="slasher"){ T.slashKills = (T.slashKills||0) + 1; T.slashLog = (T.slashLog||[]).concat({name:fullT(n), job:n.job, where, s:stampT()}); }
   sfx("snap"); T.shake = .4; emoteT(n, "✶", 3);
   toast(`${n.first} goes still. They won't be getting up again.`, "bad", 4);
-  if (isDet(n)){ T.det.dead = true; toast("Something about them was different. A badge glints inside their coat.", "", 6); n.inv.push("case file"); }
+  if (isDet(n)){ T.det.dead = true; toast("Something about them was different. A badge glints inside their coat.", "", 6); n.inv.push("case file","detective's badge"); if (!n.inv.includes("bullets")) n.inv.push("bullets","bullets","bullets","bullets","bullets","bullets"); setTimeout(()=>toast("Their badge could open doors for someone with nerve. Search the body.", "", 6), 3500); }
   // witnesses
   const wits = folk.filter(o=>alive(o) && !o.away && !o.asleep && o!==n && canSeeT(o, n.x, n.y, 9));
   for (const o of wits){
+    if (T.mode==="slasher"){ slasherWitness(o, n, by); continue; }
     rememberT(o, by===pl ? `I SAW THE NEWCOMER KILL ${n.first.toUpperCase()} at ${where}.` : `I saw ${by.first} kill ${n.first}.`);
     sayT(o, pick(["AAAAH!","Oh my God!","MURDER!","No no no no"]), 3); sfx("scream");
     if (o.sheriff){ arrestSequence(`The sheriff watched you kill ${n.first}.`, true); return; }
     if (isDet(o)){ addEvidence(`I watched the newcomer kill ${n.first} at ${where}.`, 100, "murder"); return; }
     o.order = {type:"report", what:"murder", about:by===pl?"player":by.id, victim:n.id, until:absT()+180, run:true}; o.fight = null;
   }
-  if (wits.length) T.notoriety = 100;
+  if (wits.length && T.mode!=="slasher") T.notoriety = 100;
 }
 function addStain(x,y){ if (!WALK_T.has(tileT(x,y)) && tileT(x,y)!=="D") return; if (T.stains.some(s=>s.x===x&&s.y===y&&!s.cleaned)) return; T.stains.push({x,y,day:T.day,inside:!!buildingAt(x,y),cleaned:false,seenBy:[]}); }
 function bodyNear(maxd=1.5){
@@ -171,6 +178,7 @@ function diggable(x,y){ return "uv".includes(tileT(x,y)) && !T.graves.some(g=>g.
 // ---------- discovery ----------
 function discoverBody(b, finder, how){
   if (b.discovered) return;
+  if (T.mode==="slasher") T.panic = clamp((T.panic||0) + 20, 0, 100);
   b.discovered = true; b.foundBy = finder ? finder.id : null; b.foundDay = T.day;
   if (b.hidden){
     const k = b.hidden; let pos = null;
@@ -205,12 +213,13 @@ function crimeSecondTick(){
   // visible bodies get found
   for (const b of T.bodies){
     if (b.discovered || b.hidden || b.carried) continue;
-    for (const o of folk) if (alive(o) && !o.away && !o.asleep && !o.hidden && canSeeT(o, b.x, b.y, 7)){ discoverBody(b, o); o.order = {type:"report", what:"body", until:absT()+120, run:true}; break; }
+    for (const o of folk) if (alive(o) && !o.away && !o.asleep && !o.hidden && canSeeT(o, b.x, b.y, 7)){ discoverBody(b, o); if (T.mode==="slasher") slasherAlarm(o, "body"); else o.order = {type:"report", what:"body", until:absT()+120, run:true}; break; }
   }
   // someone sees you carrying a body
   if (pl.carrying){
     for (const o of folk) if (alive(o) && !o.away && !o.asleep && !o.hidden && canSeeT(o, pl.x, pl.y, 8)){
       const b = T.bodies.find(x=>x.id===pl.carrying);
+      if (T.mode==="slasher"){ if (o.alarmed!=="murder"){ sayT(o, "Is that… a BODY?!", 3); sfx("scream"); slasherAlarm(o, "murder"); } continue; }
       if (o.sheriff){ arrestSequence(`The sheriff caught you carrying ${b.name}.`, true); return; }
       if (isDet(o)){ addEvidence(`I watched the newcomer carry ${b.name}'s body.`, 120, "carry"); return; }
       if (!o.order || o.order.type!=="report"){ sayT(o, "Is that… is that a BODY?!", 3); sfx("scream"); rememberT(o, `I saw the newcomer carrying ${b.name}'s body!`); o.order = {type:"report", what:"carry", about:"player", victim:b.id, until:absT()+150, run:true}; T.notoriety = 100; }
@@ -259,7 +268,7 @@ function missingCheck(){
   for (const b of T.bodies){
     if (b.discovered || T.missing.includes(b.id) || absT() - b.diedAt < 500) continue;
     const v = byIdT(b.id);
-    T.missing.push(b.id);
+    T.missing.push(b.id); if (T.mode==="slasher") T.panic = clamp((T.panic||0) + 6, 0, 100);
     const reporter = folk.find(n=>alive(n) && (n.spouse===v.id || n.home===v.home || n.parent===v.id || n.child===v.id)) || folk.find(n=>alive(n) && relGetT(n.id,v.id) >= 30);
     newsT(`MISSING: ${b.name} hasn't been seen since ${dayName(Math.floor(b.diedAt/1440))}.${reporter ? ` ${reporter.first} is worried sick.` : ""}`, [], false, "missing");
     banner("MISSING PERSON", `${b.name} hasn't been seen in a day.`, false, 5);
@@ -269,6 +278,7 @@ function missingCheck(){
   }
 }
 function deliverReport(n, sh, o){
+  if (T.mode==="slasher"){ slasherAlarm(sh, "report"); return; }
   sayT(n, o.what==="murder" ? "Sheriff! I saw it! The newcomer—" : o.what==="body" ? "Sheriff, there's a body!" : "Sheriff, you've got to do something!", 4);
   rememberT(sh, `${n.first} reported: ${o.what} ${o.about==="player" ? "by the newcomer" : ""}.`);
   if (o.about==="player"){

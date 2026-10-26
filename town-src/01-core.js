@@ -66,7 +66,12 @@ const TITEMS = {
   "kitchen knife":["Sharp.",9,{weapon:22}], "baseball bat":["Louisville slugger.",15,{weapon:18}], "wrench":["Heavy.",8,{weapon:16}],
   "wallet":["Someone else's wallet.",0,{evidence:2}], "creepy note":["Unsigned. Someone has been watching you.",0,{read:1}],
   "letter":["A letter.",0,{read:1}], "case file":["A thin folder stamped STATE BUREAU. CONFIDENTIAL.",0,{read:1,evidence:1}],
-  "matches":["A book of matches.",1,{tool:1}], "flashlight":["Lights up dark corners.",12,{tool:1}], "lockpick":["Opens locked doors. Might snap.",0,{evidence:1}]
+  "matches":["A book of matches.",1,{tool:1}],
+  "revolver":["A six-shooter. Loud enough to wake the whole street.",80,{weapon:12, gun:{dmg:46, range:8, cd:700}}],
+  "hunting rifle":["Bolt action. Reaches across the square.",90,{weapon:14, gun:{dmg:64, range:12, cd:1300}}],
+  "shotgun":["Double barrel. Short range, no mistakes.",70,{weapon:14, gun:{dmg:58, range:5, cd:1100, spread:true}}],
+  "bullets":["Loose rounds. Every gun in town takes them, somehow.",2,{ammo:1}],
+  "detective's badge":["STATE BUREAU OF INVESTIGATION. The photo almost looks like you, if you squint.",0,{evidence:4, badge:1}], "flashlight":["Lights up dark corners.",12,{tool:1}], "lockpick":["Opens locked doors. Might snap.",0,{evidence:1}]
 };
 // Items carried over from the prison that would give you away if found on you.
 const PRISON_TELLTALE = new Set(["shiv","sock mace","comb blade","baton","guard uniform","grappling hook","makeshift file","wire cutters","gate key","spare gate key","hooch","dummy","dirt","lockpick","prison jumpsuit"]);
@@ -102,6 +107,11 @@ E.addIcons({
   "wrench":["......ll",".....l.l","....l.ll","...l....","..l.....",".l......","ll......","l......."],
   "wallet":["........","........","kkkkkkkk","kUUUUUUk","kUUyUUUk","kUUUUUUk","kkkkkkkk","........"],
   "creepy note":["........",".kkkkkk.",".kwwwwk.",".kwrrwk.",".kwwwwk.",".kwrwrk.",".kkkkkk.","........"],
+  "revolver":["........","........","kkkkkkk.","klllllkk","kkkkuk..","....uk..","....uk..","....kk.."],
+  "hunting rifle":["........","........","kkkkkkkk","lllllluu","kkkkkuuu",".....uuu","......uu","........"],
+  "shotgun":["........","kkkkkkk.","lllllluu","lllllluu","kkkkkuuu","....uuuu",".....uu.","........"],
+  "bullets":["........","..y..y..",".yy.yy..",".yy.yy..",".uu.uu..",".uu.uu..","........","........"],
+  "detective's badge":["..kkkk..",".kyyyyk.","kyyrryyk","kyrwwryk","kyyrryyk",".kyyyyk.","..kyyk..","...kk..."],
   "case file":["........","kkkkk...","kaaaakkk","kaaaaaak","karrraak","kaaaaaak","kkkkkkkk","........"]
 });
 const FISH = ["perch","bass","catfish","trout","golden carp","old boot"];
@@ -113,8 +123,9 @@ function itemT(it){
   return {desc:p ? p[0] : "", price:p ? p[1]*3 : 1, weapon:w, heal:h, evidence: PRISON_TELLTALE.has(it) ? 2 : 0};
 }
 const weaponDmg = it => itemT(it).weapon || 0;
+const gunOf = it => it && itemT(it).gun || null;
 const isEvidence = it => !!itemT(it).evidence || /'s wallet$/.test(it);
-const STACKT = new Set(["coffee","donut","beer","perch","bass","catfish","trout","old boot","flowers","lottery ticket","newspaper","bleach","burger","milkshake","pie slice","sandwich","matches","dirt"]);
+const STACKT = new Set(["coffee","donut","beer","perch","bass","catfish","trout","old boot","flowers","lottery ticket","newspaper","bleach","burger","milkshake","pie slice","sandwich","matches","dirt","bullets"]);
 function slotsT(inv){
   const order = [], counts = {};
   for (const it of inv){ if (!(it in counts)){ counts[it] = 0; order.push(it); } counts[it]++; }
