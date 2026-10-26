@@ -1117,6 +1117,7 @@ function relAdd(a,b,v){ const k = relKey(a,b); S.rel[k] = clamp((S.rel[k]||0)+v,
 const relWord = v => v>=60?"best friends":v>=30?"friends":v>=10?"friendly":v>-10?"neutral":v>-30?"tense":v>-60?"enemies":"bitter enemies";
 
 function newGame(name){
+  PNUM = "#4471"; document.body.classList.remove("cop-mode");
   mods = []; buildMap();
   S = {v:4, name:(name||"").trim()||"Sam Reyes", day:1, t:7*60+40, heat:0,
     player:{x:2,y:5,fx:2,fy:5,prog:1,dir:[0,1],inv:[],uniform:false,walkT:0,hp:100,fight:null},
@@ -1158,7 +1159,7 @@ function restore(json){
   try {
     const d = typeof json==="string" ? JSON.parse(json) : json;
     if (!d || d.v!==4 || !Array.isArray(d.npcs)) return false;
-    S = d; npcs = S.npcs; mods = S.mods||[]; S.mods = mods;
+    S = d; npcs = S.npcs; mods = S.mods||[]; S.mods = mods; PNUM = "#4471";
     for (const n of npcs){ n.bubble=null; n.emote=null; n.path=[]; n.prog=1; n.fx=n.x; n.fy=n.y; n.scene=null; n.fight=null; if (n.order && n.order.type==='approach') n.order=null; }
     S.player.fight = null;
     S.player.prog=1; S.player.fx=S.player.x; S.player.fy=S.player.y;
@@ -3844,7 +3845,7 @@ function copBlown(why){
     const ul = $("winPeople"); ul.textContent = "";
     for (const n of npcs.filter(x=>x.memories.some(m=>m.text.includes(S.cop.name)))){ const li = document.createElement("li"); const last = n.memories.filter(m=>m.text.includes(S.cop.name)).slice(-1)[0]; li.append(Object.assign(document.createElement("small"),{textContent:def(n.id).name}), `“${last.text}”`); ul.append(li); }
     $("townBtn").textContent = "Try the operation again"; $("townBtn").onclick = (e) => { e.stopImmediatePropagation(); let o = {}; try { o = JSON.parse(localStorage.getItem(OPS_OPTS)||"{}"); } catch {} $("scrWin").hidden = true; startOps(o); };
-    $("againBtn").textContent = "Title screen"; $("againBtn").onclick = (e) => { e.stopImmediatePropagation(); location.reload(); };
+    $("againBtn").textContent = "Title screen"; $("againBtn").onclick = (e) => { e.stopImmediatePropagation(); try { localStorage.removeItem(OPS_KEY); } catch {} S = null; scenes.length = 0; PNUM = "#4471"; document.body.classList.remove("cop-mode"); $("scrWin").hidden = true; $("townBtn").textContent = "Begin a new life →"; $("townBtn").onclick = null; $("againBtn").textContent = "Serve another sentence"; $("againBtn").onclick = null; $("lingerBtn").hidden = false; showTitle(); };
     $("lingerBtn").hidden = true;
     $("scrWin").hidden = false;
   }, 900);

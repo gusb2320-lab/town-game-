@@ -356,7 +356,7 @@ function slasherEnding(kind, opt={}){
   box.append(note);
   const row = document.createElement("div"); row.className = "row";
   if (!won){ const again = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn", textContent:"Try again"}); again.addEventListener("click", ()=>{ let info = {}; try { info = JSON.parse(localStorage.getItem(SLASH_INFO)||"{}"); } catch {} sc.hidden = true; T.ending = null; beginSlasher(info); }); row.append(again); }
-  const title = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:"Title screen"}); title.addEventListener("click", ()=>{ if (won){ try { localStorage.removeItem(SNAP_KEY); localStorage.removeItem(SLASH_INFO); } catch {} } clearSaveT(); location.reload(); });
+  const title = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:"Title screen"}); title.addEventListener("click", ()=>{ if (won){ try { localStorage.removeItem(SNAP_KEY); localStorage.removeItem(SLASH_INFO); } catch {} } clearSaveT(); toTitle(); });
   row.append(title); box.append(row); sc.append(box);
   if (won){ try { localStorage.removeItem(SNAP_KEY); } catch {} }
   clearSaveT();

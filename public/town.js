@@ -4017,7 +4017,23 @@ function showTownDom(on){
 function leaveTown(newSentence){
   TOWN.active = false; clearSaveT();
   if (newSentence){ try { localStorage.removeItem("cellblock9-save-v4"); } catch {} }
-  location.reload();
+  toTitle();
+}
+// Back to the title screen without reloading the page (reloads can be blocked inside sandboxed pages).
+function toTitle(){
+  if (T && T.talkId) closeTalkT();
+  if (GAME) closeGame();
+  for (const id of TWINS) $(id).hidden = true;
+  if ($("tWinAsk")) $("tWinAsk").hidden = true;
+  CUT = null; tFade = null;
+  TOWN.active = false;
+  document.body.classList.remove("in-town","slasher","talking","cop-mode");
+  slasherMusic(false); Snd.track(null);
+  $("tScreen").hidden = true; $("tScreen").textContent = ""; $("tHud").hidden = true; $("tHotbar").hidden = true;
+  heldT.length = 0; actionHeldT = false;
+  T = null; folk = [];
+  refreshTitleButtons();
+  E.showTitle();
 }
 
 // ---------- the clock ----------
@@ -4525,6 +4541,7 @@ document.addEventListener("keydown", e => {
 document.addEventListener("keyup", e => { if (!TOWN.active) return; const k = e.key.toLowerCase(); if (GAME){ GAME.key && GAME.key(k, false); return; } const i = heldT.indexOf(k); if (i>=0) heldT.splice(i,1); if (k==="e"||k===" "||k==="enter") actionHeldT = false; });
 window.addEventListener("blur", () => { heldT.length = 0; actionHeldT = false; });
 function syncTownSound(){ $("tMuteBtn").classList.toggle("off", Snd.muted); $("tMuteBtn").textContent = Snd.muted ? "×" : "♪"; $("tMusicBtn").classList.toggle("off", !Snd.musicOn); $("toptMusic").checked = Snd.musicOn; }
+let refreshTitleButtons = () => {};
 function wireTownDom(){
   for (const b of document.querySelectorAll("#tpad button")){
     const d = b.dataset.d, off = () => { const i = heldT.indexOf(d); if (i>=0) heldT.splice(i,1); };
@@ -4584,7 +4601,7 @@ function wireTownDom(){
   $("tMusicBtn").addEventListener("click", () => { Snd.init(); Snd.setMusic(!Snd.musicOn); syncTownSound(); });
   $("toptMusic").addEventListener("change", e => { if (e.target.checked !== Snd.musicOn){ Snd.setMusic(e.target.checked); syncTownSound(); } });
   $("tResume").addEventListener("click", () => { $("tWinMenu").hidden = true; sfx("close"); });
-  $("tQuit").addEventListener("click", () => { saveT(); location.reload(); });
+  $("tQuit").addEventListener("click", () => { saveT(); toTitle(); });
   E.cv.addEventListener("pointerdown", () => { if (TOWN.active && document.activeElement===$("tdInput")) $("tdInput").blur(); });
   // from the prison
   $("townBtn").addEventListener("click", () => { $("scrWin").hidden = true; begin(); });
@@ -4593,7 +4610,7 @@ function wireTownDom(){
   const contB = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", id:"townContBtn", textContent:"Continue in Millbrook"});
   const skipB = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", id:"townSkipBtn", textContent:"Skip to Millbrook (phase two)"});
   contB.addEventListener("click", () => { $("scrTitle").hidden = true; if (!cont()) { $("scrTitle").hidden = false; toast("That save is gone.", "bad"); } });
-  skipB.addEventListener("click", () => { const go = () => { clearSaveT(); $("scrTitle").hidden = true; begin(); }; if (loadSavedT()) confirmT("Start a new life in Millbrook? Your current Millbrook save will be lost.", "Start over", go); else go(); });
+  skipB.addEventListener("click", () => { const go = () => { try { clearSaveT(); $("scrTitle").hidden = true; begin(); } catch (err){ console.error(err); $("scrTitle").hidden = false; toast(`Couldn't start Millbrook: ${err && err.message}`, "bad", 10); } }; if (loadSavedT()) confirmT("Start a new life in Millbrook? Your current Millbrook save will be lost.", "Start over", go); else go(); });
   row.append(contB, skipB);
   const opsCont = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:"Continue Operation Birch"});
   opsCont.addEventListener("click", () => { Snd.init(); if (!window.__cb9.continueOps()) toast("That save is gone.", "bad"); });
@@ -4610,7 +4627,12 @@ function wireTownDom(){
   chap("4 · Leave No Evidence", () => { $("scrTitle").hidden = true; const cast = E.prisonCast().filter(c=>c.kind==="inmate"); const c = pick(cast); beginSlasher({spy:{id:c.id, name:c.name, short:c.short, look:c.look, voice:c.voice}}); });
   det.append(crow, Object.assign(document.createElement("p"),{className:"note", textContent:"Each chapter can be started on its own. Playing straight through carries your choices, your kills and your name forward."}));
   row.after(det);
-  const s = loadSavedT(); contB.hidden = !(s && !s.ending); if (s && !s.ending) contB.textContent = `Continue in Millbrook · Day ${s.day}`;
+  refreshTitleButtons();
+  refreshTitleButtons = () => {
+    const s2 = loadSavedT(); contB.hidden = !(s2 && !s2.ending); if (s2 && !s2.ending) contB.textContent = `Continue in Millbrook · Day ${s2.day}`;
+    let o2 = null; try { o2 = JSON.parse(localStorage.getItem("cellblock9-ops-v1")||"null"); } catch {}
+    opsCont.hidden = !o2; if (o2) opsCont.textContent = `Continue Operation Birch · Day ${o2.day}`;
+  };
 }
 buildTownDom();
 wireTownDom();
@@ -4978,7 +5000,7 @@ function slasherEnding(kind, opt={}){
   box.append(note);
   const row = document.createElement("div"); row.className = "row";
   if (!won){ const again = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn", textContent:"Try again"}); again.addEventListener("click", ()=>{ let info = {}; try { info = JSON.parse(localStorage.getItem(SLASH_INFO)||"{}"); } catch {} sc.hidden = true; T.ending = null; beginSlasher(info); }); row.append(again); }
-  const title = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:"Title screen"}); title.addEventListener("click", ()=>{ if (won){ try { localStorage.removeItem(SNAP_KEY); localStorage.removeItem(SLASH_INFO); } catch {} } clearSaveT(); location.reload(); });
+  const title = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:"Title screen"}); title.addEventListener("click", ()=>{ if (won){ try { localStorage.removeItem(SNAP_KEY); localStorage.removeItem(SLASH_INFO); } catch {} } clearSaveT(); toTitle(); });
   row.append(title); box.append(row); sc.append(box);
   if (won){ try { localStorage.removeItem(SNAP_KEY); } catch {} }
   clearSaveT();
