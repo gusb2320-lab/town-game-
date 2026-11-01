@@ -16,7 +16,7 @@ body:not(.in-town) .town-only{display:none!important}
 body.touch.in-town .tpad{display:grid}
 body.touch.in-town #taBtn, body.touch.in-town #tfBtn{display:block}
 body.talking #tpad, body.talking #taBtn, body.talking #tfBtn, body.talking #tHotbar{display:none!important}
-body.touch #tHotbar{bottom:auto;top:calc(max(12px,env(safe-area-inset-top,0px)) + 110px)}
+body.touch #tHotbar{bottom:auto;top:calc(max(12px,env(safe-area-inset-top,0px)) + 200px)}
 #tgCv{width:min(640px,100%);aspect-ratio:320/200;image-rendering:pixelated;background:#0d0e18;display:block;margin:0 auto;touch-action:none}
 .tscreen{position:absolute;inset:0;background:#0d0e18;display:flex;align-items:center;justify-content:flex-start;flex-direction:column;gap:14px;padding:max(16px,env(safe-area-inset-top,0px)) 16px;overflow-y:auto}
 .tscreen>:first-child{margin-top:auto}.tscreen>:last-child{margin-bottom:auto}
@@ -265,6 +265,7 @@ function useItemT(it){
   if (d.wear){ toggleWear(it); return; }
   if (it==="prison jumpsuit"){ pl.wearJumpsuit = !pl.wearJumpsuit; toast(pl.wearJumpsuit ? "You pull on the orange jumpsuit. Bold." : "You take the jumpsuit off.", pl.wearJumpsuit ? "bad" : "", 3); renderHotbarT(); return; }
   if (d.scratch){ scratchTicket(); return; }
+  if (d.badge && STANDALONE){ toast("A State Bureau badge. In another story, this would get you into Cellblock Nine. Here, it's evidence.", "", 5); return; }
   if (d.badge){ closeTWindows(); confirmT("Take the agent's identity? With this badge you could walk right back into Cellblock Nine… as a guard.", "Use the badge", startOperation); return; }
   if (d.gun){ toast(`${it}: select it and press F to fire. ${countIn(pl.inv,"bullets")} bullets left.`, "", 3); return; }
   if (d.read){ readItem(it); return; }
@@ -321,7 +322,7 @@ function renderInvT(){
   if (info.heal || info.drink) btn(info.drink ? "Drink" : "Eat", ()=>{ useItemT(it); renderInvT(); });
   if (info.wear || it==="prison jumpsuit") btn("Wear / remove", ()=>{ useItemT(it); renderInvT(); });
   if (info.read) btn("Read", ()=>useItemT(it));
-  if (info.badge) btn("Use the badge…", ()=>useItemT(it));
+  if (info.badge && !STANDALONE) btn("Use the badge…", ()=>useItemT(it));
   if (info.scratch) btn("Scratch", ()=>{ useItemT(it); renderInvT(); });
   if (pl.inv.includes("matches") && ["prison jumpsuit","letter","creepy note","case file","wallet"].includes(it)) btn("Burn it", ()=>{ burnSomething(); renderInvT(); });
   if (it!=="room key") btn("Throw away", ()=>{ removeItemT(it); if (isEvidence(it)){ const [x,y] = [pl.x,pl.y]; T.litter.push({it, x, y, day:T.day}); } invSelT = null; sfx("stash"); renderInvT(); });

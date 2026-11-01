@@ -225,7 +225,7 @@ function ending(kind, opt={}){
   const s = T.stats;
   box.append(Object.assign(document.createElement("p"),{className:"note", textContent:`${T.day} days in Millbrook · ${s.favors} favors · ${s.dates} plans kept · ${s.fish} fish · ${s.jobs} odd jobs · ${s.kills} people put to sleep for good`}));
   const row = document.createElement("div"); row.className = "row";
-  const again = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn", textContent:"New sentence"}); again.addEventListener("click", ()=>leaveTown(true));
+  const again = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn", textContent: STANDALONE ? "Start a new life" : "New sentence"}); again.addEventListener("click", ()=>leaveTown(true));
   const title = Object.assign(document.createElement("button"),{type:"button", className:"bigbtn alt", textContent:"Title screen"}); title.addEventListener("click", ()=>leaveTown(false));
   row.append(again, title); box.append(row); sc.append(box);
 }

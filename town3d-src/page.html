@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Millbrook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+{{STYLE}}
+/* Millbrook 3D: labels and speech float over the 3D view as plain HTML. */
+#ov3d{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+#ov3d>div{position:absolute;left:0;top:0;white-space:nowrap;will-change:transform}
+.ov-name{background:rgba(26,28,44,.85);color:#ffb08f;font-size:19px;padding:0 7px;margin-top:-4px}
+.ov-name.sheriff{color:var(--y)} .ov-name.partner{color:#ffb0d0} .ov-name.spy{color:#ff8a8a;background:rgba(60,0,10,.85)}
+.ov-bubble{white-space:normal!important;width:max-content;max-width:250px;background:var(--paper);color:var(--ink);border:3px solid var(--k);padding:3px 9px;font-size:20px;line-height:1.05;margin-top:-10px}
+.ov-bubble.scene{background:#e6f0f4}
+.ov-bubble::after{content:"";position:absolute;left:50%;bottom:-11px;margin-left:-7px;border:7px solid transparent;border-top-color:var(--k)}
+.ov-bubble em{color:#7a5a3c;font-style:normal}
+.ov-emote{background:var(--w);color:var(--r);border:3px solid var(--k);font-size:24px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;margin-top:-6px}
+.ov-float{font-size:26px;text-shadow:2px 2px 0 var(--k)}
+.ov-z{color:#c2d3dc;font-size:24px;text-shadow:1px 1px 0 var(--k)}
+.ov-z small{font-size:16px}
+#ovPrompt{position:absolute;left:50%;bottom:calc(max(14px,env(safe-area-inset-bottom,0px)) + 72px);transform:translateX(-50%);background:var(--k);padding:4px 12px 4px 4px;font-size:21px;pointer-events:none;box-shadow:0 3px 0 rgba(0,0,0,.4);white-space:nowrap}
+#ovPrompt b{display:inline-block;background:var(--o);color:var(--k);font-family:var(--px);font-size:11px;padding:5px 7px;margin-right:9px}
+body.talking #ovPrompt{display:none}
+#ovFade{position:absolute;inset:0;background:#0d0e18;display:flex;align-items:center;justify-content:center;font-size:44px;color:var(--w);pointer-events:none}
+#ovWhite{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+#ovVignette{position:absolute;inset:0;pointer-events:none;transition:background .6s}
+#ovVignette.slasher{background:radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(80,0,12,.55) 100%)}
+#ovVignette.carry{background:radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(120,0,20,.3) 100%)}
+#ovVignette.chase{background:radial-gradient(ellipse at center, rgba(0,0,0,0) 50%, rgba(59,93,201,.35) 100%);animation:chasepulse .5s steps(2) infinite}
+@keyframes chasepulse{50%{background:radial-gradient(ellipse at center, rgba(0,0,0,0) 50%, rgba(177,62,83,.35) 100%)}}
+#mbTitle{background:linear-gradient(90deg, rgba(13,14,24,.94) 0%, rgba(13,14,24,.75) 45%, rgba(13,14,24,.1) 100%);justify-content:flex-start}
+#mbTitle .sheet{margin:auto auto auto max(16px,6vw)}
+#mbTitle .title{font-size:clamp(34px,8vw,66px)}
+#mbTitle .title span{color:var(--o)}
+@media (prefers-reduced-motion:reduce){#ovVignette.chase{animation:none}}
+</style>
+<script src="claude-shim.js"></script>
+</head>
+<body>
+<div class="game" id="game">
+  <canvas id="cv"></canvas>
+  <div id="ovVignette"></div>
+  <div id="ov3d"></div>
+  <div id="ovPrompt" hidden></div>
+  <div id="ovWhite"></div>
+  <div id="ovFade" hidden></div>
+  <div id="banner" style="opacity:0"><b id="bannerBig"></b><span id="bannerSmall"></span></div>
+  <div id="toasts" aria-live="polite"></div>
+  <div class="screen" id="mbTitle">
+    <div class="sheet">
+      <div class="eyebrow">A CELLBLOCK NINE STORY · NOW IN 3D</div>
+      <h1 class="title">MILL<span>BROOK</span></h1>
+      <p>You broke out of Cellblock Nine. Now you need a new name, a new life, and twenty-one neighbors who believe you. One of them is an undercover detective, and they're already watching.</p>
+      <div class="row"><button class="bigbtn" id="mbNew" type="button">Start a new life</button><button class="bigbtn alt" id="mbCont" type="button" hidden>Continue</button></div>
+      <div class="keys"><b>WASD</b><span>walk (relative to the camera)</span><b>DRAG · WHEEL</b><span>turn and zoom the camera</span><b>V</b><span>first person</span><b>E</b><span>talk, use, pick up</span><b>F</b><span>fight or fire</span><b>I · J · TAB</b><span>pockets · journal · map</span></div>
+      <p class="note" id="mbAi">…</p>
+    </div>
+  </div>
+</div>
+<script src="vendor/three.min.js"></script>
+<script src="millbrook3d/engine.js"></script>
+<script src="millbrook3d/town3d.js"></script>
+</body>
+</html>

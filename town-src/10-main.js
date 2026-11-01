@@ -83,7 +83,7 @@ function cont(){
 function showTownDom(on){
   for (const id of ["tHud","tHotbar"]) $(id).hidden = !on;
   for (const id of ["scrTitle","scrWin","scrSolitary","winMenu"]) if ($(id)) $(id).hidden = true;
-  $("dialog").hidden = true; document.body.classList.remove("talking");
+  if ($("dialog")) $("dialog").hidden = true; document.body.classList.remove("talking");
 }
 function leaveTown(newSentence){
   TOWN.active = false; clearSaveT();
@@ -192,6 +192,7 @@ function trainHere(){ const t = T.t; return TRAINS.find(d => t >= d-12 && t <= d
 
 // ---------- the player ----------
 const heldT = [];
+let mapDir = d => d;   // the 3D build turns keys into camera-relative directions
 let actionHeldT = false, holdT = null, hintAtT = 0, stepAlt = 0;
 const KEYDIR_T = {arrowup:[0,-1],w:[0,-1],arrowdown:[0,1],s:[0,1],arrowleft:[-1,0],a:[-1,0],arrowright:[1,0],d:[1,0],up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
 function updatePlayerT(dt){
@@ -202,7 +203,7 @@ function updatePlayerT(dt){
   if (actionHeldT && !T.talkId){ const tg = interactTargetT(); if (tg && tg.hold){ holdTick(tg, dt); return; } }
   holdT = null;
   if (!heldT.length) return;
-  let d = KEYDIR_T[heldT[heldT.length-1]];
+  let d = mapDir(KEYDIR_T[heldT[heldT.length-1]]);
   if (T.drunk >= 4 && Math.random() < .12*T.drunk/8) d = pick(DIRS4);
   pl.dir = d;
   const nx = pl.x+d[0], ny = pl.y+d[1], c = tileT(nx,ny);
@@ -674,6 +675,7 @@ function wireTownDom(){
   $("tResume").addEventListener("click", () => { $("tWinMenu").hidden = true; sfx("close"); });
   $("tQuit").addEventListener("click", () => { saveT(); toTitle(); });
   E.cv.addEventListener("pointerdown", () => { if (TOWN.active && document.activeElement===$("tdInput")) $("tdInput").blur(); });
+  if (!STANDALONE){
   // from the prison
   $("townBtn").addEventListener("click", () => { $("scrWin").hidden = true; begin(); });
   // title screen
@@ -697,13 +699,14 @@ function wireTownDom(){
   chap("3 · Operation Birch", () => { Snd.init(); let snap = null; try { snap = JSON.parse(localStorage.getItem(SNAP_KEY)||"null"); } catch {} const o = snap ? {alias:snap.alias, badgeName:snap.det.realName, look:{skin:snap.player.look.skin, hair:snap.player.look.hair}, disguise:snap.player.disguise, townDay:snap.day} : {alias:"Sam Ellis", badgeName:`${pick(FIRST)} ${pick(LAST)}`}; $("scrTitle").hidden = true; window.__cb9.startOps(o); });
   chap("4 · Leave No Evidence", () => { $("scrTitle").hidden = true; const cast = E.prisonCast().filter(c=>c.kind==="inmate"); const c = pick(cast); beginSlasher({spy:{id:c.id, name:c.name, short:c.short, look:c.look, voice:c.voice}}); });
   det.append(crow, Object.assign(document.createElement("p"),{className:"note", textContent:"Each chapter can be started on its own. Playing straight through carries your choices, your kills and your name forward."}));
-  row.after(det);
-  refreshTitleButtons();
   refreshTitleButtons = () => {
     const s2 = loadSavedT(); contB.hidden = !(s2 && !s2.ending); if (s2 && !s2.ending) contB.textContent = `Continue in Millbrook · Day ${s2.day}`;
     let o2 = null; try { o2 = JSON.parse(localStorage.getItem("cellblock9-ops-v1")||"null"); } catch {}
     opsCont.hidden = !o2; if (o2) opsCont.textContent = `Continue Operation Birch · Day ${o2.day}`;
   };
+  row.after(det);
+  refreshTitleButtons();
+  }
 }
 buildTownDom();
 wireTownDom();

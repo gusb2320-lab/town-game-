@@ -1,4 +1,5 @@
 // Core: engine hooks from the prison game, constants, pools, items, state helpers.
+const STANDALONE = !!window.MILLBROOK_STANDALONE;   // the 3D build of Millbrook runs without the prison
 const E = window.CB9;
 if (!E) throw new Error("Cellblock Nine engine not loaded");
 const { Snd, sfx, PAL, $, clamp, pick, rnd, shuffle, toast, banner, drawPerson, shade, wrap, contourAt } = E;

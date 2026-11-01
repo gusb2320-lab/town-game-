@@ -36,6 +36,17 @@ After you break out (or with **Skip to Millbrook** on the title screen), a truck
 - **Guns.** Hartley's sells a hunting rifle and bullets, the sheriff and the detective carry revolvers, and there's a shotgun in the back room of the Rusty Nail. Shots are loud: everyone within earshot remembers.
 - **Endings.** Survive to day 12 with the detective unconvinced, talk them into closing the case, catch a train (a fake ID helps), walk out of town, deal with the detective permanently, or get taken back to Cellblock Nine.
 
+## Millbrook in 3D (standalone)
+
+Part two also stands alone as a 3D game: open http://127.0.0.1:3000/millbrook3d.html. It's the same town, cast, detective, conversations, crime and endings, drawn in low-poly 3D with Three.js instead of pixel art.
+
+- Third-person camera you can orbit (drag) and zoom (scroll), or press **V** for first person. WASD moves relative to the camera.
+- Buildings have roofs and real interiors. Walk inside and the roof lifts off and the walls cut down so you can see in.
+- A day-night cycle with a moving sun and shadows, street lamps and lit windows at night, stars, and rain.
+- "Chunky retro pixels" in the pause menu switches between a low-resolution retro look (faster) and a sharp one.
+
+It has its own title screen and its own save. `town3d-src/` holds the 3D renderer and the standalone title screen; `npm run build` combines them with `town-src/` into `public/millbrook3d/`, and copies the shared sound, sprite and icon code out of `public/index.html` into `public/millbrook3d/engine.js`. Three.js r128 is vendored in `public/vendor/` (MIT licence included).
+
 ## Part three: Operation Birch
 
 Kill the detective and search the body for their badge, then use it from your pockets. A phone rings in Room C, and the truth comes out: you were a Russian intelligence officer (codename SPARROW) all along, and the escape was the plan. You go back into Cellblock Nine as a new guard on probation, wearing the dead agent's name.
