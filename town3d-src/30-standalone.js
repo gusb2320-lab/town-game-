@@ -15,7 +15,7 @@ $("mbCont").addEventListener("click", mbContinue);
   const opts = $("tWinMenu").querySelector(".opts");
   const lab = document.createElement("label"); lab.innerHTML = `<input type="checkbox" id="mbPixel"> Chunky retro pixels (faster)`;
   opts.append(lab);
-  const box = lab.querySelector("input"); box.checked = T3.pixel !== false;
+  const box = lab.querySelector("input"); box.checked = (() => { try { const v = localStorage.getItem("mb3d-pixel"); return v===null ? !HALLOW : v!=="0"; } catch { return !HALLOW; } })();
   box.addEventListener("change", () => { T3.pixel = box.checked; try { localStorage.setItem("mb3d-pixel", box.checked ? "1" : "0"); } catch {} resize3D(); });
   // camera feel
   const sl = document.createElement("label"); sl.className = "mbSlider";
@@ -68,4 +68,4 @@ buildTown();
 setTimeout(mbTitleRefresh, 800);
 mbTitleRefresh();
 requestAnimationFrame(mbFrame);
-window.__town3d = {get T3(){ return T3; }};
+window.__town3d = {get T3(){ return T3; }, moon(look, lid, grin, blood){ if (typeof drawMoon!=="function") return null; drawMoon(look, lid, grin, blood, 0); return MOON.cv.toDataURL(); }};

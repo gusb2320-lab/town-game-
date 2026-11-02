@@ -134,6 +134,12 @@ if (HALLOW){
 }
 
 // ---------- horror sound design ----------
+const SCREAM = {buf:null, tried:false};
+function loadScream(){
+  if (SCREAM.tried || !Snd.ac) return; SCREAM.tried = true;
+  const names = ["scream.mp3","scream.m4a","scream.wav","scream.ogg","scream.webm"];
+  (async () => { for (const n of names){ try { const r = await fetch("millbrook3d/" + n); if (!r.ok) continue; const ab = await r.arrayBuffer(); SCREAM.buf = await Snd.ac.decodeAudioData(ab); return; } catch {} } })();
+}
 const HSFX = {
   thunder(){ if (!hqInit()) return; const t = HQ.ac.currentTime; noiseHit(t, "lowpass", 300, .5, 3.5, .6); noiseHit(t+.05, "bandpass", 120, .8, 2.5, .5); INST.kick(t, 0, 1, .9); },
   howl(){ if (!hqInit()) return; const t = HQ.ac.currentTime, f = 380 + Math.random()*80, g = HQ.ac.createGain(), bp = filt("bandpass", 900, 2); const o = osc("sawtooth", f, t, t+3.4); o.frequency.linearRampToValueAtTime(f*1.6, t+.8); o.frequency.linearRampToValueAtTime(f*1.5, t+2.2); o.frequency.exponentialRampToValueAtTime(f*.9, t+3.2); vib(o, t, 5, 6, .6); o.connect(bp); bp.connect(g); const pan = HQ.ac.createStereoPanner ? HQ.ac.createStereoPanner() : null; if (pan){ pan.pan.value = Math.random()*1.6-.8; g.connect(pan); pan.connect(HQ.comp); } else g.connect(HQ.comp); env(g, t, .6, .05, .4, .8, .8, t+2.4); },
@@ -141,9 +147,28 @@ const HSFX = {
   toll(times=1){ if (!hqInit()) return; const t = HQ.ac.currentTime; for (let i=0;i<times;i++){ const out = HQ.out; HQ.out = HQ.comp; INST.bell(t + i*2.2, NOTE("D3"), 1, 1.4); HQ.out = out; } },
   whisper(){ if (!hqInit()) return; const t = HQ.ac.currentTime; const pan = HQ.ac.createStereoPanner ? HQ.ac.createStereoPanner() : null; const g = HQ.ac.createGain(); g.gain.value = 1; if (pan){ pan.pan.value = Math.random() < .5 ? -.9 : .9; g.connect(pan); pan.connect(HQ.comp); } else g.connect(HQ.comp);
     for (let i=0;i<9;i++){ const tt = t + i*.11 + Math.random()*.05, s = HQ.ac.createBufferSource(); s.buffer = Snd.nodes.noiseBuf; const b = filt("bandpass", 1800 + Math.random()*2400, 6), gg = HQ.ac.createGain(); s.connect(b); b.connect(gg); gg.connect(g); const p = gg.gain; p.setValueAtTime(.0001, tt); p.exponentialRampToValueAtTime(.05, tt+.03); p.exponentialRampToValueAtTime(.0001, tt+.12); s.start(tt, Math.random()); s.stop(tt+.15); } },
+  roar(){ if (!hqInit()) return; const ac = HQ.ac, t = ac.currentTime, g = ac.createGain(), lp = filt("lowpass", 700, 2);
+    for (const [f, dt] of [[46,0],[47,-20],[69,10],[92,5]]){ const o = osc("sawtooth", f, t, t+3.6, dt); o.frequency.setValueAtTime(f*.8, t); o.frequency.linearRampToValueAtTime(f*1.15, t+.6); o.frequency.exponentialRampToValueAtTime(f*.7, t+3.4); vib(o, t, 6, f*.06, 0); o.connect(lp); }
+    lp.connect(g); g.connect(HQ.comp); env(g, t, .25, .5, .6, .8, 1.2, t+2.4); noiseHit(t, "lowpass", 500, .7, 3, .3); },
   heartbeat(){ if (!hqInit()) return; const t = HQ.ac.currentTime, out = HQ.out; HQ.out = HQ.comp; INST.kick(t, 0, 1, .8); INST.kick(t+.22, 0, 1, .5); HQ.out = out; },
   knock(){ if (!hqInit()) return; const t = HQ.ac.currentTime; for (let i=0;i<3;i++) noiseHit(t + i*.55, "lowpass", 500, 1, .12, .5); },
-  scream(){ if (!hqInit()) return; const t = HQ.ac.currentTime, g = HQ.ac.createGain(); for (const dt of [-30, 0, 25]){ const o = osc("sawtooth", 880, t, t+1.3, dt); o.frequency.linearRampToValueAtTime(1250, t+.3); o.frequency.exponentialRampToValueAtTime(600, t+1.2); vib(o, t, 9, 40, 0); const b = filt("bandpass", 1500, 2); o.connect(b); b.connect(g); } g.connect(HQ.comp); env(g, t, .02, .09, .2, .8, .3, t+.9); noiseHit(t, "highpass", 2000, 1, 1, .05); },
+  // a real scream if one has been recorded (millbrook3d/scream.*), otherwise a harsh synthesized shriek
+  scream(vol=1){
+    if (!hqInit()) return; loadScream();
+    const ac = HQ.ac, t = ac.currentTime;
+    if (SCREAM.buf){ const src = ac.createBufferSource(), g = ac.createGain(); src.buffer = SCREAM.buf; src.playbackRate.value = .92 + Math.random()*.16; g.gain.value = 1.3*vol; src.connect(g); g.connect(HQ.comp); src.start(t); return; }
+    const out = ac.createGain(), shaper = ac.createWaveShaper(), curve = new Float32Array(1024);
+    for (let i=0;i<1024;i++){ const x = i/512 - 1; curve[i] = Math.tanh(x*3.2); } shaper.curve = curve;
+    const f1 = filt("bandpass", 1150, 3), f2 = filt("bandpass", 2700, 4), f3 = filt("bandpass", 3900, 5), mix = ac.createGain(); mix.gain.value = 1;
+    shaper.connect(f1); shaper.connect(f2); shaper.connect(f3); f1.connect(mix); f2.connect(mix); f3.connect(mix); mix.connect(out); out.connect(HQ.comp);
+    const base = 760 + Math.random()*180;
+    for (const [dt, w] of [[-35,"sawtooth"],[0,"sawtooth"],[28,"square"],[12,"sawtooth"]]){
+      const o = osc(w, base, t, t+1.9, dt); o.frequency.setValueAtTime(base*.8, t); o.frequency.exponentialRampToValueAtTime(base*1.55, t+.18); o.frequency.linearRampToValueAtTime(base*1.4, t+1.0); o.frequency.exponentialRampToValueAtTime(base*.75, t+1.8);
+      vib(o, t, 9 + Math.random()*3, 70, 0); const og = ac.createGain(); og.gain.value = .5; o.connect(og); og.connect(shaper);
+    }
+    const p = out.gain; p.setValueAtTime(.0001, t); p.exponentialRampToValueAtTime(.42*vol, t+.03); p.setValueAtTime(.42*vol, t+1.1); p.exponentialRampToValueAtTime(.0001, t+1.9);
+    noiseHit(t, "bandpass", 2400, .6, 1.3, .14*vol); noiseHit(t, "highpass", 4000, .5, .5, .1*vol);
+  },
   riser(){ if (!hqInit()) return; const t = HQ.ac.currentTime, g = HQ.ac.createGain(); for (const dt of [-20, 0, 15]){ const o = osc("sawtooth", 80, t, t+2.2, dt); o.frequency.exponentialRampToValueAtTime(420, t+2); o.connect(g); } const lp = filt("lowpass", 1400); g.connect(lp); lp.connect(HQ.comp); const p = g.gain; p.setValueAtTime(.0001, t); p.exponentialRampToValueAtTime(.07, t+1.9); p.exponentialRampToValueAtTime(.0001, t+2.1); }
 };
 if (HALLOW){

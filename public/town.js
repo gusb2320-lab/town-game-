@@ -1448,7 +1448,6 @@ function killPerson(n, by, kopt={}){
     if (isDet(o)){ addEvidence(`I watched the newcomer kill ${n.first} at ${where}.`, 100, "murder"); return; }
     o.order = {type:"report", what:"murder", about:by===pl?"player":by.id, victim:n.id, until:absT()+180, run:true}; o.fight = null;
   }
-  if (wits.length && T.mode!=="slasher") T.notoriety = 100;
 }
 function addStain(x,y){ if (!WALK_T.has(tileT(x,y)) && tileT(x,y)!=="D") return; if (T.stains.some(s=>s.x===x&&s.y===y&&!s.cleaned)) return; T.stains.push({x,y,day:T.day,inside:!!buildingAt(x,y),cleaned:false,seenBy:[]}); }
 function bodyNear(maxd=1.5){
@@ -1518,7 +1517,12 @@ function crimeSecondTick(){
   // visible bodies get found
   for (const b of T.bodies){
     if (b.discovered || b.hidden || b.carried) continue;
-    for (const o of folk) if (alive(o) && !o.away && !o.asleep && !o.hidden && canSeeT(o, b.x, b.y, 7)){ discoverBody(b, o); if (T.mode==="slasher") slasherAlarm(o, "body"); else o.order = {type:"report", what:"body", until:absT()+120, run:true}; break; }
+    for (const o of folk) if (alive(o) && !o.away && !o.asleep && !o.hidden && canSeeT(o, b.x, b.y, 7)){
+      if (T.mode==="slasher"){ discoverBody(b, o); slasherAlarm(o, "body"); break; }
+      // the finder has to get word to the sheriff before the town knows anything
+      b.spottedBy = b.spottedBy || []; if (b.spottedBy.includes(o.id) || o.order && o.order.type==="report") continue;
+      b.spottedBy.push(o.id); spotBodyT(b, o); break;
+    }
   }
   // someone sees you carrying a body
   if (pl.carrying){
@@ -1527,7 +1531,7 @@ function crimeSecondTick(){
       if (T.mode==="slasher"){ if (o.alarmed!=="murder"){ sayT(o, "Is that… a BODY?!", 3); sfx("scream"); slasherAlarm(o, "murder"); } continue; }
       if (o.sheriff){ arrestSequence(`The sheriff caught you carrying ${b.name}.`, true); return; }
       if (isDet(o)){ addEvidence(`I watched the newcomer carry ${b.name}'s body.`, 120, "carry"); return; }
-      if (!o.order || o.order.type!=="report"){ sayT(o, "Is that… is that a BODY?!", 3); sfx("scream"); rememberT(o, `I saw the newcomer carrying ${b.name}'s body!`); o.order = {type:"report", what:"carry", about:"player", victim:b.id, until:absT()+150, run:true}; T.notoriety = 100; }
+      if (!o.order || o.order.type!=="report"){ sayT(o, "Is that… is that a BODY?!", 3); sfx("scream"); rememberT(o, `I saw the newcomer carrying ${b.name}'s body!`); o.order = {type:"report", what:"carry", about:"player", victim:b.id, until:absT()+150, run:true}; }
     }
   }
   // stains get noticed
@@ -1582,8 +1586,18 @@ function missingCheck(){
     addEvidence(`${v.first} has gone missing.${seen ? " The newcomer was the last one seen with them." : ""}`, seen ? 15 : 4, "missing");
   }
 }
+// Someone finds a body: they scream and run for the sheriff. Nobody else knows until they get there.
+function spotBodyT(b, o){
+  const v = byIdT(b.id);
+  sayT(o, pick(["AAAAH!","Oh my God… it's "+v.first+"!","No no no no…"]), 3.5); sfx("scream"); emoteT(o, "!", 3);
+  rememberT(o, `I FOUND ${v.first.toUpperCase()}'S BODY at ${placeLabelAt(b.x,b.y)}. I have to tell the sheriff.`);
+  if (!sheriff() || o.sheriff){ discoverBody(b, o); return; }
+  o.order = {type:"report", what:"body", body:b.id, until:absT()+240, run:true};
+  if (Math.hypot(T.player.x-o.x, T.player.y-o.y) < 14) toast(`${o.first} found the body and is running for the sheriff.`, "bad", 4);
+}
 function deliverReport(n, sh, o){
   if (T.mode==="slasher"){ slasherAlarm(sh, "report"); return; }
+  if (o.what==="body"){ const b = T.bodies.find(x=>x.id===o.body); sayT(n, "Sheriff, there's a body!", 4); if (b && !b.discovered) discoverBody(b, n); return; }
   sayT(n, o.what==="murder" ? "Sheriff! I saw it! The newcomer—" : o.what==="body" ? "Sheriff, there's a body!" : "Sheriff, you've got to do something!", 4);
   rememberT(sh, `${n.first} reported: ${o.what} ${o.about==="player" ? "by the newcomer" : ""}.`);
   if (o.about==="player"){

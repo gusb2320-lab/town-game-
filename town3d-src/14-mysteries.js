@@ -13,7 +13,7 @@ if (HALLOW){
   const fresh = () => ({rep:0, notes:[], cult:{members:[], heat:0, seen:false, solved:false, lastHunt:-1, got:{}, ritual:false}, ww:{id:null, solved:false, kills:0, prints:[], accused:[], victims:[], found:0, wolfsbane:null}, haunt:{diary:false, doll:false, bones:false, panel:false, solved:false, visits:0}});
   const note = (kind, text) => { const m = M(); if (m.notes.some(x=>x.text===text)) return; m.notes.push({kind, text, s:stampT()}); toast(`Journal: ${text}`, "", 5); sfx("quest"); };
   const addRep = (v, why) => { const m = M(); m.rep = clamp(m.rep + v, 0, 100); if (v > 0){ for (const n of folk) if (alive(n)){ n.opinion = clamp(n.opinion + v*.5, -100, 100); n.trust = clamp(n.trust + v*.3, 0, 100); } toast(`+${v} respect · ${why}`, "good", 5); } else toast(`${v} respect · ${why}`, "bad", 5); };
-  MX.addRep = addRep;
+  MX.addRep = addRep; MX.note = (k, t) => note(k, t);
   const CULT_ITEMS = ["crimson robe","blood ledger","ritual dagger","bone sigil"];
   const wolfP = () => byIdT(M().ww.id);
   const ritualNight = () => T.day % 2 === 1;
@@ -72,7 +72,9 @@ if (HALLOW){
     // hollow stumps in the forest
     for (const [x,y] of XP.caches) C[`${x},${y}`] = {name:"Hollow stump", items:[pick(["wolfsbane","rope","matches","bullets","old boot","tallow candles"])], loot:[], home:null, bid:null};
     // Ashcombe House
-    for (const k of Object.keys(C)){ if (C[k].bid!=="ashcombe") continue; C[k].items = []; if (C[k].name==="Desk") C[k].items.push("Ashcombe diary"); if (C[k].name==="Chest freezer"){ C[k].name = "Toy chest"; C[k].items.push("porcelain doll"); C[k].hide = false; } if (C[k].name==="Wardrobe") C[k].items.push(pick(["tallow candles","holy water"])); }
+    for (const k of Object.keys(C)){ if (C[k].bid!=="ashcombe") continue; C[k].items = []; if (C[k].name==="Wardrobe") C[k].items.push(pick(["tallow candles","holy water","lantern"])); if (C[k].name==="Chest freezer"){ C[k].name = "Linen chest"; C[k].hide = false; } }
+    if (C["173,92"]){ C["173,92"].name = "Writing desk"; C["173,92"].items = ["Ashcombe diary"]; }
+    if (C["178,104"]){ C["178,104"].name = "Toy chest"; C["178,104"].items = ["porcelain doll"]; }
     return C;
   };
 
@@ -81,7 +83,11 @@ if (HALLOW){
     const c = M().cult; if (c.solved) return;
     if (h===23 && ritualNight()){
       c.ritual = true;
-      for (const id of c.members){ const n = byIdT(id); if (!n || !alive(n) || n.away || n.wolf) continue; robe(n, true); n.order = {type:"go_to", place:"stonecircle", until:absT()+200}; n.asleep = false; }
+      // each takes a place in a ring around the altar stone
+      const [ax, ay] = XP.altar, ring = [];
+      for (let k=0;k<10;k++){ const a = k/10*Math.PI*2; const x = Math.round(ax + Math.cos(a)*3), y = Math.round(ay + Math.sin(a)*3); if (WALK_T.has(tileT(x,y)) && !ring.some(r=>r[0]===x&&r[1]===y)) ring.push([x,y]); }
+      c.members.forEach((id, i) => { const n = byIdT(id); if (!n || !alive(n) || n.away || n.wolf) return; robe(n, true); n.timid = false; n.order = {type:"go_to", place:"stonecircle", until:absT()+200, tgt:ring[i % ring.length], ritual:true}; n.asleep = false; });
+      c.attacked = null;
     }
     if (h===2){ c.ritual = false; for (const id of c.members){ const n = byIdT(id); if (!n || !alive(n)) continue; if (!n.cultHunter) robe(n, false); if (n.order && n.order.place==="stonecircle") n.order = null; } }
     // the hunt
@@ -101,15 +107,26 @@ if (HALLOW){
     // seeing the ritual
     if (c.ritual){
       const [ax, ay] = XP.altar, d = Math.hypot(pl.x-ax, pl.y-ay);
-      if (d < 16){
+      if (d < 30){
         const robed = c.members.map(byIdT).filter(n=>n && alive(n) && n.look.robe && canSeeT(pl, n.x, n.y, 15));
-        if (robed.length && !c.seenTonight){
+        const hidden = tileT(pl.x, pl.y)==="0";
+        if (robed.length && c.seenTonight !== T.day){
           c.seenTonight = T.day; c.seen = true;
           note("cult", `You watched robed figures chanting at the stone circle in the Blackwood, around midnight. ${robed.length} of them.`);
-          banner("THE STONE CIRCLE", "Red robes. Chanting. Something on the altar that moves.", true, 6); sfx("stinger");
-          if (robed.some(n=>canSeeT(n, pl.x, pl.y, 10))){ c.heat += 40; toast("One of the hooded heads turns toward you.", "bad", 5); }
+          banner("THE STONE CIRCLE", hidden ? "From the thicket you watch red robes circle the altar stone." : "Red robes. Chanting. If they see you, they'll kill you. Get into the thickets.", true, 6); sfx("stinger");
         }
-        if (!MX.chantAt || performance.now() > MX.chantAt){ MX.chantAt = performance.now() + 3800; try { if (hqInit()){ const t0 = HQ.ac.currentTime, out = HQ.out; HQ.out = HQ.comp; const v = Math.max(.15, 1 - d/16); for (const nn of ["D3","A3","D4"]) INST.choir(t0, NOTE(nn) - (Math.random()<.5 ? 0 : 1), 3.5, .5*v); HQ.out = out; } } catch {} }
+        if (hidden && !MX.toldHide){ MX.toldHide = true; toast("You crouch in the thicket. Nobody can see you in here.", "good", 4); }
+        // they see you watching: the whole Circle turns on you
+        const spotter = c.members.map(byIdT).find(n => n && alive(n) && n.look.robe && !n.fight && canSeeT(n, pl.x, pl.y, 11) && (!hidden || distT(n, pl) < 2.2));
+        if (spotter && c.attacked !== T.day){
+          c.attacked = T.day; c.heat += 40;
+          sayT(spotter, pick(["THERE! An eye in the dark!","Seize the watcher!","The Horned One wants a witness. Take them!"]), 4);
+          banner("THEY'VE SEEN YOU", "The chanting stops. Every hood turns toward you. RUN.", true, 6); sfx("stinger"); HSFX.scream(.5);
+          for (const id of c.members){ const n = byIdT(id); if (!n || !alive(n) || n.away || !n.look.robe || distT(n, pl) > 40) continue; n.cultHunter = true; n.timid = false; n.strength = Math.max(n.strength, 15); if (!n.inv.includes("sacrificial knife")) n.inv.unshift("sacrificial knife"); n.order = {type:"attack", target:"player", until:absT()+240, run:true}; }
+        }
+        // the ones in the ring face the altar
+        if (!c.attacked) for (const id of c.members){ const n = byIdT(id); if (n && alive(n) && n.order && n.order.ritual && n.path.length===0 && !n.fight){ const dx = ax - n.x, dy = ay - n.y; n.dir = Math.abs(dx) >= Math.abs(dy) ? [Math.sign(dx)||1, 0] : [0, Math.sign(dy)||1]; } }
+        if (!MX.chantAt || performance.now() > MX.chantAt){ MX.chantAt = performance.now() + 3800; try { if (hqInit()){ const t0 = HQ.ac.currentTime, out = HQ.out; HQ.out = HQ.comp; const v = Math.max(.12, 1 - d/30) * (1 + (MX.ritualPower||0)); for (const nn of ["D3","A3","D4"]) INST.choir(t0, NOTE(nn) - (Math.random()<.5 ? 0 : 1), 3.5, .5*v); HQ.out = out; } } catch {} }
       }
     }
     // the hunter closing in
@@ -319,7 +336,7 @@ if (HALLOW){
   // ---------- Ashcombe House ----------
   READ_EXTRA["Ashcombe diary"] = () => {
     const h = M().haunt; if (!h.diary){ h.diary = true; note("house", "Read Lady Ashcombe's diary. The child, Elspeth, didn't die of fever. Something is behind the nursery wall."); }
-    return ["The diary of Lady Margery Ashcombe", "March. Elspeth will not stop singing to the doll. The same three notes. Edmund says she has a devil in her and the priest agrees, God forgive them both.\nApril. She saw the thing in the wood, she says, the tall pale one that stands and watches. She told the whole village. Edmund struck her for it.\nMay. Edmund has had the mason in. He says we will tell them it was the fever. He says no one will look behind the nursery panel. I can hear her. I can still hear her.\nJune. The singing stopped today.\n(The rest is stuck together. On the last page, in a different hand, a child's letters: LET ME OUT. PUT ME IN THE CHURCH.)"];
+    return ["The diary of Lady Margery Ashcombe", "March. Elspeth will not stop singing to the doll. The same three notes. Edmund says she has a devil in her and the priest agrees, God forgive them both.\nApril. She saw the thing in the wood, she says, the tall pale one that stands and watches. She told the whole village. Edmund struck her for it.\nMay. Edmund has had the mason in. He says we will tell them it was the fever. He says no one will look behind the nursery panel. I can hear her. I can still hear her.\nJune. The singing stopped today.\n(The rest is stuck together. On the last page, in a different hand, a child's letters: LET ME OUT. LAY ME IN THE CHAPEL WITH MY DOLLY.)"];
   };
   READ_EXTRA["blood ledger"] = () => {
     const c = M().cult, mem = c.members.map(byIdT).filter(Boolean);
@@ -330,18 +347,18 @@ if (HALLOW){
     const h = M().haunt; h.solved = true;
     removeItemT("small bones"); removeItemT("porcelain doll");
     addItemT("silver dagger");
-    banner("SHE CAN REST", "A small cold hand slips into yours, and then it's gone. On the altar, a silver dagger that wasn't there before.", false, 9);
-    note("house", "SOLVED: you laid Elspeth Ashcombe's bones in the church with her doll. The house is quiet. She left you her silver dagger.");
-    newsT("The bones of Elspeth Ashcombe, missing for forty years, were laid to rest at St. Ambrose. The newcomer found her.", [], false, "event");
-    for (const o of folk) if (alive(o)) rememberT(o, "The newcomer found little Elspeth Ashcombe's bones in the walls of Ashcombe House and brought her to the church. They say the house is quiet now.");
+    banner("SHE CAN REST", "The screaming in the walls stops. A small cold hand slips into yours, and then it's gone. On the altar, a silver dagger that wasn't there before.", false, 9);
+    note("house", "SOLVED: you laid Elspeth Ashcombe's bones in the family chapel with her doll. The house is quiet. She left you her silver dagger.");
+    newsT("The bones of Elspeth Ashcombe, missing for forty years, were laid to rest in the Ashcombe family chapel. The newcomer found her.", [], false, "event");
+    for (const o of folk) if (alive(o)) rememberT(o, "The newcomer found little Elspeth Ashcombe's bones in the walls of Ashcombe House and laid her to rest in the family chapel. They say the house is quiet now.");
     addRep(20, "you laid Elspeth to rest");
     try { if (hqInit()){ const t0 = HQ.ac.currentTime; ["D5","F5","A5","D6"].forEach((m,i)=>INST.musicbox(t0 + i*.45, NOTE(m), 1, 1.2)); } } catch {}
     saveT();
   };
   const hauntSecond = () => {
     const h = M().haunt, pl = T.player;
-    if (pl.inv.includes("porcelain doll") && !h.doll){ h.doll = true; note("house", "Took the porcelain doll from the toy chest in the nursery. It's very cold."); if (isNightT() && HWO.jump){ setTimeout(()=>{ if (typeof hwJumpscare==="function" && !h.solved) hwJumpscare("ghost"); }, 900); } }
-    if (pl.inv.includes("small bones") && !h.bones){ h.bones = true; note("house", "Found small bones behind the nursery panel, wrapped in a nightdress. Bring them to the church."); }
+    if (pl.inv.includes("porcelain doll") && !h.doll){ h.doll = true; note("house", "Took the porcelain doll from the toy chest in the nursery. It's very cold."); if (HWO.jump){ setTimeout(()=>{ if (typeof hwJumpscare==="function" && !h.solved) hwJumpscare("ghost"); }, 700); } }
+    if (pl.inv.includes("small bones") && !h.bones){ h.bones = true; note("house", "Found small bones behind the nursery panel, wrapped in a nightdress. The family chapel is in this house, south of the great hall."); }
     if (insideOf(pl)==="ashcombe" && !h.inNow){ h.inNow = true; h.visits++; if (h.visits===1) note("house", "You went into Ashcombe House. It feels like something is standing just behind you."); }
     if (insideOf(pl)!=="ashcombe") h.inNow = false;
   };
@@ -469,12 +486,15 @@ if (HALLOW){
     const m = M(), pl = T.player; if (!m) return null;
     if (c==="4" && here==="ashcombe" && !m.haunt.panel){
       if (!m.haunt.diary) return {kind:"knock", label:"Knock on the wall panel", run:()=>{ sfx("knock"); toast("Hollow. And then, from inside, something knocks back.", "bad", 4); HSFX.knock(); }};
-      return {kind:"pry", key:"pry"+k, label:"Hold: pry open the nursery panel", hold:true, secs:4, act:"picking", sound:"pick", done:()=>{ m.haunt.panel = true; T.containers[k] = {name:"Space behind the panel", items:["small bones"], loot:[], home:null, bid:"ashcombe"}; HSFX.whisper(); toast("The panel gives. Cold air breathes out of the dark.", "bad", 5); }};
+      return {kind:"pry", key:"pry"+k, label:"Hold: pry open the nursery panel", hold:true, secs:4, act:"picking", sound:"pick", done:()=>{ m.haunt.panel = true; T.containers[k] = {name:"Space behind the panel", items:["small bones"], loot:[], home:null, bid:"ashcombe"}; toast("The panel gives. Cold air breathes out of the dark.", "bad", 5); if (HWO.jump && typeof hwJumpscare==="function") setTimeout(()=>hwJumpscare("ghost"), 400); else HSFX.whisper(); }};
     }
-    if (c==="+" && here==="church" && pl.inv.includes("small bones") && !m.haunt.solved){
+    if (c==="+" && (here==="church" || here==="ashcombe") && pl.inv.includes("small bones") && !m.haunt.solved){
       const ok = pl.inv.includes("porcelain doll") && m.haunt.diary;
       if (!ok) return {kind:"rest", label:"Lay the bones on the altar", run:()=>toast(m.haunt.diary ? "She won't rest without her doll." : "You don't know who these bones belong to yet.", "", 4)};
-      return {kind:"rest", key:"rest", label:"Hold: lay Elspeth to rest, with her doll", hold:true, secs:5, act:"praying", sound:"bell", done:restElspeth};
+      return {kind:"rest", key:"rest", label:"Hold: lay Elspeth to rest, with her doll", hold:true, secs:6, act:"praying", sound:"bell", done:restElspeth};
+    }
+    if (c==="+" && here==="ashcombe" && !m.haunt.solved){
+      return {kind:"look", label:"Look at the chapel altar", run:()=>toast(m.haunt.diary ? "A child's name has been scratched into the altar cloth, over and over: ELSPETH. Bring her here, with what she loved." : "The family chapel. The altar cloth is grey with dust, except where small handprints have pressed into it.", "", 5)};
     }
     if (c==="9") return {kind:"look", label:"Look at the hanging tree", run:()=>toast(pick(["Three ropes. One of them still holds something wrapped in sacking. It turns slowly, though there's no wind.","Names are carved into the bark, dozens, the oldest grown over.","Somebody has left fresh flowers at the roots."]), "", 5)};
     if (c==="5") return {kind:"look", label:"Touch the standing stone", run:()=>{ toast(pick(["The stone is warm, like skin.","Horned moons are cut into the stone, and something dark has run down the grooves.","Your hand comes away sticky."]), "", 4); if (!m.cult.solved) note("cult", "The standing stones in the Blackwood are carved with horned moons. Someone uses this place."); }};

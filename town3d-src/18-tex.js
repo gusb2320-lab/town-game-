@@ -183,6 +183,7 @@ function hwPaintGround(){
   const rug = (X, Y, x, y) => { F(X, Y, TS, TS, "#4a1a1e"); F(X, Y, TS, 1, "#2a0e10"); if ((x+y)%2===0){ F(X+5, Y+5, 6, 6, "#6a2a24"); F(X+7, Y+7, 2, 2, "#a08040"); } for (let i=0;i<4;i++) F(X + ((rnd(x,y,i)*15)|0), Y + ((rnd(x,y,i+5)*15)|0), 1, 1, "#2a0e10"); };
   const floorOf = (X, Y, x, y, ch, bid) => {
     const bd = bid && bById(outerOf(bid));
+    if (bd && bd.id==="ashcombe"){ planks(X, Y, x, y, "#2a1e16"); if (rnd(x,y,71) > .6) F(X + ((rnd(x,y,72)*10)|0), Y + ((rnd(x,y,73)*10)|0), 5, 3, "rgba(10,6,4,.6)"); if (rnd(x,y,74) > .93) F(X+2, Y+4, 10, 6, "rgba(70,4,4,.5)"); return; }
     if (ch === ":") return rug(X, Y, x, y);
     if (ch === "y") return flag(X, Y, x, y, "#3a4248");
     if (ch === ","){ if (bd && ["sheriff","clinic","church","library","station","arcade","garage"].includes(bd.id)) return flag(X, Y, x, y, "#6a645a"); return planks(X, Y, x, y, "#4a3424"); }
@@ -193,7 +194,7 @@ function hwPaintGround(){
     const ch = tmap[y][x], X = x*TS, Y = y*TS, bid = buildingAt(x,y);
     if (bid || ch === "D"){ const fl = bid ? (bById(outerOf(bid)) || {}).floor || "." : "."; floorOf(X, Y, x, y, ".,:y".includes(ch) ? ch : (bid==="roomA"||bid==="roomB"||bid==="roomC" ? ":" : fl), bid); if (bid && (tileT(x,y-1)==="#" || tileT(x,y-1)==="x")) F(X, Y, TS, 4, "rgba(5,4,8,.4)"); continue; }
     switch (ch){
-      case "g": case "G": case "M": case "V": case "f": case "P": case "4": case "5": case "9": grass(X, Y, x, y, inCem(x,y) || y >= 86); if (y >= 86 && rnd(x,y,60) > .7) F(X + ((rnd(x,y,61)*12)|0), Y + ((rnd(x,y,62)*12)|0), 3, 2, "#1e1a14"); break;
+      case "g": case "G": case "M": case "V": case "f": case "P": case "4": case "5": case "9": case "0": grass(X, Y, x, y, inCem(x,y) || y >= 86); if (y >= 86 && rnd(x,y,60) > .7) F(X + ((rnd(x,y,61)*12)|0), Y + ((rnd(x,y,62)*12)|0), 3, 2, "#1e1a14"); break;
       case "6": case "7": mud(X, Y, x, y, "#2a241c"); break;
       case "8": cobble(X, Y, x, y, "#5a544a", 4); break;
       case "t": case "T": grass(X, Y, x, y, true); for (let i=0;i<4;i++) F(X + ((rnd(x,y,i+50)*14)|0), Y + ((rnd(x,y,i+51)*14)|0), 3, 1, LEAF[i%5]); break;
@@ -284,49 +285,73 @@ function texGlow(col){
 }
 // The moon: a cratered face that watches the player, blinks, and grins after a death.
 const MOON = {cv:null, g:null, tex:null};
+// The moon: a fat grinning crescent with one ringed eye that follows you and a mouth full of teeth.
+const MOON_S = 192;
 function moonTex(){
-  if (!MOON.tex){ const [c, g] = hCanvas(160, 160); MOON.cv = c; MOON.g = g; MOON.tex = hTex(c, false, false); MOON.base = moonBase(); }
+  if (!MOON.tex){ const [c, g] = hCanvas(MOON_S, MOON_S); g.imageSmoothingEnabled = true; MOON.cv = c; MOON.g = g; MOON.tex = hTex(c, false, true); }
   return MOON.tex;
 }
-function moonBase(){
-  const [c, g] = hCanvas(160, 160), R = hRng(1313);
-  const gr = g.createRadialGradient(80, 80, 40, 80, 80, 80); gr.addColorStop(0, "rgba(240,236,210,.0)"); gr.addColorStop(.66, "rgba(240,236,210,0)"); gr.addColorStop(.72, "rgba(220,220,200,.35)"); gr.addColorStop(1, "rgba(200,210,200,0)");
-  g.fillStyle = gr; g.fillRect(0, 0, 160, 160);
-  g.fillStyle = "#e4dcc0"; g.beginPath(); g.arc(80, 80, 56, 0, Math.PI*2); g.fill();
-  for (let i=0;i<500;i++){ const a = R()*Math.PI*2, r = Math.sqrt(R())*54; g.fillStyle = R() < .5 ? "rgba(180,170,140,.5)" : "rgba(255,250,230,.35)"; g.fillRect((80 + Math.cos(a)*r)|0, (80 + Math.sin(a)*r)|0, 1, 1); }
-  for (const [x,y,r] of [[58,52,9],[104,64,6],[66,110,7],[110,104,10],[86,40,4],[42,86,5],[98,118,4]]){ g.fillStyle = "rgba(150,140,110,.55)"; g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill(); g.fillStyle = "rgba(255,250,230,.35)"; g.beginPath(); g.arc(x+1, y+1, r-1.5, 0, Math.PI); g.fill(); }
-  const sh = g.createRadialGradient(64, 64, 20, 80, 80, 58); sh.addColorStop(0, "rgba(0,0,0,0)"); sh.addColorStop(1, "rgba(60,50,40,.45)"); g.fillStyle = sh; g.beginPath(); g.arc(80, 80, 56, 0, Math.PI*2); g.fill();
-  return c;
-}
-// look: [-1..1, -1..1] where its pupils point; lid: 0 open .. 1 shut; grin: 0..1; blood: 0..1
+// the crescent: a big disc with a bite taken out of the upper right
+const MOON_O = [90, 100, 80], MOON_I = [142, 22, 72];
+function moonPath(g, grow){ g.beginPath(); g.arc(MOON_O[0], MOON_O[1], MOON_O[2] + grow, 0, Math.PI*2); g.arc(MOON_I[0], MOON_I[1], Math.max(1, MOON_I[2] - grow), 0, Math.PI*2, true); }
+// look: [-1..1, -1..1] where the pupil points; lid: 0 open .. 1 shut; grin: 0..1; blood: 0..1
 function drawMoon(look, lid, grin, blood, t){
-  moonTex(); const g = MOON.g, F = (x,y,w,h,col) => { g.fillStyle = col; g.fillRect(x|0,y|0,w|0,h|0); };
-  g.clearRect(0, 0, 160, 160); g.drawImage(MOON.base, 0, 0);
-  const dark = "#2a2018";
-  // brows: heavy and low
-  g.fillStyle = "rgba(90,76,56,.85)"; g.beginPath(); g.moveTo(44, 64); g.quadraticCurveTo(60, 52 - grin*4, 76, 62); g.lineTo(76, 66); g.quadraticCurveTo(60, 58, 44, 68); g.fill();
-  g.beginPath(); g.moveTo(116, 64); g.quadraticCurveTo(100, 52 - grin*4, 84, 62); g.lineTo(84, 66); g.quadraticCurveTo(100, 58, 116, 68); g.fill();
-  // sockets, eyes, pupils
-  for (const ex of [60, 100]){
-    g.fillStyle = "#1a1410"; g.beginPath(); g.ellipse(ex, 74, 12, 8, 0, 0, Math.PI*2); g.fill();
-    g.fillStyle = blood > .5 ? "#e8c8a8" : "#f0ead8"; g.beginPath(); g.ellipse(ex, 74, 10, 6.5, 0, 0, Math.PI*2); g.fill();
-    const px = ex + look[0]*5.5, py = 74 + look[1]*3;
-    g.fillStyle = blood > .5 ? "#7a0008" : "#2a3020"; g.beginPath(); g.arc(px, py, 4.2, 0, Math.PI*2); g.fill();
-    g.fillStyle = "#000"; g.beginPath(); g.arc(px, py, 2.2, 0, Math.PI*2); g.fill();
-    g.fillStyle = "rgba(255,255,255,.8)"; g.fillRect(px+1, py-2, 1.4, 1.4);
-    if (lid > 0){ g.fillStyle = "#cfc6a8"; g.beginPath(); g.ellipse(ex, 74 - 7 + lid*7, 12, lid*8, 0, 0, Math.PI*2); g.fill(); g.fillStyle = "rgba(60,50,40,.6)"; g.fillRect(ex-11, 73 + lid*1, 22, 1.2); }
+  moonTex(); const g = MOON.g, S = MOON_S;
+  g.clearRect(0, 0, S, S);
+  // thick black outline, then the body (the bite is cut out at the end)
+  g.fillStyle = "#0a0604"; g.beginPath(); g.arc(MOON_O[0], MOON_O[1], MOON_O[2] + 4, 0, Math.PI*2); g.fill();
+  g.save(); g.beginPath(); g.arc(MOON_O[0], MOON_O[1], MOON_O[2], 0, Math.PI*2); g.clip();
+  const body = g.createRadialGradient(70, 90, 10, 92, 100, 82);
+  body.addColorStop(0, blood > .5 ? "#ff9a50" : "#ffe46a"); body.addColorStop(.55, blood > .5 ? "#e8501a" : "#f6c02a"); body.addColorStop(1, blood > .5 ? "#7a1004" : "#c0700c");
+  g.fillStyle = body; g.fillRect(0, 0, S, S);
+  // mottling and the shadowed rim
+  const R = hRng(77); for (let i=0;i<70;i++){ g.fillStyle = `rgba(${blood > .5 ? "120,20,0" : "150,80,0"},${.08 + R()*.12})`; g.beginPath(); g.arc(20 + R()*150, 30 + R()*150, 2 + R()*8, 0, Math.PI*2); g.fill(); }
+  g.strokeStyle = "rgba(90,40,0,.45)"; g.lineWidth = 10; g.beginPath(); g.arc(MOON_O[0], MOON_O[1], MOON_O[2] - 3, .2, 2.9); g.stroke();
+  g.fillStyle = "rgba(255,255,220,.35)"; g.beginPath(); g.ellipse(48, 74, 9, 22, -.5, 0, Math.PI*2); g.fill();
+  // the eye: a black ring with dark petals around it, a white iris and a pupil that tracks
+  const ex = 54, ey = 80;
+  for (let k=0;k<11;k++){ const a = k/11*Math.PI*2; g.fillStyle = blood > .5 ? "#5a0a00" : "#6a3006"; g.beginPath(); g.ellipse(ex + Math.cos(a)*23, ey + Math.sin(a)*23, 7, 5, a, 0, Math.PI*2); g.fill(); g.fillStyle = "rgba(0,0,0,.55)"; g.beginPath(); g.arc(ex + Math.cos(a)*23, ey + Math.sin(a)*23, 3, 0, Math.PI*2); g.fill(); }
+  g.fillStyle = "#0a0604"; g.beginPath(); g.arc(ex, ey, 17, 0, Math.PI*2); g.fill();
+  g.fillStyle = "#f4f0e0"; g.beginPath(); g.arc(ex + look[0]*4, ey + look[1]*3.5, 9, 0, Math.PI*2); g.fill();
+  g.fillStyle = blood > .5 ? "#a00000" : "#0a0604"; g.beginPath(); g.arc(ex + look[0]*6.5, ey + look[1]*5.5, 4, 0, Math.PI*2); g.fill();
+  g.fillStyle = "#fff"; g.fillRect(ex + look[0]*6.5 + 1, ey + look[1]*5.5 - 3, 2, 2);
+  if (lid > 0){ g.save(); g.beginPath(); g.arc(ex, ey, 18, 0, Math.PI*2); g.clip(); g.fillStyle = blood > .5 ? "#e05a20" : "#f0b828"; g.fillRect(ex - 19, ey - 19, 38, 38*lid); g.fillStyle = "#0a0604"; g.fillRect(ex - 19, ey - 19 + 38*lid - 1.5, 38, 3); g.restore(); }
+  // the brow ridge over the eye
+  g.strokeStyle = "#0a0604"; g.lineWidth = 4; g.beginPath(); g.moveTo(28, 56 - grin*3); g.quadraticCurveTo(54, 40 - grin*5, 80, 52); g.stroke();
+  // the grin: a wide crescent mouth following the moon's lower curve
+  const open = 10 + grin*14;
+  const mouth = (grow) => { g.beginPath(); g.moveTo(34 - grow, 118); g.quadraticCurveTo(92, 168 + open + grow, 160 + grow, 92); g.quadraticCurveTo(102, 128 + grow*.2, 34 - grow, 118); g.closePath(); };
+  g.fillStyle = "#0a0604"; mouth(3.5); g.fill();
+  g.fillStyle = "#3a0606"; mouth(0); g.fill();
+  g.save(); mouth(0); g.clip();
+  // teeth: an upper row hanging from the top lip, a lower row standing on the bottom lip
+  const topAt = x => { const u = (x - 34)/126; return (1-u)*(1-u)*118 + 2*(1-u)*u*128 + u*u*92; };
+  const botAt = x => { const u = (x - 34)/126; return (1-u)*(1-u)*118 + 2*(1-u)*u*(168 + open) + u*u*92; };
+  for (let x = 38; x < 158; x += 13){
+    const yt = topAt(x + 6.5), yb = botAt(x + 6.5), gap = yb - yt;
+    if (gap < 4) continue;
+    g.fillStyle = "#f6f2e6"; g.fillRect(x, yt - 2, 12, gap*.46); g.fillRect(x + 1, yb - gap*.44, 11.5, gap*.44 + 3);
+    g.fillStyle = "rgba(160,150,130,.6)"; g.fillRect(x, yt + gap*.46 - 4, 12, 3); g.fillRect(x + 1, yb - gap*.44, 11.5, 2.5);
+    g.fillStyle = "#0a0604"; g.fillRect(x + 12, yt - 2, 1.5, gap*.46); g.fillRect(x + 12.5, yb - gap*.44, 1.5, gap*.44 + 3);
   }
-  // nose
-  g.fillStyle = "rgba(110,96,70,.7)"; g.beginPath(); g.moveTo(80, 78); g.lineTo(74, 98); g.lineTo(86, 98); g.fill();
-  // mouth: a thin line, or a grin full of teeth
-  if (grin < .1){ g.strokeStyle = dark; g.lineWidth = 2.2; g.beginPath(); g.moveTo(62, 112); g.quadraticCurveTo(80, 115, 98, 111); g.stroke(); }
-  else {
-    const w = 26 + grin*16, h = 4 + grin*12;
-    g.fillStyle = "#140c08"; g.beginPath(); g.moveTo(80-w, 106); g.quadraticCurveTo(80, 106 + h*2.2, 80+w, 106); g.quadraticCurveTo(80, 106 + h*.6, 80-w, 106); g.fill();
-    g.fillStyle = "#e8e0c0"; for (let i=-4;i<=4;i++){ const x = 80 + i*w/5, yTop = 106 + h*.3*(1 - (i*i)/25) + 2; g.fillRect(x-2, yTop, 3.5, 3 + grin*2); }
-    if (blood > .3){ g.fillStyle = "rgba(140,0,10,.9)"; g.fillRect(70, 112 + h, 2, 6 + Math.sin(t)*2); g.fillRect(90, 110 + h, 2, 9); }
-  }
-  if (blood > 0){ g.globalCompositeOperation = "source-atop"; g.fillStyle = `rgba(170,20,10,${.62*blood})`; g.fillRect(0, 0, 160, 160); g.globalCompositeOperation = "source-over"; }
+  // gums and what drips from them
+  g.fillStyle = blood > .5 ? "#8a0000" : "#a01818";
+  for (const [dx, len] of [[64, 16], [86, 26], [104, 12], [122, 20]]){ const yb = botAt(dx); g.fillRect(dx, yb - 3, 4, (len + grin*14) * .5); }
+  g.restore();
+  // drool past the lip
+  g.fillStyle = blood > .5 ? "#a00000" : "#b81c1c";
+  for (const [dx, len] of [[82, 14], [100, 22]]){ const yb = botAt(dx) + 2; const L = len*(.5 + grin*.7) + Math.sin(t*2 + dx)*2; g.fillRect(dx, yb, 4, L); g.beginPath(); g.arc(dx + 2, yb + L, 3, 0, Math.PI*2); g.fill(); }
+  g.restore();
+  // take the bite out, then ink its edge so the horns are crisp
+  g.globalCompositeOperation = "destination-out"; g.beginPath(); g.arc(MOON_I[0], MOON_I[1], MOON_I[2], 0, Math.PI*2); g.fill(); g.globalCompositeOperation = "source-over";
+  g.save(); g.beginPath(); g.arc(MOON_O[0], MOON_O[1], MOON_O[2] + 4, 0, Math.PI*2); g.clip();
+  g.strokeStyle = "#0a0604"; g.lineWidth = 8; g.beginPath(); g.arc(MOON_I[0], MOON_I[1], MOON_I[2], 0, Math.PI*2); g.stroke(); g.restore();
+  // a glow behind it all
+  g.globalCompositeOperation = "destination-over";
+  const halo = g.createRadialGradient(90, 100, 70, 90, 100, 96); halo.addColorStop(0, blood > .5 ? "rgba(255,60,30,.45)" : "rgba(255,210,90,.35)"); halo.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = halo; g.fillRect(0, 0, S, S);
+  g.globalCompositeOperation = "destination-out"; g.beginPath(); g.arc(MOON_I[0], MOON_I[1], MOON_I[2] - 4, 0, Math.PI*2); g.fill();
+  g.globalCompositeOperation = "source-over";
   MOON.tex.needsUpdate = true;
 }
 // a 4-frame flame, laid out in a strip
@@ -417,4 +442,57 @@ function drawScareFace(g, w, h, t){
   for (let i=-12;i<12;i+=4){ F(i,14,3,4,"#d8d0b8"); F(i+1,24,3,4,"#d8d0b8"); }
   F(-20,-20,2,30,"#8a8070"); F(18,-24,2,26,"#8a8070");
   g.fillStyle = "rgba(120,0,0,.5)"; g.fillRect(cx - 16*s, cy + 2*s, 2*s, 18*s); g.fillRect(cx + 12*s, cy + 2*s, 2*s, 24*s);
+}
+// ---------- Ashcombe House ----------
+function texPortrait(seed){
+  return hOnce("portrait:"+(seed%5), () => {
+    const [c, g] = hCanvas(48, 64), R = hRng(seed*13 + 3), v = seed % 5;
+    g.fillStyle = "#3a2a10"; g.fillRect(0, 0, 48, 64); g.fillStyle = "#8a6a20"; g.fillRect(2, 2, 44, 60); g.fillStyle = "#4a3410"; g.fillRect(4, 4, 40, 56);
+    const bg = g.createLinearGradient(0, 6, 0, 58); bg.addColorStop(0, "#1a1410"); bg.addColorStop(1, "#0a0806"); g.fillStyle = bg; g.fillRect(6, 6, 36, 52);
+    g.fillStyle = ["#1a1a22","#2a1414","#141e18","#20180e","#181818"][v]; g.beginPath(); g.ellipse(24, 58, 16, 18, 0, Math.PI, 0); g.fill();
+    g.fillStyle = "#c8bca8"; g.beginPath(); g.ellipse(24, 28, 8, 11, 0, 0, Math.PI*2); g.fill();
+    g.fillStyle = "#1a1210"; g.beginPath(); g.ellipse(24, 20, 10, 6, 0, Math.PI, 0); g.fill();
+    if (v===0){ g.fillStyle = "#000"; g.fillRect(19, 25, 4, 3); g.fillRect(26, 25, 4, 3); }
+    else if (v===1){ g.strokeStyle = "rgba(20,10,10,.9)"; g.lineWidth = 2; for (let i=0;i<6;i++){ g.beginPath(); g.moveTo(15 + R()*4, 18 + R()*4); g.lineTo(30 + R()*4, 34 + R()*6); g.stroke(); } }
+    else if (v===2){ g.fillStyle = "#000"; g.beginPath(); g.ellipse(24, 28, 8, 11, 0, 0, Math.PI*2); g.fill(); }
+    else { g.fillStyle = "#2a1a14"; g.fillRect(20, 26, 2, 2); g.fillRect(26, 26, 2, 2); g.fillRect(22, 34, 4, 1); if (v===4){ g.fillStyle = "#6a0000"; g.fillRect(20, 28, 1, 8); g.fillRect(27, 28, 1, 10); } }
+    for (let i=0;i<120;i++){ g.fillStyle = `rgba(0,0,0,${R()*.25})`; g.fillRect(6 + R()*36, 6 + R()*52, 1, 1); }
+    return hTex(c);
+  });
+}
+function texWeb(){
+  return hOnce("web", () => {
+    const [c, g] = hCanvas(64, 64); g.imageSmoothingEnabled = true;
+    g.strokeStyle = "rgba(220,220,230,.55)"; g.lineWidth = 1;
+    for (let k=0;k<7;k++){ const a = k/6*Math.PI/2; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a)*64, Math.sin(a)*64); g.stroke(); }
+    for (let r=8;r<64;r+=7){ g.beginPath(); for (let k=0;k<=6;k++){ const a = k/6*Math.PI/2, rr = r + Math.sin(k*2.3)*2; const x = Math.cos(a)*rr, y = Math.sin(a)*rr; if (k) g.quadraticCurveTo(Math.cos(a - .13)*(rr-3), Math.sin(a - .13)*(rr-3), x, y); else g.moveTo(x, y); } g.stroke(); }
+    return hTex(c, false, true);
+  });
+}
+function texHand(seed){
+  return hOnce("hand:"+(seed%3), () => {
+    const [c, g] = hCanvas(32, 32), R = hRng(seed + 9);
+    g.fillStyle = "rgba(90,6,6,.85)"; g.beginPath(); g.ellipse(16, 21, 6, 7, 0, 0, Math.PI*2); g.fill();
+    for (const [x, a] of [[9,-.5],[12,-.2],[16,0],[20,.2],[24,.6]]){ g.save(); g.translate(x, 15); g.rotate(a); g.fillRect(-1.5, -10, 3, 10); g.restore(); }
+    for (let i=0;i<4;i++) g.fillRect(12 + R()*8, 26, 1.5, 3 + R()*6);
+    return hTex(c);
+  });
+}
+
+// the Circle's sigil: rings, runes, a five-pointed star and a horned moon
+function texSigil(){
+  return hOnce("sigil", () => {
+    const [c, g] = hCanvas(256, 256); g.imageSmoothingEnabled = true;
+    const C = 128; g.strokeStyle = "#ff3010"; g.fillStyle = "#ff3010"; g.lineCap = "round";
+    g.lineWidth = 5; g.beginPath(); g.arc(C, C, 118, 0, Math.PI*2); g.stroke();
+    g.lineWidth = 3; g.beginPath(); g.arc(C, C, 100, 0, Math.PI*2); g.stroke();
+    g.font = "bold 14px Georgia, serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    const runes = "ᚦᚨᛗᛟᛞᚱᛁᚾᚷᛉᛏᛋᚹᚺᛚᛜ";
+    for (let k=0;k<32;k++){ const a = k/32*Math.PI*2; g.save(); g.translate(C + Math.cos(a)*109, C + Math.sin(a)*109); g.rotate(a + Math.PI/2); g.fillText(runes[k % runes.length], 0, 0); g.restore(); }
+    g.lineWidth = 4; g.beginPath(); for (let k=0;k<=5;k++){ const a = -Math.PI/2 + k*4*Math.PI/5; const x = C + Math.cos(a)*98, y = C + Math.sin(a)*98; if (k) g.lineTo(x, y); else g.moveTo(x, y); } g.stroke();
+    g.lineWidth = 6; g.beginPath(); g.arc(C, C + 8, 30, .15*Math.PI, .85*Math.PI); g.stroke();
+    g.beginPath(); g.moveTo(C - 28, C + 16); g.quadraticCurveTo(C - 44, C - 18, C - 30, C - 40); g.stroke();
+    g.beginPath(); g.moveTo(C + 28, C + 16); g.quadraticCurveTo(C + 44, C - 18, C + 30, C - 40); g.stroke();
+    return hTex(c, false, true);
+  });
 }

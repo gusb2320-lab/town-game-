@@ -125,6 +125,7 @@ if (HALLOW){
     {id:"graves", bid:null, tiles:"v", label:"Hold: tend the graves", secs:5, pay:6, mins:40, boss:"gravedigger"}
   );
 
+  WALK_T.add("0");   // thickets: you can push into them, and nobody sees you there
   // ---------- the map ----------
   XP.build = () => {
     const R = (x0,y0,x1,y1,c) => { for (let y=y0;y<=y1;y++) for (let x=x0;x<=x1;x++) if (x>=0&&y>=0&&x<TW&&y<TH) tmap[y][x]=c; };
@@ -215,7 +216,6 @@ if (HALLOW){
     path([[140,84],[142,100],[144,110]]);
     path([[90,118],[94,132],[95,139]]);
     path([[120,116],[124,138],[122,148]]);
-    path([[179,61],[179,86],[168,87]]);
     path([[62,141],[70,152],[100,150],[122,148]]);
     // a plank bridge where the forest path crosses the river
     for (let y=115;y<=119;y++) for (let x=99;x<=110;x++) if ("wb".includes(tileT(x,y))) S(x,y,"d");
@@ -223,8 +223,11 @@ if (HALLOW){
     // clearings
     const clear = (cx, cy, r, c="g") => { for (let y=cy-r;y<=cy+r;y++) for (let x=cx-r;x<=cx+r;x++) if (Math.hypot(x-cx,y-cy) <= r + .3 && "tTgu".includes(tileT(x,y))) S(x,y,c); };
     // the stone circle
-    clear(62, 136, 7);
+    clear(62, 136, 10);
     for (let k=0;k<9;k++){ const a = k/9*Math.PI*2; S(Math.round(62 + Math.cos(a)*5), Math.round(136 + Math.sin(a)*5), "5"); }
+    // thickets around the edge of the clearing: stand in one and the Circle can't see you
+    XP.thickets = [];
+    for (let k=0;k<12;k++){ const a = k/12*Math.PI*2 + .13; const x = Math.round(62 + Math.cos(a)*8.6), y = Math.round(136 + Math.sin(a)*8.6); for (const [dx,dy] of [[0,0],[1,0],[0,1]]) if (tileT(x+dx,y+dy)!=="p" && tileT(x+dx,y+dy)!=="5"){ S(x+dx, y+dy, "0"); XP.thickets.push([x+dx, y+dy]); } }
     S(62,136,"6"); XP.altar = [62,136];
     PLACES.stonecircle = {label:"the stone circle", rect:[57,131,67,141]};
     // the hanging tree
@@ -253,21 +256,35 @@ if (HALLOW){
     for (const [x,y] of [[70,96],[72,96],[74,97]]) S(x,y,"V");
     PLACES.blackwood = {label:"the Blackwood", rect:[4,88,180,159]};
     // ---------- Ashcombe House ----------
-    clear(168, 95, 12, "g");
-    b = B("ashcombe","Ashcombe House","haunted",158,89,178,101,[168,89],{floor:":",hours:[0,24],roof:"#222428",sign:"ASHCOMBE"});
-    R(167,90,167,100,"#"); S(167,92,":"); S(167,98,":");
-    R(168,95,177,95,"#"); S(172,95,":");
-    // hall
-    S(159,90,"&"); S(166,90,"O"); S(160,95,"S"); S(161,95,"S"); S(163,97,"K"); S(162,97,"c"); S(164,97,"c"); S(159,100,"k"); S(166,100,"%"); S(160,92,"P");
+    // a big, rotten manor: parlour, hall, study, dining room, the family chapel, the lord's bedroom and the nursery
+    clear(166, 98, 19, "g");
+    b = B("ashcombe","Ashcombe House","haunted",150,88,181,109,[165,88],{floor:".",hours:[0,24],roof:"#222428",sign:"ASHCOMBE"});
+    R(160,89,160,108,"#"); S(160,93,"."); S(160,103,".");
+    R(170,89,170,108,"#"); S(170,92,"."); S(170,100,"."); S(170,106,".");
+    R(151,98,159,98,"#"); S(155,98,".");
+    R(161,98,169,98,"#"); S(165,98,".");
+    R(171,98,180,98,"#"); S(176,98,".");
+    R(171,103,180,103,"#"); S(174,103,".");
+    // parlour
+    S(151,89,"&"); S(158,89,"O"); S(152,93,"S"); S(153,93,"S"); S(156,95,"K"); S(155,95,"c"); S(157,95,"c"); S(159,96,"%"); S(151,96,"P"); S(158,92,"P");
+    // the great hall
+    for (const y of [91,95]){ S(161,y,"I"); S(169,y,"I"); } S(163,96,"K"); S(167,96,"K"); S(162,89,"O"); S(168,89,"O");
     // study
-    S(176,90,"H"); S(175,90,"H"); S(172,92,"W"); S(171,92,"c"); S(169,90,"I"); S(176,93,"O");
-    // nursery
-    S(169,100,"B"); S(176,96,"Z"); S(170,96,"P"); S(177,99,"4"); S(173,100,"c");
+    R(176,89,180,89,"H"); S(173,92,"W"); S(172,92,"c"); S(180,93,"I"); S(180,96,"O"); S(171,97,"P");
+    // dining room
+    R(153,103,157,103,"K"); for (const x of [153,155,157]){ S(x,102,"c"); S(x,104,"c"); } S(151,107,"k"); S(159,99,"F"); S(151,99,"O"); S(159,107,"%");
+    // the family chapel
+    S(165,107,"+"); for (const y of [101,103,105]){ R(162,y,164,y,"="); R(166,y,168,y,"="); } S(161,107,"&"); S(169,99,"P");
+    // the lord's bedroom
+    S(171,99,"B"); S(172,99,"O"); S(180,99,"W"); S(180,102,"Z");
+    // the nursery
+    S(171,108,"B"); S(178,104,"Z"); S(173,108,"P"); S(180,106,"4"); S(176,108,"c");
     winsAlong(b);
-    for (const [x,y] of [[160,88],[163,87],[174,88],[177,103],[160,103],[156,95],[180,96]]) S(x,y, "t");
-    for (const [x,y] of [[158,103],[160,104],[162,103]]) S(x,y,"V");
-    R(158,87,178,87,"f"); R(168,86,179,86,"p"); S(168,87,"p"); S(168,88,"p");
-    XP.nursery = [177,99]; XP.house = b;
+    for (const [x,y] of [[150,86],[154,85],[176,85],[183,96],[148,98],[160,111],[171,112],[147,104]]) if ("gtTup".includes(tileT(x,y))) S(x,y, "t");
+    for (const [x,y] of [[152,111],[154,112],[156,111],[158,112]]) S(x,y,"V");
+    R(148,86,181,86,"f"); R(165,85,179,85,"p"); S(165,86,"p"); S(165,87,"p");
+    R(179,61,179,85,"p");
+    XP.nursery = [180,106]; XP.house = b; XP.chapel = [165,107];
     // a path from the town to the forest's edge
     R(50,82,51,84,"p");
     PLACES.farmlane = {label:"the farm lane", rect:[4,69,38,71]};

@@ -93,7 +93,7 @@ HWFX.onBuild = (W) => {
   const gr = document.createElement("canvas"); gr.id = "hwGrain"; gr.width = 160; gr.height = 100; HWFX.grain = gr; HWFX.grainG = gr.getContext("2d");
   const vg = document.createElement("div"); vg.id = "hwVignette";
   $("ovVignette").after(vg, gr);
-  const sf = document.createElement("canvas"); sf.id = "hwScare"; sf.width = 96; sf.height = 64; sf.hidden = true; document.getElementById("game").append(sf); HWFX.scare = sf;
+  const sf = document.createElement("canvas"); sf.id = "hwScare"; sf.width = 128; sf.height = 96; sf.hidden = true; document.getElementById("game").append(sf); HWFX.scare = sf;
   HWS.wNext = performance.now() + 50000 + Math.random()*40000; HWS.wCount = 0;
   HWS.amb = {howl:performance.now() + 30000, crow:performance.now() + 15000, whisper:performance.now() + 60000};
 };
@@ -347,11 +347,13 @@ function hwScares(dt, now, sky, P, inside){
 }
 function hwJumpscare(kind){
   const c = HWFX.scare, g = c.getContext("2d");
-  c.hidden = false; c.style.opacity = 1; T.shake = .8;
-  try { Snd.fx.scream && Snd.fx.scream(); } catch {}
+  if (HWS.lastJump && performance.now() - HWS.lastJump < 4000) return;
+  HWS.lastJump = performance.now();
+  c.hidden = false; c.style.opacity = 1; T.shake = 1;
+  try { HSFX.scream(1.2); } catch {}
   try { if (hqInit()){ const t0 = HQ.ac.currentTime, out = HQ.out; HQ.out = HQ.comp; for (const m of ["C3","C#3","G3","Ab3"]) INST.stab(t0, NOTE(m), 1, 1.6); INST.kick(t0, 0, 1, 1.2); HQ.out = out; noiseHit(t0, "highpass", 1500, .6, 1.2, .25); } } catch {}
   const start = performance.now();
-  const step = () => { const k = performance.now() - start; (kind==="ghost" && typeof drawGhostFace==="function" ? drawGhostFace : drawScareFace)(g, 96, 64, k/1000); c.style.opacity = k < 500 ? 1 : Math.max(0, 1 - (k-500)/250); if (k < 760) requestAnimationFrame(step); else c.hidden = true; };
+  const step = () => { const k = performance.now() - start; (kind==="ghost" && typeof drawGhostFace==="function" ? drawGhostFace : drawScareFace)(g, 128, 96, k/1000); c.style.opacity = k < 650 ? 1 : Math.max(0, 1 - (k-650)/300); if (k < 960) requestAnimationFrame(step); else c.hidden = true; };
   step();
 }
 // wind: a filtered noise bed that rises outdoors at night

@@ -9,7 +9,7 @@ function init3D(){
   if (T3.ready) return;
   const canvas = E.cv;
   const r = new THREE.WebGLRenderer({canvas, antialias:false, powerPreference:"high-performance"});
-  r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFShadowMap;
+  r.shadowMap.enabled = true; r.shadowMap.type = HALLOW ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   r.outputEncoding = THREE.sRGBEncoding;
   T3.renderer = r;
   T3.scene = new THREE.Scene();
@@ -27,7 +27,7 @@ function init3D(){
   T3.cam = {yaw:0, pitch:1.02, dist:10, fp:false, x:0, y:0, z:0, init:false, fpPitch:0};
   T3.chars = new Map(); T3.mats = new Map();
   T3.ov = $("ov3d"); T3.ovEls = new Map();
-  T3.pixel = (()=>{ try { return localStorage.getItem("mb3d-pixel")!=="0"; } catch { return true; } })();
+  T3.pixel = (()=>{ try { const v = localStorage.getItem("mb3d-pixel"); return v===null ? !HALLOW : v!=="0"; } catch { return !HALLOW; } })();
   T3.sens = (()=>{ try { const v = parseFloat(localStorage.getItem("mb3d-sens")); return v > 0 ? v : 1; } catch { return 1; } })();
   T3.invY = (()=>{ try { return localStorage.getItem("mb3d-invy")==="1"; } catch { return false; } })();
   resize3D(); addEventListener("resize", resize3D);

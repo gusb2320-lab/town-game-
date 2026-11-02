@@ -12,6 +12,11 @@ function hGeo(){
     HG.ball = new THREE.SphereGeometry(.5,10,7);
     HG.disc = new THREE.CylinderGeometry(.5,.5,1,12).rotateX(Math.PI/2);
     HG.wedge = prismGeo();
+    // a rounded box: a sphere pushed out toward a cube, so limbs and heads look carved rather than blocky
+    HG.rbox = (() => { const g = new THREE.SphereGeometry(.5, 14, 10), p = g.attributes.position, v = new THREE.Vector3();
+      for (let i=0;i<p.count;i++){ v.fromBufferAttribute(p, i).normalize(); const f = 1 / Math.pow(Math.pow(Math.abs(v.x),4) + Math.pow(Math.abs(v.y),4) + Math.pow(Math.abs(v.z),4), .25); v.multiplyScalar(.5*f); p.setXYZ(i, v.x, v.y, v.z); }
+      g.computeVertexNormals(); return g; })();
+    HG.cone6 = new THREE.ConeGeometry(.5, 1, 6);
   }
   return HG;
 }
@@ -139,8 +144,12 @@ function hwBuildWorld3D(){
         bx(cx, 0, cz, alongX?1:.14, .03, alongX?.14:1, "#2a1c12");
         const o = outward(b, x, y);
         if (o && b){
-          // door frame and lintel
+          // door frame and lintel, and a little roof over the step
           bx(cx + o[0]*.52, 2.1, cz + o[1]*.52, alongX ? 1.1 : .1, .14, alongX ? .1 : 1.1, "#24180f");
+          for (const sd of [-1, 1]) bx(cx + o[0]*.53 + (alongX ? sd*.52 : 0), 0, cz + o[1]*.53 + (alongX ? 0 : sd*.52), .12, 2.2, .12, "#2a1c12");
+          put("wedge", cx + o[0]*.78, 2.3, cz + o[1]*.78, alongX ? 1.5 : .65, .45, alongX ? .65 : 1.5, b.kind==="home" ? "#3a2a1a" : "#2a2c30", 0, alongX ? 0 : Math.PI/2, 0);
+          for (const sd of [-1, 1]) bx(cx + o[0]*.66 + (alongX ? sd*.6 : 0), 1.95, cz + o[1]*.66 + (alongX ? 0 : sd*.6), alongX ? .06 : .4, .06, alongX ? .4 : .06, "#24180f", alongX ? o[1]*.7 : 0, 0, alongX ? 0 : -o[0]*.7);
+          if (b.kind==="home"){ const lx = cx + (alongX ? -.75 : 0) + o[0]*.66, lz = cz + (alongX ? 0 : -.75) + o[1]*.66; bx(lx, 1.55, lz, .16, .22, .16, "#1a1a1c"); bx(lx, 1.58, lz, .1, .14, .1, "#ffb050"); L.glow.push(L.box.pop()); fire(lx, 1.68, lz, .14, "night", "candle"); }
           if (b.kind!=="home"){
             for (const sd of [-1, 1]){
               const tx = cx + (alongX ? sd*.95 : 0) + o[0]*.62, tz = cz + (alongX ? 0 : sd*.95) + o[1]*.62;
@@ -226,6 +235,12 @@ function hwBuildWorld3D(){
       case "4": if (b){ bx(cx, 0, cz, .9, 1.2, .5, "#2a1c12"); bx(cx, .3, cz + .26, .6, .7, .02, "#3a2818"); }
         else { put("cyl", cx, .35, cz, .8, .7, .8, "#3a2a1c"); put("cyl", cx, .71, cz, .62, .02, .62, "#120c08"); for (let i=0;i<4;i++) bx(cx + Math.cos(i*1.6)*.42, 0, cz + Math.sin(i*1.6)*.42, .1, .2, .1, "#3a2a1c", .5, i*1.6, 0); put("ball", cx + .3, .05, cz + .35, .25, .12, .2, "#4a5a2a"); }
         break;
+      case "0": {
+        // a thicket: dense, thorny, dark
+        for (let k=0;k<5;k++) put("ico", cx + (rr(k)-.5)*.6, .15 + rr(k+5)*.25, cz + (rr(k+9)-.5)*.6, .7 + rr(k+2)*.4, .7 + rr(k+3)*.5, .7 + rr(k+4)*.4, ["#1a2414","#222c18","#2a2414","#182012"][(k+x)%4]);
+        for (let k=0;k<4;k++) bx(cx + (rr(k+20)-.5)*.7, 0, cz + (rr(k+24)-.5)*.7, .03, 1.1 + rr(k+28)*.4, .03, "#2a1e14", (rr(k+30)-.5)*.7, 0, (rr(k+34)-.5)*.7);
+        break;
+      }
       case "5": { const h = 2.1 + rr(1)*.9; bx(cx, 0, cz, .75, h, .5, hJit("#5a5a54", rr(2), .25), (rr(3)-.5)*.12, rr(4)*3, (rr(5)-.5)*.12); bx(cx, h*.3, cz, .78, .12, .53, "#3a4a2a", 0, rr(4)*3, 0); break; }
       case "6": { bx(cx - .45, 0, cz, .3, .6, .7, "#4a4844"); bx(cx + .45, 0, cz, .3, .6, .7, "#4a4844"); bx(cx, .6, cz, 1.4, .18, .9, "#5a5650"); bx(cx, .78, cz, 1.0, .015, .6, "#3a0606"); for (const [a, b2] of [[-.6,-.4],[.6,-.4],[-.6,.4],[.6,.4]]) candle(cx + a, .78, cz + b2, "night"); put("ball", cx + .2, .86, cz, .26, .2, .3, "#d8d0b8"); break; }
       case "7": put("ball", cx + (rr(1)-.5)*.3, .35, cz + (rr(2)-.5)*.3, 1.1 + rr(3)*.5, .8 + rr(4)*.9, 1.0 + rr(5)*.5, hJit("#4a4844", rr(6), .3)); break;
@@ -376,6 +391,32 @@ function hwBuildWorld3D(){
     W.add(g); T3.hw.scarecrows.push({g, head, x:sx + .5, z:sy + .5, yaw:0});
     T3.hw.perches.push([sx + .5 + Math.cos(g.rotation.y)*.7, 1.68, sy + .5 - Math.sin(g.rotation.y)*.7]);
   }
+  // Ashcombe House: portraits with their faces gone, cobwebs, handprints, dolls hanging in the nursery
+  const ash = BUILDINGS.find(q=>q.id==="ashcombe");
+  T3.hw.dolls = [];
+  if (ash){
+    const deco = new THREE.Group(); W.add(deco); T3.hw.ashDeco = deco;
+    const R = hRng(4242); let nP = 0, nW = 0, nH = 0;
+    const isWall = (x, y) => "#x".includes(tileT(x, y));
+    for (let y=ash.y0+1; y<ash.y1; y++) for (let x=ash.x0+1; x<ash.x1; x++){
+      if (!WALK_T.has(tileT(x,y)) && !"BOFZWHIKSckP&%=+4".includes(tileT(x,y))) continue;
+      for (const [dx, dy] of DIRS4){
+        if (!isWall(x+dx, y+dy)) continue;
+        const r = R();
+        const px = x + .5 + dx*.47, pz = y + .5 + dy*.47, ry = Math.atan2(-dx, -dy);
+        if (r < .1 && nP < 16){ const m = new THREE.Mesh(new THREE.PlaneGeometry(.55, .72), new THREE.MeshLambertMaterial({map:texPortrait(nP)})); m.position.set(px, 1.55, pz); m.rotation.y = ry; m.rotation.z = (R()-.5)*.12; deco.add(m); nP++; }
+        else if (r < .17 && nH < 12){ const m = new THREE.Mesh(new THREE.PlaneGeometry(.32, .32), new THREE.MeshLambertMaterial({map:texHand(nH), transparent:true, depthWrite:false})); m.position.set(px - dy*(R()-.5)*.6, .7 + R()*1.2, pz + dx*(R()-.5)*.6); m.rotation.y = ry; m.rotation.z = R()*.6; deco.add(m); nH++; }
+      }
+      // cobwebs in corners
+      for (const [ax, ay] of [[1,1],[1,-1],[-1,1],[-1,-1]]) if (isWall(x+ax, y) && isWall(x, y+ay) && R() < .55 && nW < 40){ const m = new THREE.Mesh(new THREE.PlaneGeometry(.9, .9), new THREE.MeshBasicMaterial({map:texWeb(), transparent:true, depthWrite:false, side:THREE.DoubleSide, opacity:.7})); m.position.set(x + .5 + ax*.32, WALL_H - .42, y + .5 + ay*.32); m.rotation.y = Math.atan2(-ax, -ay) + Math.PI/4*0; m.rotation.x = 0; m.lookAt(x + .5, WALL_H - .6, y + .5); deco.add(m); nW++; }
+    }
+    // dolls hanging from the nursery ceiling
+    for (const [dx, dz] of [[172.5, 105.5],[175.5, 106.5],[177.5, 105],[173.5, 107.2]]){
+      const g = new THREE.Group(); g.position.set(dx, WALL_H - .05, dz);
+      const parts = [{w:.015, h:.8, d:.015, col:"#8a8070", x:0, y:-.4, z:0}, {w:.14, h:.24, d:.1, col:"#d8d0c0", x:0, y:-.95, z:0}, {geo:"ball", w:.14, h:.15, d:.13, col:"#e8e0d0", x:0, y:-.76, z:0}, {w:.04, h:.14, d:.04, col:"#d8d0c0", x:-.05, y:-1.13, z:0}, {w:.04, h:.14, d:.04, col:"#d8d0c0", x:.05, y:-1.13, z:0}, {w:.03, h:.03, d:.01, col:"#000", x:-.03, y:-.75, z:.066}, {w:.03, h:.03, d:.01, col:"#000", x:.03, y:-.75, z:.066}];
+      const m = new THREE.Mesh(mergeParts(parts), vcMat()); m.castShadow = true; g.add(m); W.add(g); T3.hw.dolls.push(g);
+    }
+  }
   // the mill wheel turns in the river
   const mill = BUILDINGS.find(q=>q.id==="mill");
   if (mill){
@@ -466,6 +507,7 @@ function hwBuildWorld3D(){
       const chx = (along ? Wd*.28 : Wd*.15), chz = (along ? -Dp*.12 : Dp*.28);
       const chm = new THREE.Mesh(bg, texMat(`chim:${seed%2}`, texStone("#4e4a44", seed))); chm.scale.set(.62, h + .9, .62); chm.position.set(chx, 0, chz); chm.castShadow = true; g.add(chm);
       const cap = new THREE.Mesh(bg, mat3("#2e2c28")); cap.scale.set(.74, .12, .74); cap.position.set(chx, h + .9, chz); g.add(cap);
+      for (const k of [-1, 1]){ const pot = new THREE.Mesh(hGeo().cyl, mat3("#7a4a30")); pot.scale.set(.16, .3, .16); pot.position.set(chx + k*.15, h + 1.17, chz); g.add(pot); }
       T3.hw.smokes.push({x:b.x0 + Wd/2 + chx, y:WALL_H + h + 1.05, z:b.y0 + Dp/2 + chz, heavy:!!st.forge});
     }
     if (b.id==="church"){
@@ -478,6 +520,31 @@ function hwBuildWorld3D(){
       T3.hw.perches.push([b.x0 + Wd/2 + .9, WALL_H + h + 5.1, b.y0 + Dp/2 + .9], [b.x0 + Wd/2 - .9, WALL_H + h + 5.1, b.y0 + Dp/2 - .9]);
       T3.hw.belfry = [b.x0 + Wd/2, WALL_H + h + 3.2, b.y0 + Dp/2];
     }
+    // a jettied upper storey: it overhangs the street, has its own windows, and lifts the roof
+    const UH = ["oldhut","wisehut","lodge","church","stables","barn","watchhouse","station"].includes(b.id) ? 0 : 1.45;
+    if (UH){
+      for (const ch of g.children) ch.position.y += UH;
+      const cx0 = b.x0 + Wd/2, cz0 = b.y0 + Dp/2, J = .2, ring = [], wins = [], brackets = [];
+      for (let x=b.x0; x<=b.x1; x++) for (let y=b.y0; y<=b.y1; y++){
+        const edge = x===b.x0 || x===b.x1 || y===b.y0 || y===b.y1; if (!edge) continue;
+        const ox = x===b.x0 ? -J : x===b.x1 ? J : 0, oz = y===b.y0 ? -J : y===b.y1 ? J : 0;
+        ring.push([x + .5 - cx0 + ox, 0, y + .5 - cz0 + oz, 1, UH, 1, null]);
+        const along = (y===b.y0 || y===b.y1) && x > b.x0 && x < b.x1, side = (x===b.x0 || x===b.x1) && y > b.y0 && y < b.y1;
+        if ((along && (x - b.x0) % 3 === 1) || (side && (y - b.y0) % 3 === 1)){
+          const ax = along ? 1 : 0, az = along ? 0 : 1, nx = along ? 0 : (x===b.x0 ? -1 : 1), nz = along ? (y===b.y0 ? -1 : 1) : 0;
+          wins.push([x + .5 - cx0 + ox + nx*.47, .35, y + .5 - cz0 + oz + nz*.47, ax ? .62 : .1, .7, az ? .62 : .1]);
+          for (const sd of [-1, 1]) brackets.push([x + .5 - cx0 + ox + nx*.52 + ax*sd*.48, .3, y + .5 - cz0 + oz + nz*.52 + az*sd*.48, ax ? .26 : .05, .82, az ? .26 : .05, "#2a3a2c"]);
+        }
+        if ((x + y) % 2 === 0 && (ox || oz)) brackets.push([x + .5 - cx0 + ox*.4, -.32, y + .5 - cz0 + oz*.4, .1, .34, .1, st.beam || "#2a1c12", oz ? Math.sign(oz)*.6 : 0, 0, ox ? -Math.sign(ox)*.6 : 0]);
+      }
+      const mkI = (list, mat, colored) => { const m = new THREE.InstancedMesh(boxGeo(), mat, list.length), o = new THREE.Object3D(), col = new THREE.Color(); list.forEach((q, i) => { o.position.set(q[0], q[1], q[2]); o.scale.set(q[3], q[4], q[5]); o.rotation.set(q[7]||0, q[8]||0, q[9]||0); o.updateMatrix(); m.setMatrixAt(i, o.matrix); if (colored && q[6]){ col.set(q[6]); m.setColorAt(i, col); } }); m.castShadow = true; m.receiveShadow = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; g.add(m); return m; };
+      mkI(ring, hwWallMat(b, (seed % 2) ? 1 : 0));
+      if (wins.length && rec.glass) mkI(wins, rec.glass.material);
+      if (brackets.length) mkI(brackets, new THREE.MeshLambertMaterial({color:0xffffff}), true);
+      const plate = new THREE.Mesh(bg, mat3(st.wall==="timber" ? (st.beam || "#24180f") : "#3a3632")); plate.scale.set(Wd + J*2 + .06, .14, Dp + J*2 + .06); plate.position.y = -.07; g.add(plate);
+    }
+    rec.topY = WALL_H + UH + h + .6;
+    for (const sm of T3.hw.smokes) if (Math.abs(sm.x - (b.x0 + Wd/2)) < Wd && Math.abs(sm.z - (b.y0 + Dp/2)) < Dp && !sm.lifted){ sm.y += UH; sm.lifted = true; }
     g.position.set(b.x0 + Wd/2, WALL_H, b.y0 + Dp/2);
     W.add(g); rec.roof = g;
     if (b.sign){
@@ -514,7 +581,7 @@ function hwMakeChar3D(L){
   const cloakCol = ["#22201e","#2e2420","#24302a","#2a2632","#3a2a22"][seed%5], hasCloak = seed % 3 !== 0 || L.style==="hat" || L.style==="beanie";
   const hoodUp = L.style==="beanie" || (L.style==="hat" && seed%2===0);
   const B = [], LL = [], LR = [], AL = [], AR = [], H = [];
-  const p = (list, w,h,d, col, x,y,z, extra={}) => list.push(Object.assign({w,h,d,col,x,y,z}, extra));
+  const p = (list, w,h,d, col, x,y,z, extra={}) => list.push(Object.assign({geo: Math.min(w,h,d) >= .09 ? "rbox" : "box", w,h,d,col,x,y,z}, extra));
   // legs (pivot at hip, .62 up)
   for (const list of [LL, LR]){
     p(list, .16,.36,.19, hose, 0,-.18,0); p(list, .19,.3,.23, boot, 0,-.47,.01); p(list, .21,.07,.25, hMix(boot, "#fff", .12), 0,-.33,.01); p(list, .2,.04,.29, "#120c08", 0,-.6,.03);
@@ -573,12 +640,21 @@ function hwMakeChar3D(L){
     if (st==="slick" || st==="neat"){ p(H, .38,.04,.1, hMix(HC, "#fff", .1), 0,.44,.12); }
   }
   const mk = (list, parent, px, py, pz) => { const m = new THREE.Mesh(mergeParts(list), vcMat()); m.castShadow = true; m.receiveShadow = false; const pv = new THREE.Group(); pv.position.set(px, py, pz); pv.add(m); parent.add(pv); return [pv, m]; };
+  // the small things: buttons, a strap, fingers, knee patches, a clasp
+  if (!L.robe){
+    for (let i=0;i<3;i++) p(B, .03,.03,.02, brass, 0,1.04 - i*.11,.14*big + .005, {geo:"box"});
+    if (seed % 2){ p(B, .05,.62,.02, leather, .02,.92,.145*big, {geo:"box", rz:.62}); p(B, .05,.62,.02, leather, -.02,.92,-.145*big, {geo:"box", rz:-.62}); }
+    for (const list of [LL, LR]){ p(list, .12,.1,.02, hMix(hose, "#000", .25), 0,-.3,.1, {geo:"box"}); for (let i=0;i<3;i++) p(list, .12,.012,.01, "#1a120c", 0,-.38 - i*.06,.13, {geo:"box"}); }
+  }
+  if (hasCloak) p(B, .06,.06,.04, brass, 0,1.15,.16, {geo:"ball"});
+  for (const list of [AL, AR]) for (const k of [-1, 0, 1]) p(list, .026,.07,.03, skin, k*.03,-.61,.03, {geo:"box"});
+  for (const sx of [-1, 1]) p(B, .16,.12,.3*big, hMix(sleeve, "#000", .1), sx*(tw/2 + .02),1.12,0);
   if (L.bandage){ AL.push({w:.14,h:.16,d:.16,col:"#e0d8c8",x:0,y:-.36,z:0}, {w:.145,h:.02,d:.165,col:"#8a1a1a",x:0,y:-.33,z:0}); }
   const [legL] = mk(LL, g, -.11, .62, 0), [legR] = mk(LR, g, .11, .62, 0);
   const torsoMesh = new THREE.Mesh(mergeParts(B), vcMat()); torsoMesh.castShadow = true; g.add(torsoMesh);
   const [armL] = mk(AL, g, -.29*big, 1.12, 0), [armR] = mk(AR, g, .29*big, 1.12, 0);
   const [head, headMesh] = mk(H, g, 0, 1.18, 0);
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(.34, .36), texMat(`face:${seed}`, texFace(L, seed % 997)));
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(.3, .33), texMat(`face:${seed}`, texFace(L, seed % 997)));
   face.position.set(0, .18, .1615); head.add(face);
   const tag = new THREE.Object3D(); tag.position.y = 1.9; g.add(tag);
   const c = {g, legL, legR, armL, armR, head, torso:torsoMesh, tag, face, masks:{}, mask:null, key:JSON.stringify(L)};
@@ -592,29 +668,96 @@ function hwMakeChar3D(L){
   if (L.robe){ c.lockMask = "goat"; c.setMask("goat"); }
   return c;
 }
-// the beast: hunched, long-armed, grey, with a wolf's head and eyes that catch the light
+// the beast: hunched and huge, all muscle and matted fur, with a wolf's head, a jaw that won't stay shut,
+// arms that reach past its knees, and the rags of whoever it was this afternoon
 function hwMakeWolf3D(L){
-  const g = new THREE.Group(), F1 = "#4a4440", F2 = "#3a3430", F3 = "#5e5650", CL = "#d8d0c0";
-  const LL = [], LR = [], AL = [], AR = [], B = [], H = [];
-  const p = (list, w,h,d, col, x,y,z, extra={}) => list.push(Object.assign({w,h,d,col,x,y,z}, extra));
-  for (const list of [LL, LR]){ p(list, .26,.42,.3, F1, 0,-.12,.04, {rx:-.35}); p(list, .17,.36,.2, F2, 0,-.42,-.1, {rx:.5}); p(list, .2,.08,.32, F2, 0,-.6,.02); for (const k of [-1,0,1]) p(list, .03,.03,.1, CL, k*.06,-.62,.2); }
-  p(B, .7,.62,.5, F1, 0,1.0,.06, {rx:.35}); p(B, .58,.46,.44, F2, 0,.58,0, {rx:.15}); p(B, .76,.3,.56, F3, 0,1.28,.14, {rx:.45});
-  for (let i=0;i<5;i++) p(B, .08,.18,.08, F2, -.16 + i*.08,1.4,-.08, {rx:-.6});
-  p(B, .12,.6,.12, F2, 0,.5,-.34, {rx:-.9});
-  for (const list of [AL, AR]){ p(list, .2,.5,.22, F1, 0,-.22,.06, {rx:-.2}); p(list, .16,.5,.18, F2, 0,-.68,.14, {rx:-.1}); p(list, .2,.12,.2, F2, 0,-.96,.18); for (const k of [-1,0,1]) p(list, .025,.025,.16, CL, k*.06,-1.02,.3, {rx:.6}); }
-  p(H, .4,.38,.42, F1, 0,.12,0); p(H, .22,.18,.36, F2, 0,.04,.34); p(H, .12,.08,.06, "#0a0808", 0,.1,.53);
-  p(H, .2,.04,.3, "#5a1010", 0,-.04,.32); for (let i=0;i<4;i++) p(H, .025,.06,.02, CL, -.06 + i*.04,-.06,.46);
-  for (const s of [-1,1]){ p(H, .1,.24,.06, F2, s*.13,.42,-.04, {rz:-s*.2, geo:"cone"}); }
-  const mk = (list, px, py, pz) => { const m = new THREE.Mesh(mergeParts(list), vcMat()); m.castShadow = true; const pv = new THREE.Group(); pv.position.set(px, py, pz); pv.add(m); g.add(pv); return pv; };
-  const legL = mk(LL, -.18, .78, 0), legR = mk(LR, .18, .78, 0), armL = mk(AL, -.46, 1.36, .12), armR = mk(AR, .46, 1.36, .12);
+  const g = new THREE.Group(), F0 = "#141210", F1 = "#221e1a", F2 = "#2e2822", F3 = "#3c342c", BEL = "#4a4036", SKN = "#0e0a08", CL = "#d8ccb4", GUM = "#5a0c0c";
+  const rag = L.suit && E.SUITS[L.suit] ? hMix(E.SUITS[L.suit][0], "#3a3026", .55) : "#4a3a2a";
+  const LL = [], LR = [], AL = [], AR = [], B = [], H = [], J = [], TL = [];
+  const p = (list, w,h,d, col, x,y,z, extra={}) => list.push(Object.assign({geo:"rbox", w,h,d,col,x,y,z}, extra));
+  const tuft = (list, x,y,z, len, rx, rz, col) => p(list, .09, len, .09, col || F0, x,y,z, {geo:"cone6", rx, rz});
+  // legs: big thighs, a backward shin, a long foot, a clawed paw
+  for (const [list, sx] of [[LL,-1],[LR,1]]){
+    p(list, .34,.5,.4, F1, 0,-.18,.06, {rx:-.45}); p(list, .2,.42,.24, F2, 0,-.5,-.12, {rx:.7}); p(list, .15,.32,.17, F1, 0,-.72,.0, {rx:-.25}); p(list, .22,.08,.36, SKN, 0,-.84,.1);
+    for (const k of [-1,0,1]) p(list, .03,.12,.03, CL, k*.07,-.85,.29, {geo:"cone6", rx:Math.PI/2+.4});
+    for (let i=0;i<5;i++) tuft(list, sx*.14, -.05 - i*.1, -.08, .18, -.8, sx*.9, i%2 ? F0 : F1);
+    p(list, .38,.14,.42, rag, 0,.0,.04, {rx:-.4}); p(list, .1,.3,.04, rag, sx*.1,-.25,.2, {rz:.2, geo:"box"});
+  }
+  // the body: a deep chest thrown forward, ribs under the hide, a mane down the spine
+  p(B, .86,.66,.62, F1, 0,1.18,.18, {rx:.45}); p(B, .7,.5,.5, F2, 0,.8,.02, {rx:.2}); p(B, .56,.36,.42, F1, 0,.52,-.04);
+  p(B, .5,.5,.12, BEL, 0,1.08,.46, {rx:.45}); for (let i=0;i<4;i++) p(B, .44 - i*.04,.04,.06, F0, 0,1.0 - i*.1,.5 - i*.03, {geo:"box", rx:.45});
+  p(B, .36,.3,.34, F2, -.42,1.42,.2); p(B, .36,.3,.34, F2, .42,1.42,.2);
+  for (let i=0;i<14;i++){ const a = (i/13 - .5)*1.6; tuft(B, Math.sin(a)*.32, 1.52 - Math.abs(a)*.12, -.05 - Math.cos(a)*.15, .3 + (i%3)*.06, -1.1, Math.sin(a)*.9, i%2 ? F0 : F1); }
+  for (let i=0;i<8;i++) tuft(B, (i%2 ? -1 : 1)*.36, .7 + i*.08, -.12, .2, -.6, (i%2 ? -1 : 1)*1.2);
+  p(B, .62,.26,.46, rag, 0,.42,0); for (const x of [-.24,-.08,.1,.24]) p(B, .1,.24 + Math.abs(x),.05, rag, x,.22,.2, {geo:"box", rz:x});
+  // the tail
+  for (let i=0;i<6;i++){ p(TL, .2 - i*.022,.22,.2 - i*.022, i%2 ? F1 : F0, 0,-i*.17,-i*.08, {rx:.6}); tuft(TL, 0,-i*.17,-i*.08 - .08, .16, 2.2, 0, F0); }
+  // arms that reach past the knees: thick forearms, huge hands, long claws
+  for (const [list, sx] of [[AL,-1],[AR,1]]){
+    p(list, .3,.56,.32, F1, 0,-.22,.04, {rx:-.15}); p(list, .26,.56,.28, F2, 0,-.72,.12, {rx:-.1}); p(list, .3,.12,.3, F0, 0,-.48,.08);
+    for (let i=0;i<4;i++) tuft(list, sx*.13, -.55 - i*.09, .0, .16, -.3, sx*1.2, F0);
+    p(list, .28,.16,.26, SKN, 0,-1.06,.18);
+    for (const k of [-1.5,-.5,.5,1.5]) p(list, .035,.24,.035, CL, k*.065,-1.24,.3, {geo:"cone6", rx:2.4});
+    p(list, .34,.12,.34, rag, 0,-.06,.04);
+  }
+  // the head: a heavy skull, a long muzzle, a jaw hanging open, fangs, a black nose, tall ears
+  p(H, .44,.4,.46, F1, 0,.12,0); p(H, .5,.16,.4, F0, 0,.3,.02); p(H, .26,.2,.42, F2, 0,.04,.36); p(H, .16,.1,.12, SKN, 0,.08,.58, {geo:"ball"});
+  p(H, .28,.06,.4, GUM, 0,-.06,.36);
+  for (const sx of [-1,1]){ p(H, .05,.14,.05, CL, sx*.09,-.14,.48, {geo:"cone6", rx:Math.PI}); p(H, .1,.3,.06, F0, sx*.17,.42,-.05, {geo:"cone6", rz:-sx*.25, rx:-.2}); p(H, .06,.18,.03, "#5a2a2a", sx*.17,.4,-.02, {geo:"cone6", rz:-sx*.25, rx:-.2}); for (let i=0;i<4;i++) tuft(H, sx*.24, .1 - i*.08, -.04, .2, -.2, sx*1.4, i%2 ? F0 : F1); }
+  for (let i=0;i<4;i++) p(H, .03,.07,.03, CL, -.07 + i*.045,-.12,.52, {geo:"cone6", rx:Math.PI});
+  // lower jaw on its own hinge, so it can snarl
+  p(J, .24,.08,.36, F1, 0,-.04,.18); p(J, .2,.03,.3, GUM, 0,.01,.18); p(J, .1,.02,.22, "#a02a2a", 0,.03,.16);
+  for (const sx of [-1,1]) p(J, .04,.1,.04, CL, sx*.08,.06,.32, {geo:"cone6"});
+  for (let i=0;i<4;i++) p(J, .025,.05,.025, CL, -.06 + i*.04,.04,.3, {geo:"cone6"});
+  const mk = (list, parent, px, py, pz) => { const m = new THREE.Mesh(mergeParts(list), vcMat()); m.castShadow = true; const pv = new THREE.Group(); pv.position.set(px, py, pz); pv.add(m); parent.add(pv); return pv; };
+  const legL = mk(LL, g, -.2, .88, 0), legR = mk(LR, g, .2, .88, 0), armL = mk(AL, g, -.52, 1.44, .22), armR = mk(AR, g, .52, 1.44, .22);
   const torso = new THREE.Mesh(mergeParts(B), vcMat()); torso.castShadow = true; g.add(torso);
-  const head = mk(H, 0, 1.52, .32);
-  const eyeM = hMat("wolfeye", () => new THREE.MeshBasicMaterial({color:0xffd040}));
-  for (const s of [-1,1]){ const e = new THREE.Mesh(hGeo().box, eyeM); e.scale.set(.07,.04,.02); e.position.set(s*.1, .2, .215); head.add(e); }
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({map:texGlow("#ffc040"), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:.6})); glow.scale.set(.5,.25,1); glow.position.set(0,.2,.25); head.add(glow);
-  g.scale.setScalar(1.18);
+  const tail = mk(TL, g, 0, .62, -.3);
+  const head = mk(H, g, 0, 1.56, .48);
+  const jaw = mk(J, head, 0, -.08, .1);
+  const eyeM = hMat("wolfeye2", () => new THREE.MeshBasicMaterial({color:0xffe060}));
+  for (const sx of [-1,1]){ const e = new THREE.Mesh(hGeo().box, eyeM); e.scale.set(.08,.035,.02); e.position.set(sx*.12, .2, .24); e.rotation.z = sx*.25; head.add(e); const gl = new THREE.Sprite(new THREE.SpriteMaterial({map:texGlow("#ffc040"), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:.75})); gl.scale.set(.32,.16,1); gl.position.set(sx*.12,.2,.27); head.add(gl); }
+  g.scale.setScalar(1.3);
   const tag = new THREE.Object3D(); tag.position.y = 2.1; g.add(tag);
-  return {g, legL, legR, armL, armR, head, torso, tag, masks:{}, mask:null, setMask(){}, key:JSON.stringify(L), wolf:true};
+  return {g, legL, legR, armL, armR, head, jaw, tail, torso, tag, masks:{}, mask:null, setMask(){}, key:JSON.stringify(L), wolf:true};
+}
+// what the Circle calls up: a horned thing three times the height of a man
+function hwMakeDevil(){
+  const g = new THREE.Group(), SK = "#2a0606", SD = "#160303", MU = "#3e0a08", BO = "#d8ccb0", HO = "#1a1410";
+  const B = [], H = [], AL = [], AR = [], LL = [], LR = [];
+  const p = (list, w,h,d, col, x,y,z, extra={}) => list.push(Object.assign({geo:"rbox", w,h,d,col,x,y,z}, extra));
+  // goat legs, hooves
+  for (const list of [LL, LR]){ p(list, .55,1.0,.6, SK, 0,-.45,.1, {rx:-.4}); p(list, .36,.9,.4, SD, 0,-1.2,-.12, {rx:.5}); p(list, .3,.6,.3, SK, 0,-1.85,.02, {rx:-.2}); p(list, .38,.16,.44, "#050303", 0,-2.18,.06, {geo:"box"}); }
+  // torso: ribs, chest, a spine of spikes
+  p(B, 1.5,1.3,.9, MU, 0,3.0,.1); p(B, 1.2,1.1,.8, SK, 0,2.0,0); p(B, 1.0,.6,.7, SD, 0,1.3,-.02);
+  for (let i=0;i<4;i++) p(B, 1.3 - i*.12,.07,.05, SD, 0,2.7 - i*.22,.52, {geo:"box"});
+  for (let i=0;i<7;i++) p(B, .14,.5 - i*.03,.14, BO, 0,3.4 - i*.38,-.55, {geo:"cone6", rx:-1.1});
+  p(B, .9,.5,.8, MU, -.85,3.5,0); p(B, .9,.5,.8, MU, .85,3.5,0);
+  // arms that reach past the knees, with claws
+  for (const [list, sx] of [[AL, -1], [AR, 1]]){ p(list, .5,1.2,.55, MU, 0,-.5,0); p(list, .4,1.2,.42, SK, 0,-1.55,.1, {rx:-.2}); p(list, .5,.45,.3, SD, 0,-2.25,.22); for (let k=-1;k<=1;k++) p(list, .07,.4,.07, BO, k*.14,-2.6,.38, {geo:"cone6", rx:2.6}); }
+  // the head: a long skull, a jaw full of teeth, and horns that curl back and around
+  p(H, .9,1.0,.9, SK, 0,.3,0); p(H, .6,.5,.7, SD, 0,.05,.45); p(H, .7,.25,.6, "#100202", 0,-.3,.4); p(H, .9,.18,.3, MU, 0,.72,.3);
+  for (let i=0;i<6;i++){ p(H, .06,.16,.06, BO, -.25 + i*.1,-.12,.78, {geo:"cone6", rx:Math.PI}); p(H, .05,.12,.05, BO, -.22 + i*.09,-.38,.7, {geo:"cone6"}); }
+  for (const sx of [-1, 1]) for (let k=0;k<9;k++){ const a = k*.42, r = .35 + k*.03; p(H, .3 - k*.022,.32 - k*.022,.3 - k*.022, k < 6 ? BO : HO, sx*(.45 + Math.sin(a)*r*.5 + k*.05), .75 + Math.cos(a)*r - k*.05, -.1 - Math.sin(a)*r*.9, {geo:"ball"}); }
+  const mk = (list, px, py, pz) => { const m = new THREE.Mesh(mergeParts(list), vcMat()); m.castShadow = true; const pv = new THREE.Group(); pv.position.set(px, py, pz); pv.add(m); g.add(pv); return pv; };
+  const legL = mk(LL, -.42, 2.3, 0), legR = mk(LR, .42, 2.3, 0), armL = mk(AL, -1.2, 3.6, 0), armR = mk(AR, 1.2, 3.6, 0);
+  const torso = new THREE.Mesh(mergeParts(B), vcMat()); torso.castShadow = true; g.add(torso);
+  const head = mk(H, 0, 4.1, .2);
+  const eyeM = new THREE.MeshBasicMaterial({color:0xffcc33});
+  for (const sx of [-1, 1]){ const e = new THREE.Mesh(hGeo().box, eyeM); e.scale.set(.18, .08, .05); e.position.set(sx*.22, .42, .46); e.rotation.z = sx*.3; head.add(e); const gl = new THREE.Sprite(new THREE.SpriteMaterial({map:texGlow("#ffb020"), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, fog:false})); gl.scale.set(.9, .5, 1); gl.position.set(sx*.22, .42, .5); head.add(gl); }
+  // wings: torn membrane between bone fingers
+  const wings = [];
+  for (const sx of [-1, 1]){
+    const pv = new THREE.Group(); pv.position.set(sx*.5, 3.4, -.5); g.add(pv);
+    const pts = [[0,0],[sx*1.2,1.6],[sx*2.8,2.4],[sx*3.6,1.0],[sx*3.2,-.6],[sx*2.2,-1.4],[sx*1.0,-1.6]];
+    const shape = new THREE.Shape(); shape.moveTo(0, 0); for (const [x, y] of pts.slice(1)) shape.lineTo(x, y); shape.lineTo(0, 0);
+    const mem = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshLambertMaterial({color:0x3a0606, side:THREE.DoubleSide, transparent:true, opacity:.88})); pv.add(mem);
+    const bones = []; for (const [x, y] of pts.slice(1, 5)) bones.push({geo:"box", w:Math.hypot(x, y), h:.07, d:.07, col:BO, x:x/2, y:y/2, z:.02, rz:Math.atan2(y, x)});
+    const bm = new THREE.Mesh(mergeParts(bones), vcMat()); pv.add(bm);
+    pv.rotation.y = sx*.5; wings.push([pv, sx]);
+  }
+  g.scale.setScalar(1.15);
+  return {g, head, armL, armR, legL, legR, torso, wings};
 }
 // masks, built from a few boxes and a painted front
 function hwMask(type){
@@ -651,7 +794,7 @@ function hwSky(dt, now, attract){
   const cam = T3.camera.position;
   // the sun crosses the south, low and weak
   const sunA = (t - 360) / 720 * Math.PI, sunDir = new THREE.Vector3(Math.cos(sunA)*.9, Math.sin(sunA)*.55 + .04, .45).normalize();
-  const moonA = (((t - 1080) + 1440) % 1440) / 720 * Math.PI, moonDir = new THREE.Vector3(Math.cos(moonA)*.6, .1 + Math.max(0, Math.sin(moonA))*.22, -1).normalize();
+  const moonA = (((t - 1080) + 1440) % 1440) / 720 * Math.PI, moonDir = new THREE.Vector3(Math.cos(moonA)*.6, .26 + Math.max(0, Math.sin(moonA))*.24, -1).normalize();
   if (attract){ const f = new THREE.Vector3(); T3.camera.getWorldDirection(f); f.y = 0; f.normalize(); const r = new THREE.Vector3(-f.z, 0, f.x); moonDir.copy(f).addScaledVector(r, .32); moonDir.y = .2; moonDir.normalize(); }
   if (!T3.sunSpr){
     T3.sunSpr = new THREE.Sprite(new THREE.SpriteMaterial({map:texSun(), fog:false, depthWrite:false, transparent:true, blending:THREE.AdditiveBlending})); T3.sunSpr.scale.set(46, 46, 1); T3.scene.add(T3.sunSpr);
