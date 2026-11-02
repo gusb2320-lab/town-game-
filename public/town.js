@@ -10,7 +10,7 @@ let THEME_NOTE = "";                                 // extra setting notes for 
 const E = window.CB9;
 if (!E) throw new Error("Cellblock Nine engine not loaded");
 const { Snd, sfx, PAL, $, clamp, pick, rnd, shuffle, toast, banner, drawPerson, shade, wrap, contourAt } = E;
-const TS = 16, TW = 104, TH = 84, CAP = 6;
+const TS = 16, TW = HALLOW ? 184 : 104, TH = HALLOW ? 164 : 84, CAP = 6;   // the Halloween edition is a much bigger map
 const TSAVE = HALLOW ? "millbrook-hallow-v1" : "cellblock9-town-v1";
 const DIRS4 = [[0,-1],[1,0],[0,1],[-1,0]];
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
@@ -294,7 +294,7 @@ function buildTown(){
   S(96,21,"D"); DOOR_AT["96,21"] = "station"; R(94,23,96,23,"C"); for (const x of [93,95,97,99]) S(x,26,"n");
   // south side of Main Street
   b = B("bar","The Rusty Nail","bar",3,33,17,44,[10,33],{floor:".",roof:"#8b5a3c",hours:[14,26],sign:"RUSTY NAIL"});
-  R(5,36,12,36,"e"); R(5,34,12,34,"H"); for (let x=5;x<=12;x+=2) S(x,37,"c");
+  R(5,36,12,36,"e"); R(5,34,8,34,"H"); R(12,34,12,34,"H");   // shelves stop short of the door for (let x=5;x<=12;x+=2) S(x,37,"c");
   S(6,40,"K"); S(5,40,"c"); S(7,40,"c"); S(10,40,"K"); S(9,40,"c"); S(11,40,"c"); S(14,38,"Q"); S(16,35,"%"); S(4,43,"j");
   R(13,41,13,43,"#"); S(13,42,"D"); DOOR_AT["13,42"] = "barback"; S(16,43,"B"); S(14,43,"O");
   win(b,[[5,33],[15,33]]); S(8,45,"Y");
@@ -402,7 +402,7 @@ function doorLockedT(x,y, who){
   return false;
 }
 const walkPlayer = (x,y) => WALK_T.has(tileT(x,y)) && !(tileT(x,y)==="D" && doorLockedT(x,y,T.player));
-function npcWalkT(x,y,n){ const c = tileT(x,y); if (!WALK_T.has(c)) return false; if (c==="D") return !doorLockedT(x,y,n); return true; }
+function npcWalkT(x,y,n){ const c = tileT(x,y); if (!WALK_T.has(c)) return false; if (c==="D") return (n && n.breaksDoors) || !doorLockedT(x,y,n); return true; }
 
 // ---------- containers ----------
 const LOOT = {
@@ -586,6 +586,25 @@ function genVoice(p){
     slide: .88+Math.random()*.16, formant: p.pron==="he" ? .8+Math.random()*.15 : p.pron==="she" ? 1.05+Math.random()*.18 : .95+Math.random()*.12,
     speed: .8+Math.random()*.55, vib: Math.random()<.15};
 }
+// Everyone sounds different: women are pitched higher, men lower, and no two voices share a pitch, timbre and pace.
+function distinctVoices(people){
+  const bands = {he:[62, 150], she:[215, 380], they:[150, 215]};
+  const waves = ["sawtooth","square","triangle"];
+  for (const g of ["he","she","they"]){
+    const grp = shuffle(people.filter(p=>p.pron===g));
+    grp.forEach((p, i) => {
+      const [lo, hi] = bands[g], t = grp.length > 1 ? i/(grp.length-1) : .5;
+      const v = p.voice;
+      v.base = lo + (hi-lo)*t + (p.teen ? 30 : 0) - (p.age > 64 ? 12 : 0);
+      v.wave = waves[i % 3];
+      v.formant = (g==="he" ? .74 : g==="she" ? 1.08 : .95) + ((i*7) % 5) * .045;
+      v.speed = .75 + ((i*3) % 7) * .09;
+      v.len = .045 + ((i*5) % 4) * .015;
+      v.range = 2 + ((i*11) % 6);
+      v.vib = (i % 4) === 3;
+    });
+  }
+}
 function genLook(p){
   const shirt = pick(SHIRTS);
   E.SUITS["t_"+p.id] = [shirt, shade(shirt,-.3), shade(shirt,.25)];
@@ -639,11 +658,13 @@ function genTown(){
   const adults = homeless.filter(p=>p!==teen);
   // three married couples, a parent and teen, and roommates if needed
   const pairs = [];
-  for (let i=0;i<3;i++){ const a = adults.shift(), b = adults.shift(); if (a && b){ pairs.push([a,b,"married"]); } }
+  const couples = Math.max(3, adults.length + 2 - free.length);   // enough couples that everyone has a roof
+  for (let i=0;i<couples;i++){ const a = adults.shift(), b = adults.shift(); if (a && b){ pairs.push([a,b,"married"]); } }
   if (teen){ const parent = adults.shift(); if (parent) pairs.push([parent, teen, "parent"]); }
   for (const [a,b,kind] of pairs){ const h = free.shift(); a.home = b.home = h.id; if (kind==="married"){ a.spouse = b.id; b.spouse = a.id; b.last = a.last; } else { b.last = a.last; b.parent = a.id; a.child = b.id; } }
   while (adults.length){ const a = adults.shift(); const h = free.shift(); if (h) a.home = h.id; else { const b2 = adults.length ? adults.shift() : null; a.home = pairs[0][0].home; if (b2) adults.unshift(b2); } }
   for (const p of people) if (!p.home) p.home = pick(homes).id;
+  distinctVoices(people);
   // relationships
   T.rel = {};
   for (let i=0;i<people.length;i++) for (let j=i+1;j<people.length;j++) T.rel[relKeyT(people[i].id, people[j].id)] = Math.round(Math.random()*26-8);
@@ -705,7 +726,7 @@ function canSeeT(n, tx, ty, range){
   return true;
 }
 function lit(x,y){ return tileT(Math.round(x),Math.round(y))==="l" || [[0,1],[1,0],[0,-1],[-1,0],[0,2],[2,0]].some(([dx,dy])=>tileT(Math.round(x)+dx,Math.round(y)+dy)==="l"); }
-function bfsT(sx,sy,tx,ty,walk,limit=9000){
+function bfsT(sx,sy,tx,ty,walk,limit=TW*TH){
   if (sx===tx && sy===ty) return [];
   const prev = new Int32Array(TW*TH).fill(-1), start = sy*TW+sx, goal = ty*TW+tx, q = [start]; prev[start] = start;
   for (let h=0;h<q.length && h<limit;h++){ const c = q[h]; if (c===goal) break; const cx = c%TW, cy = (c/TW)|0;
@@ -1728,6 +1749,7 @@ function openTalkT(n, opts={}){
     else if (first) startTypeT(greetingT(n), n);
     else { const last = [...n.log].reverse().find(l=>l.who==="n"); startTypeT(last && last.d===T.day ? last.text : greetingT(n), n); }
   }
+  if (onTalkOpenHook) onTalkOpenHook(n);
   if (!opts.approach && !document.body.classList.contains("touch")) setTimeout(()=>{ if (T && T.talkId===n.id) $("tdInput").focus(); }, 0);
 }
 function greetingT(n){
@@ -1862,6 +1884,8 @@ const TOWN_ACTIONS_DOC = `ACTIONS: things you actually DO, right now, in the wor
 const SHERIFF_DOC = `SHERIFF ACTIONS: {"type":"arrest","reason":"x"} take them to the cells (only for a real crime you know about) {"type":"fine","amount":20} {"type":"search"} pat down their pockets`;
 const DET_DOC = `INVESTIGATOR ACTIONS (only you): {"type":"search"} ask to look in their pockets and do it if they let you (or insist) {"type":"close_case"} only if you are now convinced they are NOT ${PNUMT}: you'll quietly leave Millbrook {"type":"arrest"} only if suspicion is 85+ and you're ready to blow your cover`;
 
+let personNote = n => "";   // an edition can add hidden roles and mysteries to a person's prompt
+let onSaidHook = null, onGaveHook = null, onTalkOpenHook = null;
 function townPrompt(n, said, gave, approach, extra={}){
   const pl = T.player, det = isDet(n), D = T.det;
   const mems = n.memories.slice(-90).map(m=>`- [${m.s}] ${m.text}`).join("\n") || "- Nothing. You've never dealt with them.";
@@ -1893,7 +1917,7 @@ AGE ${n.age}. JOB: ${n.job}${n.work ? ` (you work at ${placeName(n.work)}${n.hou
 PERSONALITY: ${n.traits.join(", ")}. HOBBIES: ${n.hobbies.join(", ")}. YOU LIKE: ${n.likes.join(", ")}. YOU DISLIKE: ${n.dislikes.join(", ")}.
 HOW YOU TALK: ${n.style} QUIRK: ${n.quirk}.${habits.length ? ` YOUR HABITS: ${habits.join("; ")} (let them show in *actions* now and then).` : ""}
 YOUR SECRET (guard it; hint at most, unless you deeply trust them): ${n.secret}.
-YOU CARRY: ${n.inv.join(", ") || "nothing"}, and $${Math.round(n.money)}.${sheriffRole ? "\n"+sheriffRole : ""}${secretRole}
+YOU CARRY: ${n.inv.join(", ") || "nothing"}, and $${Math.round(n.money)}.${sheriffRole ? "\n"+sheriffRole : ""}${secretRole}${personNote(n)}
 PEOPLE IN TOWN AND HOW YOU FEEL ABOUT THEM:
 ${relLinesT(n)}
 HABITS YOU'VE NOTICED IN NEIGHBORS (share if asked): ${knows.slice(0,6).join("; ") || "none in particular"}.
@@ -1938,6 +1962,7 @@ async function askTownNpc(n, {said="", gave=null, approach=null, accuse=false} =
     const handled = checkFavorOnGiveT(n, gave);
     if (!handled && n.likes.includes(gave)) n.trust = clamp(n.trust+2,0,100);
     if (isEvidence(gave) && isDet(n)) addEvidence(`The newcomer handed me a ${gave}.`, 10, "gift");
+    if (onGaveHook) onGaveHook(n, gave);
     renderHotbarT();
   }
   if (said){
@@ -1945,6 +1970,7 @@ async function askTownNpc(n, {said="", gave=null, approach=null, accuse=false} =
     if (isDet(n)) T.det.claims.push(`Told me: "${said.slice(0,120)}"`);
     if (INCRIMINATING.test(said)){ rememberT(n, `The newcomer said something strange about ${said.match(INCRIMINATING)[0].toLowerCase()}: "${said.slice(0,120)}"`); if (!isDet(n)) addEvidenceVia(n, `${n.first} heard the newcomer mention "${said.match(INCRIMINATING)[0]}".`, 4); }
     checkVisitFavorT(n);
+    if (onSaidHook) onSaidHook(n, said);
   }
   $("tdYou").textContent = (gave ? `[gave ${gave}] ` : "") + (said ? `You: ${said}` : "");
   $("tdMem").textContent = "";
@@ -2660,6 +2686,20 @@ Townspeople you may mention: ${folk.filter(alive).map(n=>`${n.first} (${n.job})`
 async function writeBiosT(){
   if (!E.aiOn()){ proceduralBios(); return; }
   try {
+    // big towns are written in batches so each reply stays short
+    if (folk.length > 26){
+      const chunks = []; for (let i=0;i<folk.length;i+=22) chunks.push(folk.slice(i, i+22));
+      await Promise.all(chunks.map(async ch => {
+        const list = ch.map(n=>`${n.id}: ${fullT(n)}, ${n.age}, ${n.pron}, ${n.job}. Traits: ${n.traits.join(", ")}. Hobbies: ${n.hobbies.join(", ")}. Family: ${familyLine(n)}. Secret: ${n.secret}.`).join("\n");
+        try {
+          const r = await E.getSample().json(`${THEME_NOTE}Invent some of the townspeople of Millbrook, a ${HALLOW ? "large, fog-bound medieval village" : "small American town"}. For each person write a vivid 2-3 sentence bio (backstory, what they want, one contradiction), a "style" (how they talk, one sentence) and a "quirk" (a few words). Make every voice distinct.
+${list}
+Reply only JSON: {"people":[{"id":"p0","bio":"...","style":"...","quirk":"..."}]}`, {modelTier:"default", cache:false});
+          for (const p of (r && Array.isArray(r.people) ? r.people : [])){ const n = byIdT(p.id); if (!n) continue; if (typeof p.bio==="string") n.bio = p.bio.slice(0,500); if (typeof p.style==="string") n.style = p.style.slice(0,200); if (typeof p.quirk==="string") n.quirk = p.quirk.slice(0,120); }
+        } catch (e){ if (e && E.AI_OFF.includes(e.code)) E.setAiOff(); }
+      }));
+      proceduralBios(); saveT(); return;
+    }
     const list = folk.map(n=>`${n.id}: ${fullT(n)}, ${n.age}, ${n.pron}, ${n.job}. Traits: ${n.traits.join(", ")}. Hobbies: ${n.hobbies.join(", ")}. Family: ${familyLine(n)}. Secret: ${n.secret}.${n.nosy?" The town busybody.":""}`).join("\n");
     const r = await E.getSample().json(`${THEME_NOTE}Invent the townspeople of Millbrook, a small, sleepy, gossipy ${HALLOW ? "medieval village" : "American town"} with a train station, a diner, a bar called the Rusty Nail, a church, an arcade and a pond. For each person write a vivid 2-3 sentence backstory consistent with the facts given (no detectives, no crime-solving pasts), a one-sentence speaking style, and a small quirk.
 ${list}
@@ -3425,7 +3465,8 @@ function burnSomething(){
 }
 function readItem(it){
   let title = it, body = "";
-  if (it==="newspaper"){ openJournalT("gazette"); return; }
+  if (READ_EXTRA[it]) [title, body] = READ_EXTRA[it]();
+  else if (it==="newspaper"){ openJournalT("gazette"); return; }
   if (it==="creepy note"){ title = "Unsigned note"; body = (T.notesText && T.notesText.length ? T.notesText[T.notesText.length-1] : "I see you.") + "\n\n(The handwriting is neat. Green ink? You can't be sure.)"; if (T.det.tells && detP() && detP().tells.includes("ink")) body = body.replace("Green ink? You can't be sure.", "Definitely green ink."); }
   else if (it==="case file"){ const d = detP(); title = "STATE BUREAU · CONFIDENTIAL"; body = `RE: Escaped inmate ${PNUMT}, Cellblock Nine.\nAgent in place under civilian cover since spring.\nAgent profile, for local liaison only: ${d ? TELLS.find(t=>t.id===d.tells[1]).habit.replace(/^is |^has /,"") : "redacted"}.\nSubject believed to be in Millbrook. Do not approach. Await agent's word.\n\n${T.det.dead ? "Agent's name: "+T.det.realName+". (A pencil note: 'Not heard from in days.')" : ""}`; T.clues.push({s:stampT(), text:`Case file: the agent ${d ? TELLS.find(t=>t.id===d.tells[1]).habit.replace(/^is |^has /,"") : "?"}`, tell: d ? d.tells[1] : null}); }
   else if (it==="letter"){ const L = T.letters[T.letters.length-1]; title = L ? `From ${L.from}` : "A sealed letter"; body = L ? L.text : "It's sealed. It isn't addressed to you. Reading it would be wrong.\n\n…It's a love letter, mostly. Underlined twice."; }
@@ -3579,14 +3620,17 @@ function doTradeT(){
 let tjTab = "people", tjSel = null;
 function openJournalT(tab, sel){ closeTalkT(); closeTWindows(); if (tab) tjTab = tab; if (sel) tjSel = sel; $("tWinJournal").hidden = false; sfx("open"); renderJournalT(); }
 function portraitT(n){ const c = document.createElement("canvas"); c.width = 16; c.height = 20; const g = c.getContext("2d"); g.fillStyle = "#333c57"; g.fillRect(0,0,16,20); drawPerson(g, 0, 4, n.look, [0,1], 0, {}); return c; }
+const JOURNAL_EXTRA = [];   // an edition can add journal tabs: {id, label, render(body, H, P)}
+const READ_EXTRA = {};      // and readable items: name -> () => [title, body]
 function renderJournalT(){
   const tabs = $("tjTabs"); tabs.textContent = "";
-  for (const [id, label] of [["people","People"],["clues","Clues & suspects"],["plans","Plans & favors"],["gazette","Gazette"],["town","Town"]]){
+  for (const [id, label] of [["people","People"],["clues","Clues & suspects"],["plans","Plans & favors"],["gazette","Gazette"],["town","Town"]].concat(JOURNAL_EXTRA.map(j=>[j.id, j.label]))){
     const b = Object.assign(document.createElement("button"),{type:"button", textContent:label}); b.setAttribute("aria-selected", String(tjTab===id)); b.addEventListener("click", ()=>{ tjTab = id; renderJournalT(); }); tabs.append(b);
   }
   const body = $("tjBody"); body.textContent = "";
   const H = (t) => Object.assign(document.createElement("span"),{className:"lbl", textContent:t});
   const P = (t, cls) => Object.assign(document.createElement("p"),{className:cls||"note", textContent:t});
+  const xj = JOURNAL_EXTRA.find(j=>j.id===tjTab); if (xj){ xj.render(body, H, P); return; }
   if (tjTab==="people"){
     const met = folk.filter(n=>n.met || n.log.length);
     if (!met.length){ body.append(P("You haven't met anyone yet. Walk up to someone and press E.")); return; }
@@ -3691,7 +3735,7 @@ function openMapT(){
   g.font = "16px VT323, monospace"; g.textAlign = "center"; g.textBaseline = "middle";
   const lab = (text, x, y, col) => { const w = g.measureText(text).width; g.fillStyle = "rgba(26,28,44,.85)"; g.fillRect(x-w/2-3, y-8, w+6, 15); g.fillStyle = col||PAL.w; g.fillText(text, x, y); };
   for (const b of BUILDINGS){ const cx = (b.x0+b.x1+1)/2*TS/sc, cy = (b.y0+b.y1+1)/2*TS/sc; const name = b.kind==="home" ? (residentsOf(b.id).filter(n=>n.met).map(n=>n.first).join(" & ") || "") : b.name; if (name) lab(name, cx, cy, b.kind==="home" ? PAL.l : PAL.y); }
-  for (const k of ["square","park","pond","cemetery","junkyard","farm","woods"]){ const r = PLACES[k].rect || [85,64,95,74]; lab(PLACES[k].label.replace(/^the /,""), (r[0]+r[2]+1)/2*TS/sc, (r[1]+r[3]+1)/2*TS/sc, PAL.g); }
+  for (const k of ["square","park","pond","cemetery","junkyard","farm","woods","eastmarket","stonecircle","bog","wolfden","hangingtree"].filter(k=>PLACES[k])){ const r = PLACES[k].rect || [85,64,95,74]; lab(PLACES[k].label.replace(/^the /,""), (r[0]+r[2]+1)/2*TS/sc, (r[1]+r[3]+1)/2*TS/sc, PAL.g); }
   for (const a of T.appts.filter(a=>a.status==="pending")){ const s = PLACES[a.place] && (PLACES[a.place].building ? (()=>{ const bd = bById(outerOf(PLACES[a.place].building)); return [(bd.x0+bd.x1)/2, bd.y1]; })() : PLACES[a.place].rect ? [(PLACES[a.place].rect[0]+PLACES[a.place].rect[2])/2, PLACES[a.place].rect[1]] : null); if (s) lab(`♥ ${fmtT(a.at)} ${nmT(a.who)}`, s[0]*TS/sc, s[1]*TS/sc+14, "#ffd6e0"); }
   const pl = T.player; g.fillStyle = PAL.k; g.fillRect(pl.x*TS/sc-1, pl.y*TS/sc-1, 10, 10); g.fillStyle = PAL.y; g.fillRect(pl.x*TS/sc, pl.y*TS/sc, 8, 8);
   lab("YOU", pl.x*TS/sc+4, pl.y*TS/sc-10, PAL.y);
@@ -4070,6 +4114,7 @@ function onHourT(h){
   if (T.notoriety > 0 && !T.wanted) T.notoriety = Math.max(0, T.notoriety - .5);
   // the case goes cold if you give it nothing
   const D = T.det; if (D && detAlive()){ const recent = D.evidence.filter(e=>e.kind!=="timing").slice(-1)[0]; if (h===23 && (!recent || !String(recent.s).includes(`day ${T.day})`))) D.suspicion = Math.max(0, D.suspicion - 3); }
+  if (onHourHook) onHourHook(h);
   if (T.debts.some(d=>!d.paid && T.day-d.day >= 4) && h===12){ const d = T.debts.find(x=>!x.paid && T.day-x.day >= 4); const n = byIdT(d.who); if (n && alive(n)){ n.opinion = clamp(n.opinion-5,-100,100); gossipT(n, `The newcomer owes me $${d.amount} and won't pay up.`); } }
   saveT();
 }
@@ -4188,6 +4233,7 @@ function holdTick(tg, dt){
 }
 
 // ---------- what E does right now ----------
+let EXTRA_INTERACT = null, onHourHook = null, onSecondHook = null;   // edition hooks
 function interactTargetT(){
   const pl = T.player, [fx,fy] = facingT(), c = tileT(fx,fy), here = insideOf(pl), k = fx+","+fy;
   const box = T.containers[k];
@@ -4229,6 +4275,7 @@ function interactTargetT(){
     if (here==="post" && !T.phonesCut && "CH".includes(c)) return {kind:"cut", key:"cutphones", label:"Hold: rip out the phone exchange", hold:true, secs:4, act:"robbing", sound:"cut", done:cutPhones};
     if (here==="sheriff" && fx===59 && fy===24 && !T.radioSmashed) return {kind:"radio", key:"radio", label:"Hold: smash the sheriff's radio", hold:true, secs:3, sound:"punch", done:()=>{ T.radioSmashed = true; toast("Sparks, then nothing. The sheriff can't call anyone now.", "good", 4); sfx("snap"); }};
   }
+  if (EXTRA_INTERACT){ const r = EXTRA_INTERACT(fx, fy, c, here, k); if (r) return r; }
   // furniture
   if (box) return {kind:"box", label: box.mine ? "Open your footlocker" : `Open the ${box.name.toLowerCase()}`, run:()=>openBoxT(k)};
   if (here==="roomC" && fx===86 && fy===15) return {kind:"sleep", label: hourNow()>=20 || hourNow()<6 ? "Sleep until morning" : "Nap for two hours", run:sleepT};
@@ -4352,6 +4399,7 @@ function perSecondT(){
   if (T.lock && T.lock.kind==="chase" && pl.x <= 1 && pl.y >= 28 && pl.y <= 33) ending("wild");
   if (T.mode==="slasher" && T.wanted) T.wanted = false;
   if (T.money < 0) T.money = 0;
+  if (onSecondHook) onSecondHook();
 }
 function musicT(){
   const pl = T.player, inside = insideOf(pl), night = isNightT();
@@ -4650,7 +4698,7 @@ buildTownDom();
 wireTownDom();
 syncTownSound();
 if (matchMedia("(pointer:coarse)").matches){ $("taBtn").style.display = ""; $("tfBtn").style.display = ""; }
-window.__town = {bById, doorLockedT, walkPlayer, get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot};
+window.__town = {bById, doorLockedT, walkPlayer, get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot, tileT, bfsT, npcWalkT, PLACES, BUILDINGS, get tmap(){ return tmap; }, randomSpot, onHourT, perSecondT};
 
 
 // ===== town-src/11-ops.js =====

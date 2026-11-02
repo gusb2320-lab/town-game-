@@ -291,7 +291,8 @@ function burnSomething(){
 }
 function readItem(it){
   let title = it, body = "";
-  if (it==="newspaper"){ openJournalT("gazette"); return; }
+  if (READ_EXTRA[it]) [title, body] = READ_EXTRA[it]();
+  else if (it==="newspaper"){ openJournalT("gazette"); return; }
   if (it==="creepy note"){ title = "Unsigned note"; body = (T.notesText && T.notesText.length ? T.notesText[T.notesText.length-1] : "I see you.") + "\n\n(The handwriting is neat. Green ink? You can't be sure.)"; if (T.det.tells && detP() && detP().tells.includes("ink")) body = body.replace("Green ink? You can't be sure.", "Definitely green ink."); }
   else if (it==="case file"){ const d = detP(); title = "STATE BUREAU · CONFIDENTIAL"; body = `RE: Escaped inmate ${PNUMT}, Cellblock Nine.\nAgent in place under civilian cover since spring.\nAgent profile, for local liaison only: ${d ? TELLS.find(t=>t.id===d.tells[1]).habit.replace(/^is |^has /,"") : "redacted"}.\nSubject believed to be in Millbrook. Do not approach. Await agent's word.\n\n${T.det.dead ? "Agent's name: "+T.det.realName+". (A pencil note: 'Not heard from in days.')" : ""}`; T.clues.push({s:stampT(), text:`Case file: the agent ${d ? TELLS.find(t=>t.id===d.tells[1]).habit.replace(/^is |^has /,"") : "?"}`, tell: d ? d.tells[1] : null}); }
   else if (it==="letter"){ const L = T.letters[T.letters.length-1]; title = L ? `From ${L.from}` : "A sealed letter"; body = L ? L.text : "It's sealed. It isn't addressed to you. Reading it would be wrong.\n\n…It's a love letter, mostly. Underlined twice."; }
@@ -445,14 +446,17 @@ function doTradeT(){
 let tjTab = "people", tjSel = null;
 function openJournalT(tab, sel){ closeTalkT(); closeTWindows(); if (tab) tjTab = tab; if (sel) tjSel = sel; $("tWinJournal").hidden = false; sfx("open"); renderJournalT(); }
 function portraitT(n){ const c = document.createElement("canvas"); c.width = 16; c.height = 20; const g = c.getContext("2d"); g.fillStyle = "#333c57"; g.fillRect(0,0,16,20); drawPerson(g, 0, 4, n.look, [0,1], 0, {}); return c; }
+const JOURNAL_EXTRA = [];   // an edition can add journal tabs: {id, label, render(body, H, P)}
+const READ_EXTRA = {};      // and readable items: name -> () => [title, body]
 function renderJournalT(){
   const tabs = $("tjTabs"); tabs.textContent = "";
-  for (const [id, label] of [["people","People"],["clues","Clues & suspects"],["plans","Plans & favors"],["gazette","Gazette"],["town","Town"]]){
+  for (const [id, label] of [["people","People"],["clues","Clues & suspects"],["plans","Plans & favors"],["gazette","Gazette"],["town","Town"]].concat(JOURNAL_EXTRA.map(j=>[j.id, j.label]))){
     const b = Object.assign(document.createElement("button"),{type:"button", textContent:label}); b.setAttribute("aria-selected", String(tjTab===id)); b.addEventListener("click", ()=>{ tjTab = id; renderJournalT(); }); tabs.append(b);
   }
   const body = $("tjBody"); body.textContent = "";
   const H = (t) => Object.assign(document.createElement("span"),{className:"lbl", textContent:t});
   const P = (t, cls) => Object.assign(document.createElement("p"),{className:cls||"note", textContent:t});
+  const xj = JOURNAL_EXTRA.find(j=>j.id===tjTab); if (xj){ xj.render(body, H, P); return; }
   if (tjTab==="people"){
     const met = folk.filter(n=>n.met || n.log.length);
     if (!met.length){ body.append(P("You haven't met anyone yet. Walk up to someone and press E.")); return; }
@@ -557,7 +561,7 @@ function openMapT(){
   g.font = "16px VT323, monospace"; g.textAlign = "center"; g.textBaseline = "middle";
   const lab = (text, x, y, col) => { const w = g.measureText(text).width; g.fillStyle = "rgba(26,28,44,.85)"; g.fillRect(x-w/2-3, y-8, w+6, 15); g.fillStyle = col||PAL.w; g.fillText(text, x, y); };
   for (const b of BUILDINGS){ const cx = (b.x0+b.x1+1)/2*TS/sc, cy = (b.y0+b.y1+1)/2*TS/sc; const name = b.kind==="home" ? (residentsOf(b.id).filter(n=>n.met).map(n=>n.first).join(" & ") || "") : b.name; if (name) lab(name, cx, cy, b.kind==="home" ? PAL.l : PAL.y); }
-  for (const k of ["square","park","pond","cemetery","junkyard","farm","woods"]){ const r = PLACES[k].rect || [85,64,95,74]; lab(PLACES[k].label.replace(/^the /,""), (r[0]+r[2]+1)/2*TS/sc, (r[1]+r[3]+1)/2*TS/sc, PAL.g); }
+  for (const k of ["square","park","pond","cemetery","junkyard","farm","woods","eastmarket","stonecircle","bog","wolfden","hangingtree"].filter(k=>PLACES[k])){ const r = PLACES[k].rect || [85,64,95,74]; lab(PLACES[k].label.replace(/^the /,""), (r[0]+r[2]+1)/2*TS/sc, (r[1]+r[3]+1)/2*TS/sc, PAL.g); }
   for (const a of T.appts.filter(a=>a.status==="pending")){ const s = PLACES[a.place] && (PLACES[a.place].building ? (()=>{ const bd = bById(outerOf(PLACES[a.place].building)); return [(bd.x0+bd.x1)/2, bd.y1]; })() : PLACES[a.place].rect ? [(PLACES[a.place].rect[0]+PLACES[a.place].rect[2])/2, PLACES[a.place].rect[1]] : null); if (s) lab(`♥ ${fmtT(a.at)} ${nmT(a.who)}`, s[0]*TS/sc, s[1]*TS/sc+14, "#ffd6e0"); }
   const pl = T.player; g.fillStyle = PAL.k; g.fillRect(pl.x*TS/sc-1, pl.y*TS/sc-1, 10, 10); g.fillStyle = PAL.y; g.fillRect(pl.x*TS/sc, pl.y*TS/sc, 8, 8);
   lab("YOU", pl.x*TS/sc+4, pl.y*TS/sc-10, PAL.y);

@@ -11,7 +11,7 @@ let THEME_NOTE = "";                                 // extra setting notes for 
 const E = window.CB9;
 if (!E) throw new Error("Cellblock Nine engine not loaded");
 const { Snd, sfx, PAL, $, clamp, pick, rnd, shuffle, toast, banner, drawPerson, shade, wrap, contourAt } = E;
-const TS = 16, TW = 104, TH = 84, CAP = 6;
+const TS = 16, TW = HALLOW ? 184 : 104, TH = HALLOW ? 164 : 84, CAP = 6;   // the Halloween edition is a much bigger map
 const TSAVE = HALLOW ? "millbrook-hallow-v1" : "cellblock9-town-v1";
 const DIRS4 = [[0,-1],[1,0],[0,1],[-1,0]];
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
@@ -295,7 +295,7 @@ function buildTown(){
   S(96,21,"D"); DOOR_AT["96,21"] = "station"; R(94,23,96,23,"C"); for (const x of [93,95,97,99]) S(x,26,"n");
   // south side of Main Street
   b = B("bar","The Rusty Nail","bar",3,33,17,44,[10,33],{floor:".",roof:"#8b5a3c",hours:[14,26],sign:"RUSTY NAIL"});
-  R(5,36,12,36,"e"); R(5,34,12,34,"H"); for (let x=5;x<=12;x+=2) S(x,37,"c");
+  R(5,36,12,36,"e"); R(5,34,8,34,"H"); R(12,34,12,34,"H");   // shelves stop short of the door for (let x=5;x<=12;x+=2) S(x,37,"c");
   S(6,40,"K"); S(5,40,"c"); S(7,40,"c"); S(10,40,"K"); S(9,40,"c"); S(11,40,"c"); S(14,38,"Q"); S(16,35,"%"); S(4,43,"j");
   R(13,41,13,43,"#"); S(13,42,"D"); DOOR_AT["13,42"] = "barback"; S(16,43,"B"); S(14,43,"O");
   win(b,[[5,33],[15,33]]); S(8,45,"Y");
@@ -403,7 +403,7 @@ function doorLockedT(x,y, who){
   return false;
 }
 const walkPlayer = (x,y) => WALK_T.has(tileT(x,y)) && !(tileT(x,y)==="D" && doorLockedT(x,y,T.player));
-function npcWalkT(x,y,n){ const c = tileT(x,y); if (!WALK_T.has(c)) return false; if (c==="D") return !doorLockedT(x,y,n); return true; }
+function npcWalkT(x,y,n){ const c = tileT(x,y); if (!WALK_T.has(c)) return false; if (c==="D") return (n && n.breaksDoors) || !doorLockedT(x,y,n); return true; }
 
 // ---------- containers ----------
 const LOOT = {
@@ -587,6 +587,25 @@ function genVoice(p){
     slide: .88+Math.random()*.16, formant: p.pron==="he" ? .8+Math.random()*.15 : p.pron==="she" ? 1.05+Math.random()*.18 : .95+Math.random()*.12,
     speed: .8+Math.random()*.55, vib: Math.random()<.15};
 }
+// Everyone sounds different: women are pitched higher, men lower, and no two voices share a pitch, timbre and pace.
+function distinctVoices(people){
+  const bands = {he:[62, 150], she:[215, 380], they:[150, 215]};
+  const waves = ["sawtooth","square","triangle"];
+  for (const g of ["he","she","they"]){
+    const grp = shuffle(people.filter(p=>p.pron===g));
+    grp.forEach((p, i) => {
+      const [lo, hi] = bands[g], t = grp.length > 1 ? i/(grp.length-1) : .5;
+      const v = p.voice;
+      v.base = lo + (hi-lo)*t + (p.teen ? 30 : 0) - (p.age > 64 ? 12 : 0);
+      v.wave = waves[i % 3];
+      v.formant = (g==="he" ? .74 : g==="she" ? 1.08 : .95) + ((i*7) % 5) * .045;
+      v.speed = .75 + ((i*3) % 7) * .09;
+      v.len = .045 + ((i*5) % 4) * .015;
+      v.range = 2 + ((i*11) % 6);
+      v.vib = (i % 4) === 3;
+    });
+  }
+}
 function genLook(p){
   const shirt = pick(SHIRTS);
   E.SUITS["t_"+p.id] = [shirt, shade(shirt,-.3), shade(shirt,.25)];
@@ -640,11 +659,13 @@ function genTown(){
   const adults = homeless.filter(p=>p!==teen);
   // three married couples, a parent and teen, and roommates if needed
   const pairs = [];
-  for (let i=0;i<3;i++){ const a = adults.shift(), b = adults.shift(); if (a && b){ pairs.push([a,b,"married"]); } }
+  const couples = Math.max(3, adults.length + 2 - free.length);   // enough couples that everyone has a roof
+  for (let i=0;i<couples;i++){ const a = adults.shift(), b = adults.shift(); if (a && b){ pairs.push([a,b,"married"]); } }
   if (teen){ const parent = adults.shift(); if (parent) pairs.push([parent, teen, "parent"]); }
   for (const [a,b,kind] of pairs){ const h = free.shift(); a.home = b.home = h.id; if (kind==="married"){ a.spouse = b.id; b.spouse = a.id; b.last = a.last; } else { b.last = a.last; b.parent = a.id; a.child = b.id; } }
   while (adults.length){ const a = adults.shift(); const h = free.shift(); if (h) a.home = h.id; else { const b2 = adults.length ? adults.shift() : null; a.home = pairs[0][0].home; if (b2) adults.unshift(b2); } }
   for (const p of people) if (!p.home) p.home = pick(homes).id;
+  distinctVoices(people);
   // relationships
   T.rel = {};
   for (let i=0;i<people.length;i++) for (let j=i+1;j<people.length;j++) T.rel[relKeyT(people[i].id, people[j].id)] = Math.round(Math.random()*26-8);
@@ -706,7 +727,7 @@ function canSeeT(n, tx, ty, range){
   return true;
 }
 function lit(x,y){ return tileT(Math.round(x),Math.round(y))==="l" || [[0,1],[1,0],[0,-1],[-1,0],[0,2],[2,0]].some(([dx,dy])=>tileT(Math.round(x)+dx,Math.round(y)+dy)==="l"); }
-function bfsT(sx,sy,tx,ty,walk,limit=9000){
+function bfsT(sx,sy,tx,ty,walk,limit=TW*TH){
   if (sx===tx && sy===ty) return [];
   const prev = new Int32Array(TW*TH).fill(-1), start = sy*TW+sx, goal = ty*TW+tx, q = [start]; prev[start] = start;
   for (let h=0;h<q.length && h<limit;h++){ const c = q[h]; if (c===goal) break; const cx = c%TW, cy = (c/TW)|0;
@@ -1729,6 +1750,7 @@ function openTalkT(n, opts={}){
     else if (first) startTypeT(greetingT(n), n);
     else { const last = [...n.log].reverse().find(l=>l.who==="n"); startTypeT(last && last.d===T.day ? last.text : greetingT(n), n); }
   }
+  if (onTalkOpenHook) onTalkOpenHook(n);
   if (!opts.approach && !document.body.classList.contains("touch")) setTimeout(()=>{ if (T && T.talkId===n.id) $("tdInput").focus(); }, 0);
 }
 function greetingT(n){
@@ -1863,6 +1885,8 @@ const TOWN_ACTIONS_DOC = `ACTIONS: things you actually DO, right now, in the wor
 const SHERIFF_DOC = `SHERIFF ACTIONS: {"type":"arrest","reason":"x"} take them to the cells (only for a real crime you know about) {"type":"fine","amount":20} {"type":"search"} pat down their pockets`;
 const DET_DOC = `INVESTIGATOR ACTIONS (only you): {"type":"search"} ask to look in their pockets and do it if they let you (or insist) {"type":"close_case"} only if you are now convinced they are NOT ${PNUMT}: you'll quietly leave Millbrook {"type":"arrest"} only if suspicion is 85+ and you're ready to blow your cover`;
 
+let personNote = n => "";   // an edition can add hidden roles and mysteries to a person's prompt
+let onSaidHook = null, onGaveHook = null, onTalkOpenHook = null;
 function townPrompt(n, said, gave, approach, extra={}){
   const pl = T.player, det = isDet(n), D = T.det;
   const mems = n.memories.slice(-90).map(m=>`- [${m.s}] ${m.text}`).join("\n") || "- Nothing. You've never dealt with them.";
@@ -1894,7 +1918,7 @@ AGE ${n.age}. JOB: ${n.job}${n.work ? ` (you work at ${placeName(n.work)}${n.hou
 PERSONALITY: ${n.traits.join(", ")}. HOBBIES: ${n.hobbies.join(", ")}. YOU LIKE: ${n.likes.join(", ")}. YOU DISLIKE: ${n.dislikes.join(", ")}.
 HOW YOU TALK: ${n.style} QUIRK: ${n.quirk}.${habits.length ? ` YOUR HABITS: ${habits.join("; ")} (let them show in *actions* now and then).` : ""}
 YOUR SECRET (guard it; hint at most, unless you deeply trust them): ${n.secret}.
-YOU CARRY: ${n.inv.join(", ") || "nothing"}, and $${Math.round(n.money)}.${sheriffRole ? "\n"+sheriffRole : ""}${secretRole}
+YOU CARRY: ${n.inv.join(", ") || "nothing"}, and $${Math.round(n.money)}.${sheriffRole ? "\n"+sheriffRole : ""}${secretRole}${personNote(n)}
 PEOPLE IN TOWN AND HOW YOU FEEL ABOUT THEM:
 ${relLinesT(n)}
 HABITS YOU'VE NOTICED IN NEIGHBORS (share if asked): ${knows.slice(0,6).join("; ") || "none in particular"}.
@@ -1939,6 +1963,7 @@ async function askTownNpc(n, {said="", gave=null, approach=null, accuse=false} =
     const handled = checkFavorOnGiveT(n, gave);
     if (!handled && n.likes.includes(gave)) n.trust = clamp(n.trust+2,0,100);
     if (isEvidence(gave) && isDet(n)) addEvidence(`The newcomer handed me a ${gave}.`, 10, "gift");
+    if (onGaveHook) onGaveHook(n, gave);
     renderHotbarT();
   }
   if (said){
@@ -1946,6 +1971,7 @@ async function askTownNpc(n, {said="", gave=null, approach=null, accuse=false} =
     if (isDet(n)) T.det.claims.push(`Told me: "${said.slice(0,120)}"`);
     if (INCRIMINATING.test(said)){ rememberT(n, `The newcomer said something strange about ${said.match(INCRIMINATING)[0].toLowerCase()}: "${said.slice(0,120)}"`); if (!isDet(n)) addEvidenceVia(n, `${n.first} heard the newcomer mention "${said.match(INCRIMINATING)[0]}".`, 4); }
     checkVisitFavorT(n);
+    if (onSaidHook) onSaidHook(n, said);
   }
   $("tdYou").textContent = (gave ? `[gave ${gave}] ` : "") + (said ? `You: ${said}` : "");
   $("tdMem").textContent = "";
@@ -2661,6 +2687,20 @@ Townspeople you may mention: ${folk.filter(alive).map(n=>`${n.first} (${n.job})`
 async function writeBiosT(){
   if (!E.aiOn()){ proceduralBios(); return; }
   try {
+    // big towns are written in batches so each reply stays short
+    if (folk.length > 26){
+      const chunks = []; for (let i=0;i<folk.length;i+=22) chunks.push(folk.slice(i, i+22));
+      await Promise.all(chunks.map(async ch => {
+        const list = ch.map(n=>`${n.id}: ${fullT(n)}, ${n.age}, ${n.pron}, ${n.job}. Traits: ${n.traits.join(", ")}. Hobbies: ${n.hobbies.join(", ")}. Family: ${familyLine(n)}. Secret: ${n.secret}.`).join("\n");
+        try {
+          const r = await E.getSample().json(`${THEME_NOTE}Invent some of the townspeople of Millbrook, a ${HALLOW ? "large, fog-bound medieval village" : "small American town"}. For each person write a vivid 2-3 sentence bio (backstory, what they want, one contradiction), a "style" (how they talk, one sentence) and a "quirk" (a few words). Make every voice distinct.
+${list}
+Reply only JSON: {"people":[{"id":"p0","bio":"...","style":"...","quirk":"..."}]}`, {modelTier:"default", cache:false});
+          for (const p of (r && Array.isArray(r.people) ? r.people : [])){ const n = byIdT(p.id); if (!n) continue; if (typeof p.bio==="string") n.bio = p.bio.slice(0,500); if (typeof p.style==="string") n.style = p.style.slice(0,200); if (typeof p.quirk==="string") n.quirk = p.quirk.slice(0,120); }
+        } catch (e){ if (e && E.AI_OFF.includes(e.code)) E.setAiOff(); }
+      }));
+      proceduralBios(); saveT(); return;
+    }
     const list = folk.map(n=>`${n.id}: ${fullT(n)}, ${n.age}, ${n.pron}, ${n.job}. Traits: ${n.traits.join(", ")}. Hobbies: ${n.hobbies.join(", ")}. Family: ${familyLine(n)}. Secret: ${n.secret}.${n.nosy?" The town busybody.":""}`).join("\n");
     const r = await E.getSample().json(`${THEME_NOTE}Invent the townspeople of Millbrook, a small, sleepy, gossipy ${HALLOW ? "medieval village" : "American town"} with a train station, a diner, a bar called the Rusty Nail, a church, an arcade and a pond. For each person write a vivid 2-3 sentence backstory consistent with the facts given (no detectives, no crime-solving pasts), a one-sentence speaking style, and a small quirk.
 ${list}
@@ -3426,7 +3466,8 @@ function burnSomething(){
 }
 function readItem(it){
   let title = it, body = "";
-  if (it==="newspaper"){ openJournalT("gazette"); return; }
+  if (READ_EXTRA[it]) [title, body] = READ_EXTRA[it]();
+  else if (it==="newspaper"){ openJournalT("gazette"); return; }
   if (it==="creepy note"){ title = "Unsigned note"; body = (T.notesText && T.notesText.length ? T.notesText[T.notesText.length-1] : "I see you.") + "\n\n(The handwriting is neat. Green ink? You can't be sure.)"; if (T.det.tells && detP() && detP().tells.includes("ink")) body = body.replace("Green ink? You can't be sure.", "Definitely green ink."); }
   else if (it==="case file"){ const d = detP(); title = "STATE BUREAU · CONFIDENTIAL"; body = `RE: Escaped inmate ${PNUMT}, Cellblock Nine.\nAgent in place under civilian cover since spring.\nAgent profile, for local liaison only: ${d ? TELLS.find(t=>t.id===d.tells[1]).habit.replace(/^is |^has /,"") : "redacted"}.\nSubject believed to be in Millbrook. Do not approach. Await agent's word.\n\n${T.det.dead ? "Agent's name: "+T.det.realName+". (A pencil note: 'Not heard from in days.')" : ""}`; T.clues.push({s:stampT(), text:`Case file: the agent ${d ? TELLS.find(t=>t.id===d.tells[1]).habit.replace(/^is |^has /,"") : "?"}`, tell: d ? d.tells[1] : null}); }
   else if (it==="letter"){ const L = T.letters[T.letters.length-1]; title = L ? `From ${L.from}` : "A sealed letter"; body = L ? L.text : "It's sealed. It isn't addressed to you. Reading it would be wrong.\n\n…It's a love letter, mostly. Underlined twice."; }
@@ -3580,14 +3621,17 @@ function doTradeT(){
 let tjTab = "people", tjSel = null;
 function openJournalT(tab, sel){ closeTalkT(); closeTWindows(); if (tab) tjTab = tab; if (sel) tjSel = sel; $("tWinJournal").hidden = false; sfx("open"); renderJournalT(); }
 function portraitT(n){ const c = document.createElement("canvas"); c.width = 16; c.height = 20; const g = c.getContext("2d"); g.fillStyle = "#333c57"; g.fillRect(0,0,16,20); drawPerson(g, 0, 4, n.look, [0,1], 0, {}); return c; }
+const JOURNAL_EXTRA = [];   // an edition can add journal tabs: {id, label, render(body, H, P)}
+const READ_EXTRA = {};      // and readable items: name -> () => [title, body]
 function renderJournalT(){
   const tabs = $("tjTabs"); tabs.textContent = "";
-  for (const [id, label] of [["people","People"],["clues","Clues & suspects"],["plans","Plans & favors"],["gazette","Gazette"],["town","Town"]]){
+  for (const [id, label] of [["people","People"],["clues","Clues & suspects"],["plans","Plans & favors"],["gazette","Gazette"],["town","Town"]].concat(JOURNAL_EXTRA.map(j=>[j.id, j.label]))){
     const b = Object.assign(document.createElement("button"),{type:"button", textContent:label}); b.setAttribute("aria-selected", String(tjTab===id)); b.addEventListener("click", ()=>{ tjTab = id; renderJournalT(); }); tabs.append(b);
   }
   const body = $("tjBody"); body.textContent = "";
   const H = (t) => Object.assign(document.createElement("span"),{className:"lbl", textContent:t});
   const P = (t, cls) => Object.assign(document.createElement("p"),{className:cls||"note", textContent:t});
+  const xj = JOURNAL_EXTRA.find(j=>j.id===tjTab); if (xj){ xj.render(body, H, P); return; }
   if (tjTab==="people"){
     const met = folk.filter(n=>n.met || n.log.length);
     if (!met.length){ body.append(P("You haven't met anyone yet. Walk up to someone and press E.")); return; }
@@ -3692,7 +3736,7 @@ function openMapT(){
   g.font = "16px VT323, monospace"; g.textAlign = "center"; g.textBaseline = "middle";
   const lab = (text, x, y, col) => { const w = g.measureText(text).width; g.fillStyle = "rgba(26,28,44,.85)"; g.fillRect(x-w/2-3, y-8, w+6, 15); g.fillStyle = col||PAL.w; g.fillText(text, x, y); };
   for (const b of BUILDINGS){ const cx = (b.x0+b.x1+1)/2*TS/sc, cy = (b.y0+b.y1+1)/2*TS/sc; const name = b.kind==="home" ? (residentsOf(b.id).filter(n=>n.met).map(n=>n.first).join(" & ") || "") : b.name; if (name) lab(name, cx, cy, b.kind==="home" ? PAL.l : PAL.y); }
-  for (const k of ["square","park","pond","cemetery","junkyard","farm","woods"]){ const r = PLACES[k].rect || [85,64,95,74]; lab(PLACES[k].label.replace(/^the /,""), (r[0]+r[2]+1)/2*TS/sc, (r[1]+r[3]+1)/2*TS/sc, PAL.g); }
+  for (const k of ["square","park","pond","cemetery","junkyard","farm","woods","eastmarket","stonecircle","bog","wolfden","hangingtree"].filter(k=>PLACES[k])){ const r = PLACES[k].rect || [85,64,95,74]; lab(PLACES[k].label.replace(/^the /,""), (r[0]+r[2]+1)/2*TS/sc, (r[1]+r[3]+1)/2*TS/sc, PAL.g); }
   for (const a of T.appts.filter(a=>a.status==="pending")){ const s = PLACES[a.place] && (PLACES[a.place].building ? (()=>{ const bd = bById(outerOf(PLACES[a.place].building)); return [(bd.x0+bd.x1)/2, bd.y1]; })() : PLACES[a.place].rect ? [(PLACES[a.place].rect[0]+PLACES[a.place].rect[2])/2, PLACES[a.place].rect[1]] : null); if (s) lab(`♥ ${fmtT(a.at)} ${nmT(a.who)}`, s[0]*TS/sc, s[1]*TS/sc+14, "#ffd6e0"); }
   const pl = T.player; g.fillStyle = PAL.k; g.fillRect(pl.x*TS/sc-1, pl.y*TS/sc-1, 10, 10); g.fillStyle = PAL.y; g.fillRect(pl.x*TS/sc, pl.y*TS/sc, 8, 8);
   lab("YOU", pl.x*TS/sc+4, pl.y*TS/sc-10, PAL.y);
@@ -4071,6 +4115,7 @@ function onHourT(h){
   if (T.notoriety > 0 && !T.wanted) T.notoriety = Math.max(0, T.notoriety - .5);
   // the case goes cold if you give it nothing
   const D = T.det; if (D && detAlive()){ const recent = D.evidence.filter(e=>e.kind!=="timing").slice(-1)[0]; if (h===23 && (!recent || !String(recent.s).includes(`day ${T.day})`))) D.suspicion = Math.max(0, D.suspicion - 3); }
+  if (onHourHook) onHourHook(h);
   if (T.debts.some(d=>!d.paid && T.day-d.day >= 4) && h===12){ const d = T.debts.find(x=>!x.paid && T.day-x.day >= 4); const n = byIdT(d.who); if (n && alive(n)){ n.opinion = clamp(n.opinion-5,-100,100); gossipT(n, `The newcomer owes me $${d.amount} and won't pay up.`); } }
   saveT();
 }
@@ -4189,6 +4234,7 @@ function holdTick(tg, dt){
 }
 
 // ---------- what E does right now ----------
+let EXTRA_INTERACT = null, onHourHook = null, onSecondHook = null;   // edition hooks
 function interactTargetT(){
   const pl = T.player, [fx,fy] = facingT(), c = tileT(fx,fy), here = insideOf(pl), k = fx+","+fy;
   const box = T.containers[k];
@@ -4230,6 +4276,7 @@ function interactTargetT(){
     if (here==="post" && !T.phonesCut && "CH".includes(c)) return {kind:"cut", key:"cutphones", label:"Hold: rip out the phone exchange", hold:true, secs:4, act:"robbing", sound:"cut", done:cutPhones};
     if (here==="sheriff" && fx===59 && fy===24 && !T.radioSmashed) return {kind:"radio", key:"radio", label:"Hold: smash the sheriff's radio", hold:true, secs:3, sound:"punch", done:()=>{ T.radioSmashed = true; toast("Sparks, then nothing. The sheriff can't call anyone now.", "good", 4); sfx("snap"); }};
   }
+  if (EXTRA_INTERACT){ const r = EXTRA_INTERACT(fx, fy, c, here, k); if (r) return r; }
   // furniture
   if (box) return {kind:"box", label: box.mine ? "Open your footlocker" : `Open the ${box.name.toLowerCase()}`, run:()=>openBoxT(k)};
   if (here==="roomC" && fx===86 && fy===15) return {kind:"sleep", label: hourNow()>=20 || hourNow()<6 ? "Sleep until morning" : "Nap for two hours", run:sleepT};
@@ -4353,6 +4400,7 @@ function perSecondT(){
   if (T.lock && T.lock.kind==="chase" && pl.x <= 1 && pl.y >= 28 && pl.y <= 33) ending("wild");
   if (T.mode==="slasher" && T.wanted) T.wanted = false;
   if (T.money < 0) T.money = 0;
+  if (onSecondHook) onSecondHook();
 }
 function musicT(){
   const pl = T.player, inside = insideOf(pl), night = isNightT();
@@ -4651,7 +4699,7 @@ buildTownDom();
 wireTownDom();
 syncTownSound();
 if (matchMedia("(pointer:coarse)").matches){ $("taBtn").style.display = ""; $("tfBtn").style.display = ""; }
-window.__town = {bById, doorLockedT, walkPlayer, get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot};
+window.__town = {bById, doorLockedT, walkPlayer, get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot, tileT, bfsT, npcWalkT, PLACES, BUILDINGS, get tmap(){ return tmap; }, randomSpot, onHourT, perSecondT};
 
 
 // ===== town-src/11-ops.js =====
@@ -5110,6 +5158,847 @@ if (HALLOW){
 }
 
 
+// ===== town3d-src/13-expand.js =====
+// Hallowmere, expanded: the village doubles in every direction. East over the river lies the market quarter,
+// the mill, the manor and thirty more homes; south of everything is the Blackwood, with the stone circle,
+// the hanging tree, the bog, a wolf's den and, at its edge, Ashcombe House.
+// Everything here is laid out with rnd() so the same map comes back when a save is loaded.
+const XP = {};
+if (HALLOW){
+  // ---------- new trades ----------
+  // key = the job's own name (they're medieval already); work = a building or place id; lives = sleeps at work
+  const NEWJOBS = [
+    {job:"baker", work:"bakehouse", hours:[4,14], items:["loaf of bread","loaf of bread"], apron:"#d8d0c0", early:true},
+    {job:"baker's wife", work:"bakehouse", hours:[6,16], items:["loaf of bread","apple pie"], apron:"#d8d0c0"},
+    {job:"butcher", work:"butcher", hours:[6,16], items:["smoked ham","kitchen knife"], apron:"#7a2a24"},
+    {job:"chandler", work:"chandler", hours:[8,18], items:["tallow candles","matches"], apron:"#5a4a3a"},
+    {job:"tailor", work:"tailor", hours:[8,17], items:["hat","rope"]},
+    {job:"weaver", work:"tailor", hours:[7,16], items:["rope"]},
+    {job:"cobbler", work:"cobbler", hours:[8,17], items:["rope"], apron:"#4a3424"},
+    {job:"cooper", work:"cooper", hours:[7,16], items:["wrench"], apron:"#4a3424"},
+    {job:"potter", work:"potter", hours:[8,17], items:["book"]},
+    {job:"miller", work:"mill", hours:[5,17], items:["loaf of bread"], lives:"mill", early:true},
+    {job:"miller's boy", work:"mill", hours:[6,15], items:["apple pie"], teen:true},
+    {job:"stablemaster", work:"stables", hours:[5,18], items:["rope"], early:true},
+    {job:"groom", work:"stables", hours:[6,17], items:["apple pie"]},
+    {job:"lord of the manor", work:"manor", hours:[8,22], items:["whiskey","silver coin purse"], lives:"manor", sunday:true},
+    {job:"lady of the manor", work:"manor", hours:[8,22], items:["flowers","book"], lives:"manor", sunday:true},
+    {job:"steward of the manor", work:"manor", hours:[7,20], items:["letter","book"], lives:"manor"},
+    {job:"cook at the manor", work:"manor", hours:[5,19], items:["kitchen knife","smoked ham"], lives:"manor", apron:"#d8d0c0", early:true},
+    {job:"chambermaid at the manor", work:"manor", hours:[6,19], items:["bleach"], lives:"manor"},
+    {job:"keeper of the Black Lamb", work:"blacklamb", hours:[12,26], items:["beer","whiskey"], lives:"blacklamb", nightOwl:true, sunday:true},
+    {job:"serving hand at the Black Lamb", work:"blacklamb", hours:[16,25], items:["beer"], nightOwl:true},
+    {job:"gate guard", work:"watchhouse", hours:[6,18], items:["baseball bat"], lives:"watchhouse", guard:true, sunday:true},
+    {job:"gate guard", work:"eastgate", hours:[10,22], items:["baseball bat"], lives:"watchhouse", guard:true, sunday:true},
+    {job:"watch sergeant", work:"watchhouse", hours:[8,20], items:["revolver"], lives:"watchhouse", guard:true},
+    {job:"night watchman", work:"mainst", hours:[19,26], items:["lantern","baseball bat"], nightOwl:true, sunday:true, guard:true},
+    {job:"gravedigger", work:"cemetery", hours:[7,17], items:["shovel"], sunday:true},
+    {job:"bell-ringer", work:"church", hours:[6,13], items:["book"], early:true},
+    {job:"monk of St. Ambrose", work:"church", hours:[5,12], items:["book","holy water"], pious:true, early:true},
+    {job:"wise woman of the Blackwood", work:"wisehut", hours:[6,20], items:["wolfsbane","medicine"], lives:"wisehut", sunday:true},
+    {job:"hunter", work:"blackwood", hours:[5,15], items:["hunting rifle","bullets"], lives:"lodge", early:true, sunday:true},
+    {job:"woodcutter", work:"blackwood", hours:[6,16], items:["wrench"], early:true},
+    {job:"woodcutter", work:"blackwood", hours:[7,17], items:["rope"]},
+    {job:"charcoal burner", work:"blackwood", hours:[6,18], items:["matches"]},
+    {job:"shepherd", work:"farm", hours:[5,16], items:["apple pie"], early:true, sunday:true},
+    {job:"goatherd", work:"farm", hours:[6,15], items:["rope"]},
+    {job:"beggar", work:"square", hours:[8,20], items:[], sunday:true},
+    {job:"wandering minstrel", work:"eastmarket", hours:[11,23], items:["record"], nightOwl:true, sunday:true},
+    {job:"washerwoman", work:"pond", hours:[7,15], items:["bleach"]},
+    {job:"midwife", work:null, items:["bandage","medicine"]},
+    {job:"rat-catcher", work:"mainst", hours:[9,18], items:["rope"]},
+    {job:"fishmonger", work:"eastmarket", hours:[6,13], items:["trout","bass"], early:true},
+    {job:"cheesemonger", work:"eastmarket", hours:[8,15], items:["sandwich"]},
+    {job:"fruit seller", work:"eastmarket", hours:[8,15], items:["flowers"]},
+    {job:"spice merchant from the south", work:"eastmarket", hours:[9,17], items:["chocolate"]},
+    {job:"fortune teller", work:"eastmarket", hours:[14,24], items:["book"], nightOwl:true},
+    {job:"scribe's apprentice", work:"library", hours:[9,17], items:["book"], teen:true},
+    {job:"widow who keeps to herself", work:null, items:["flowers"]},
+    {job:"widower who drinks", work:null, items:["whiskey"]},
+    {job:"old soldier back from the wars", work:null, items:["kitchen knife"]},
+    {job:"orphan who sleeps in the tithe barn", work:"square", hours:[8,19], items:[], teen:true}
+  ];
+  for (const j of NEWJOBS){ j.key = j.job; JOBS.push(j); }
+
+  // ---------- new things to carry ----------
+  Object.assign(TITEMS, {
+    "loaf of bread":["Dark rye, still warm.",2,{heal:18}], "smoked ham":["A whole smoked ham hock.",6,{heal:28}],
+    "tallow candles":["A bundle of smoky tallow candles.",2,{tool:1}], "lantern":["A horn lantern. Lights the way at night and in dark houses.",15,{tool:1}],
+    "wolfsbane":["Purple hooded flowers. They say a wolf-touched man can't bear the smell.",8,{}],
+    "holy water":["Blessed at St. Ambrose. Cold to the touch.",10,{}],
+    "silver dagger":["Elspeth Ashcombe's silver dagger. It hums faintly. Silver bites what steel can't.",0,{weapon:30, silver:1, keep:1}],
+    "sacrificial knife":["A curved black blade. Old blood in the grooves.",0,{weapon:24}],
+    "silver coin purse":["Heavy with silver.",40,{}],
+    // the cult
+    "crimson robe":["A hooded robe of deep red wool, stitched inside with a horned moon. EVIDENCE: the cult.",0,{cult:1, evidence:1}],
+    "blood ledger":["A ledger bound in stained leather. EVIDENCE: the cult.",0,{cult:1, read:1, evidence:1}],
+    "ritual dagger":["Taken from the altar stone. Bone handle, horned-moon pommel. EVIDENCE: the cult.",0,{cult:1, weapon:20, evidence:1}],
+    "bone sigil":["A horned moon carved from a finger bone, on a cord. EVIDENCE: the cult.",0,{cult:1, evidence:1}],
+    // the house
+    "Ashcombe diary":["A lady's diary, the last pages stuck together with something dark.",0,{read:1, keep:1}],
+    "porcelain doll":["A cracked porcelain doll in a christening gown. Its eyes follow you.",0,{keep:1}],
+    "small bones":["Small bones wrapped in a child's nightdress.",0,{keep:1}],
+    // the wolf
+    "wolf fur":["Coarse grey fur, longer than any wolf's. Torn from something.",0,{}]
+  });
+  E.addIcons({
+    "loaf of bread":["........","..aaaa..",".aUaUaa.","aaaaaaaa","aUaaUaaa","aaaaaaaa",".uuuuuu.","........"],
+    "smoked ham":["......ww","....kkww","..krrrk.",".krrrrrk","krrOrrrk","krrrrrk.",".kkkkk..","........"],
+    "tallow candles":["..y..y..","..e..e..",".kek.ek.",".kek.ek.",".kek.ek.",".kek.ek.",".kkk.kk.","........"],
+    "lantern":["...kk...","..k..k..",".kkkkkk.",".kyyyyk.",".kyOOyk.",".kyyyyk.",".kkkkkk.","........"],
+    "wolfsbane":["..p..p..",".ppp.pp.","..p.ppp.","...pp...","...G....","..GG....","...G....","...G...."],
+    "holy water":["...kk...","...ll...","..kBBk..",".kBwBBk.",".kBBBBk.",".kByBBk.",".kBBBBk.","..kkkk.."],
+    "silver dagger":[".......w","......wl",".....wl.","....wl..","...wl...","..yy....",".kyk....","kyk....."],
+    "sacrificial knife":[".......k","......kd","....kkd.","...kdd..","..kd....","..rr....",".kUk....","kUk....."],
+    "silver coin purse":["........","...kk...","..kUUk..",".kUyyUk.",".kUyyUk.",".kUUUUk.","..kkkk..","........"],
+    "crimson robe":["...kk...","..krrk..",".krrrrk.",".krkkrk.","krrrrrrk","krrrrrrk","krrrrrrk","kkkkkkkk"],
+    "blood ledger":[".kkkkkk.",".kUUUUk.",".kUrrUk.",".kUrUUk.",".kUUrUk.",".kUUUUk.",".kkkkkk.","........"],
+    "ritual dagger":[".......w","......wl",".....wl.","....wl..","...wl...","..ee....",".kek....","kek....."],
+    "bone sigil":["e......e","ee....ee",".ee..ee.","..eeee..","..eeee..","...ee...","...k....","...k...."],
+    "Ashcombe diary":[".kkkkkk.",".kppppk.",".kpyypk.",".kppppk.",".kprppk.",".kppppk.",".kkkkkk.","........"],
+    "porcelain doll":["...ee...","..ekke..","..eeee..","...rr...","..wwww..",".wwwwww.",".wwwwww.","..w..w.."],
+    "small bones":["........","e.e..e.e",".e....e.","e.eeee.e","..eeee..",".e....e.","e......e","........"],
+    "wolf fur":["........",".l..l...","lml.lml.",".lmlmlm.","..lmlml.","...lml..","....l...","........"]
+  });
+  STACKT.add("loaf of bread"); STACKT.add("tallow candles"); STACKT.add("wolfsbane"); STACKT.add("holy water");
+
+  // ---------- shops and work ----------
+  Object.assign(SHOPS, {
+    bakehouse:{keeper:"baker", alt:"baker's wife", name:"The Bakehouse", sell:["loaf of bread","apple pie","pie slice"]},
+    butcher:{keeper:"butcher", name:"Grisewood's Butchery", sell:["smoked ham","sandwich","kitchen knife"]},
+    chandler:{keeper:"chandler", name:"The Chandlery", sell:["tallow candles","lantern","matches"]},
+    tailor:{keeper:"tailor", alt:"weaver", name:"The Tailor's", sell:["hat","reading glasses","rope"], buys:true},
+    blacklamb:{keeper:"keeper of the Black Lamb", alt:"serving hand at the Black Lamb", name:"The Black Lamb", sell:["beer","whiskey","smoked ham","loaf of bread"]},
+    wisehut:{keeper:"wise woman of the Blackwood", name:"the wise woman's hut", sell:["wolfsbane","medicine","bandage","holy water"]},
+    lodge:{keeper:"hunter", name:"the hunter's lodge", sell:["hunting rifle","bullets","rope","lantern"], buys:true}
+  });
+  if (SHOPS.clinic) SHOPS.clinic.sell = (SHOPS.clinic.sell||[]).concat(["wolfsbane","bandage","medicine"]);
+  if (SHOPS.church) SHOPS.church.sell = ["holy water"];
+  const rename = {store:"Hartley's Provisions", diner:"The Crooked Spoon", bar:"The Hanged Man", barber:"The Barber-Surgeon", clinic:"The Apothecary", post:"The Messenger's House", station:"The Coach House", hotel:"The Millbrook Arms", arcade:"The Dice Cellar", garage:"The Smithy", church:"St. Ambrose"};
+  for (const k in rename) if (SHOPS[k]) SHOPS[k].name = rename[k];
+  WORK.push(
+    {id:"knead", bid:"bakehouse", tiles:"k", label:"Hold: knead dough", secs:6, pay:7, mins:45, boss:"baker"},
+    {id:"candles", bid:"chandler", tiles:"C", label:"Hold: dip candles", secs:6, pay:7, mins:45, boss:"chandler"},
+    {id:"sacks", bid:"mill", tiles:"h", label:"Hold: haul flour sacks", secs:7, pay:9, mins:50, boss:"miller"},
+    {id:"muck", bid:"stables", tiles:"h", label:"Hold: muck out the stalls", secs:6, pay:8, mins:45, boss:"stablemaster"},
+    {id:"tables", bid:"blacklamb", tiles:"K", label:"Hold: wipe the tables", secs:4, pay:5, mins:30, boss:"keeper of the Black Lamb"},
+    {id:"chop", bid:null, tiles:"t", label:"Hold: chop firewood", secs:7, pay:9, mins:50, boss:"woodcutter"},
+    {id:"graves", bid:null, tiles:"v", label:"Hold: tend the graves", secs:5, pay:6, mins:40, boss:"gravedigger"}
+  );
+
+  // ---------- the map ----------
+  XP.build = () => {
+    const R = (x0,y0,x1,y1,c) => { for (let y=y0;y<=y1;y++) for (let x=x0;x<=x1;x++) if (x>=0&&y>=0&&x<TW&&y<TH) tmap[y][x]=c; };
+    const S = (x,y,c) => { if (x>=0&&y>=0&&x<TW&&y<TH) tmap[y][x]=c; };
+    const B = (id, name, kind, x0,y0,x1,y1, door, extra={}) => {
+      R(x0,y0,x1,y1,"#"); R(x0+1,y0+1,x1-1,y1-1, extra.floor||".");
+      const b = Object.assign({id, name, kind, x0,y0,x1,y1, door, residents:[], roof:extra.roof||"#5e3a24", hours:extra.hours||null}, extra);
+      S(door[0],door[1],"D"); DOOR_AT[door.join(",")] = id;
+      BUILDINGS.push(b); PLACES[id] = {label:name || "a house", building:id}; return b;
+    };
+    const win = list => { for (const [x,y] of list) if (tileT(x,y)==="#") S(x,y,"x"); };
+    const winsAlong = b => { for (let x=b.x0+2; x<b.x1-1; x+=3){ win([[x,b.y0],[x,b.y1]]); } for (let y=b.y0+2; y<b.y1-1; y+=3){ win([[b.x0,y],[b.x1,y]]); } if (tileT(b.door[0],b.door[1])!=="D") S(b.door[0],b.door[1],"D"); for (const [dx,dy] of DIRS4){ const x = b.door[0]+dx, y = b.door[1]+dy; if (tileT(x,y)==="x") S(x,y,"#"); } };
+    const house = (id, x0, y0, doorSide) => {
+      const x1 = x0+9, y1 = y0+8;
+      const door = doorSide==="S" ? [x0+4,y1] : [x0+4,y0];
+      const h = B(id, "", "home", x0,y0,x1,y1, door, {floor:".", roof:["#8b4b3c","#5e3a24","#3e4c63","#6b3a5c","#4a6b3a","#7a5a3c","#5a4a6a"][parseInt(id.slice(4))%7]});
+      const top = doorSide!=="N", ix = x0+1, iy = y0+1, yb = top ? iy : y1-1, yf = top ? y1-1 : iy, dy = top ? 1 : -1;
+      S(ix, yb, "B"); S(ix+1, yb, "O"); S(ix+6, yb, "F"); S(ix+7, yb, "k"); S(ix+3, yb, "W");
+      S(ix+5, yb+3*dy, "K"); S(ix+4, yb+3*dy, "c"); S(ix+6, yb+3*dy, "c");
+      S(ix+6, yb+5*dy, "S"); S(ix+7, yb+5*dy, "S"); S(ix, yf, "P");
+      for (let y=iy+1;y<=y1-2;y++) for (let x=ix+1;x<=ix+3;x++) if (tileT(x,y)===".") S(x,y,":");
+      win([[x0+2,y0],[x0+7,y0],[x0+2,y1],[x0+7,y1]].filter(p=>!(p[0]===door[0]&&p[1]===door[1])));
+      S(door[0]+2, doorSide==="S" ? y1+1 : y0-1, "M");
+      return h;
+    };
+    // the far edges are forest
+    for (let y=0;y<TH;y++) for (let x=0;x<TW;x++){ if (x<2 || y<3 || x>=TW-2 || y>=TH-2) tmap[y][x] = rnd(x,y,1)>.5 ? "T" : "t"; }
+    for (let y=3;y<84;y++) for (let x=102;x<TW-2;x++) if (tmap[y][x]==="t"||tmap[y][x]==="T") tmap[y][x] = "g";
+    // the river, with bridges
+    for (let y=3;y<=124;y++){ const w = Math.round(Math.sin(y*.13)*1.2); for (let x=103+w; x<=105+w; x++) S(x,y,"w"); S(102+w,y, tileT(102+w,y)==="g" ? "b" : tileT(102+w,y)); S(106+w,y, tileT(106+w,y)==="g" ? "b" : tileT(106+w,y)); }
+    // roads east: Main Street and Elm Street run on across the river; a road north to south on the far side
+    R(102,29,TW-3,29,"s"); R(102,30,TW-3,31,"r"); R(102,32,TW-3,32,"s");
+    R(102,57,TW-3,57,"s"); R(102,58,TW-3,59,"r"); R(102,60,TW-3,60,"s");
+    for (let y=29;y<=32;y++) for (let x=100;x<=108;x++) if (tileT(x,y)==="w"||tileT(x,y)==="b") S(x,y,"d");
+    for (let y=57;y<=60;y++) for (let x=100;x<=108;x++) if (tileT(x,y)==="w"||tileT(x,y)==="b") S(x,y,"d");
+    R(139,3,139,84,"s"); R(140,3,141,84,"r"); R(142,3,142,84,"s"); R(140,29,141,32,"r"); R(140,57,141,60,"r");
+    // lamps east
+    for (let x=111;x<=176;x+=9){ if (tileT(x,28)==="g") S(x,28,"l"); if (tileT(x,33)==="g") S(x,33,"l"); S(x,56,"l"); S(x,61,"l"); }
+    // north of Main Street, east
+    let b;
+    b = B("mill","The Mill","mill",110,6,118,14,[114,14],{floor:",",hours:[5,19],sign:"THE MILL"}); R(111,7,113,8,"h"); R(116,7,117,8,"h"); S(111,12,"O"); S(117,12,"K"); S(117,10,"B"); winsAlong(b); R(114,15,114,28,"p");
+    b = B("stables","The Stables","stables",121,5,131,13,[126,13],{floor:".",hours:[5,20],sign:"STABLES"}); for (const x of [122,124,128,130]) S(x,7,"h"); R(122,10,123,11,"h"); winsAlong(b); R(126,14,126,28,"p");
+    b = B("bakehouse","The Bakehouse","shop",109,19,117,28,[113,28],{floor:",",hours:[5,18],sign:"BAKEHOUSE"}); S(110,20,"k"); S(111,20,"k"); S(116,20,"F"); R(111,25,115,25,"C"); S(110,23,"H"); S(116,23,"K"); winsAlong(b);
+    b = B("butcher","Grisewood's Butchery","shop",119,20,126,28,[122,28],{floor:",",hours:[6,17],sign:"BUTCHER"}); R(120,25,125,25,"C"); S(120,21,"Z"); S(125,21,"Z"); S(122,21,"H"); winsAlong(b);
+    b = B("chandler","The Chandlery","shop",129,21,136,28,[132,28],{floor:".",hours:[8,18],sign:"CHANDLER"}); R(130,25,134,25,"C"); S(130,22,"H"); S(135,22,"I"); S(133,22,"W"); winsAlong(b);
+    b = B("tailor","The Tailor's","shop",145,20,152,28,[148,28],{floor:":",hours:[8,17],sign:"TAILOR"}); R(146,25,150,25,"C"); S(146,21,"O"); S(151,21,"O"); S(148,21,"H"); winsAlong(b);
+    b = B("blacklamb","The Black Lamb","tavern",155,17,168,28,[161,28],{floor:".",hours:[12,26],sign:"BLACK LAMB"});
+    R(157,20,163,20,"e"); R(157,18,159,18,"H"); R(164,18,166,18,"I"); for (const [x,y] of [[158,23],[162,23],[166,23],[158,26],[166,26]]){ S(x,y,"K"); S(x-1,y,"c"); S(x+1,y,"c"); } S(167,19,"k"); S(156,19,"B"); winsAlong(b);
+    b = B("watchhouse","The Watch House","watch",171,20,179,28,[175,28],{floor:",",hours:[0,24],sign:"WATCH"}); R(172,21,174,21,"B"); S(178,21,"O"); S(176,24,"W"); S(172,26,"K"); winsAlong(b);
+    // the manor, behind its own wall
+    b = B("manor","Ravensworth Manor","manor",150,3,172,14,[161,14],{floor:":",hours:[7,21],sign:"RAVENSWORTH"});
+    R(158,4,158,13,"#"); R(164,4,164,13,"#"); S(158,9,"."); S(164,9,"."); S(158,11,"."); S(164,11,".");
+    for (const x of [151,153,155]) S(x,4,"B"); S(157,4,"O"); S(151,8,"W"); S(156,8,"H"); S(151,12,"Z"); S(156,12,"k");
+    S(160,5,"&"); R(160,8,162,8,"K"); S(159,8,"c"); S(163,8,"c"); S(161,12,"P"); S(159,12,"P");
+    for (const x of [166,168,170]) S(x,4,"B"); S(171,6,"O"); S(166,9,"W"); S(170,9,"I"); S(170,12,"k"); S(166,12,"F");
+    winsAlong(b); R(161,15,161,16,"p"); R(143,16,161,16,"p");
+    for (const [x,y] of [[148,4],[148,8],[148,12],[174,5],[174,9],[174,13]]) S(x,y,"t");
+    // south of Main Street, east
+    b = B("cobbler","The Cobbler's","shop",109,33,115,40,[112,33],{floor:".",hours:[8,17],sign:"COBBLER"}); R(110,36,114,36,"C"); S(110,39,"H"); winsAlong(b);
+    b = B("cooper","The Cooperage","shop",118,33,125,41,[121,33],{floor:".",hours:[7,16],sign:"COOPER"}); for (const [x,y] of [[119,38],[121,38],[123,38],[119,40]]) S(x,y,"j"); S(124,35,"W"); winsAlong(b);
+    b = B("potter","The Potter's","shop",128,33,135,40,[131,33],{floor:",",hours:[8,17],sign:"POTTER"}); R(129,36,134,36,"C"); S(129,39,"I"); S(134,39,"k"); winsAlong(b);
+    // the market: open stalls on cobbles
+    R(145,34,171,46,"q");
+    for (let x=147;x<=169;x+=4){ S(x,36,"8"); S(x,44,"8"); }
+    for (const [x,y] of [[150,40],[166,40],[158,40]]) S(x,y,"n"); S(146,34,"N");
+    PLACES.eastmarket = {label:"the market", rect:[145,34,171,46]};
+    // east gate: an arch where Main Street leaves town
+    S(TW-3,28,"#"); S(TW-3,33,"#");
+    // homes east: two rows on Elm Street and a lane behind
+    let hn = 100;
+    for (const x0 of [110,121,132,145,156,167]) house("home"+(hn++), x0, 48, "S");
+    for (const x0 of [110,121,132,145,156,167]) house("home"+(hn++), x0, 61, "N");
+    R(108,71,178,71,"p");
+    for (const x0 of [110,121,132,145,156,167]) house("home"+(hn++), x0, 72, "N");
+    XP.homeCount = hn - 100;
+    // ---------- the Blackwood ----------
+    const W0 = 84;
+    for (let y=W0;y<TH-2;y++) for (let x=2;x<TW-2;x++){
+      if (tmap[y][x]!=="g" && tmap[y][x]!=="G" && tmap[y][x]!=="t" && tmap[y][x]!=="T") continue;
+      const v = rnd(x,y,21), edge = y < W0+3 ? .35 : .62;
+      tmap[y][x] = v < edge ? (rnd(x,y,22) > .55 ? "T" : "t") : v > .97 ? "u" : "g";
+    }
+    // paths through the trees
+    const path = (pts) => { for (let i=0;i<pts.length-1;i++){ let [x,y] = pts[i]; const [tx,ty] = pts[i+1]; while (x!==tx || y!==ty){ if (x!==tx && (y===ty || rnd(x,y,23) > .5)) x += Math.sign(tx-x); else y += Math.sign(ty-y); for (const [dx,dy] of [[0,0],[1,0]]) if ("tTgu".includes(tileT(x+dx,y+dy))) S(x+dx,y+dy,"p"); } } };
+    path([[50,82],[52,96],[48,110],[56,122],[62,130]]);
+    path([[10,81],[14,96],[26,103]]);
+    path([[8,120],[30,118],[56,122],[90,118],[120,116],[144,111],[176,116]]);
+    path([[140,84],[142,100],[144,110]]);
+    path([[90,118],[94,132],[95,139]]);
+    path([[120,116],[124,138],[122,148]]);
+    path([[179,61],[179,86],[168,87]]);
+    path([[62,141],[70,152],[100,150],[122,148]]);
+    // a plank bridge where the forest path crosses the river
+    for (let y=115;y<=119;y++) for (let x=99;x<=110;x++) if ("wb".includes(tileT(x,y))) S(x,y,"d");
+    for (let x=99;x<=110;x++) if (tileT(x,117)==="d" || "tTgu".includes(tileT(x,117))) S(x,117, tileT(x,117)==="d" ? "d" : "p");
+    // clearings
+    const clear = (cx, cy, r, c="g") => { for (let y=cy-r;y<=cy+r;y++) for (let x=cx-r;x<=cx+r;x++) if (Math.hypot(x-cx,y-cy) <= r + .3 && "tTgu".includes(tileT(x,y))) S(x,y,c); };
+    // the stone circle
+    clear(62, 136, 7);
+    for (let k=0;k<9;k++){ const a = k/9*Math.PI*2; S(Math.round(62 + Math.cos(a)*5), Math.round(136 + Math.sin(a)*5), "5"); }
+    S(62,136,"6"); XP.altar = [62,136];
+    PLACES.stonecircle = {label:"the stone circle", rect:[57,131,67,141]};
+    // the hanging tree
+    clear(90, 112, 3); S(90,112,"9"); XP.hangTree = [90,112];
+    PLACES.hangingtree = {label:"the hanging tree", rect:[87,109,93,115]};
+    // the bog
+    for (let y=118;y<=136;y++) for (let x=100;x<=118;x++){ const d = Math.hypot((x-109)/9, (y-127)/8) + (rnd(x,y,31)-.5)*.35; if (d < .75) S(x,y,"w"); else if (d < 1) S(x,y,"b"); }
+    PLACES.bog = {label:"the bog", rect:[100,118,118,136]};
+    // the wolf's den
+    clear(150, 146, 5, "u");
+    for (let k=0;k<14;k++){ const a = k/14*Math.PI*2 + .2; if (k%5===0) continue; S(Math.round(150 + Math.cos(a)*5), Math.round(146 + Math.sin(a)*4.4), "7"); }
+    S(150,142,"7"); S(151,142,"7"); S(149,142,"7"); S(152,147,"J"); XP.den = [150,146];
+    path([[122,148],[138,147],[146,144]]); S(146,144,"u"); S(147,144,"u");
+    PLACES.wolfden = {label:"the wolf's den", rect:[145,142,155,150]};
+    // huts and lodges
+    clear(27, 106, 5);
+    b = B("oldhut","the abandoned woodcutter's hut","hut",24,104,30,109,[27,104],{floor:".",hours:[0,24],roof:"#3a2a1a"}); S(25,105,"B"); S(29,108,"Z"); S(29,105,"W"); win([[24,106],[30,106]]);
+    clear(95, 142, 5);
+    b = B("wisehut","the wise woman's hut","hut",92,140,98,145,[95,140],{floor:".",hours:[6,21],roof:"#3a4a2a"}); S(93,141,"B"); S(97,141,"k"); R(93,144,97,144,"H"); S(97,143,"C"); win([[92,142],[98,142]]);
+    clear(144, 113, 6);
+    b = B("lodge","the hunter's lodge","hut",140,110,148,116,[144,110],{floor:".",hours:[6,20],roof:"#4a3020"}); S(141,111,"B"); S(147,111,"k"); S(141,115,"O"); S(146,115,"C"); S(147,115,"%"); win([[140,113],[148,113]]);
+    clear(13, 132, 4); S(13,132,"4"); clear(40, 150, 3); S(40,150,"4"); clear(118, 100, 3); S(118,100,"4"); clear(170, 132, 4); S(170,132,"4"); clear(78, 98, 3); S(78,98,"4");
+    clear(32, 140, 3); S(32,140,"4"); clear(132, 156, 3); S(132,156,"4");
+    XP.caches = [[13,132],[40,150],[118,100],[170,132],[78,98],[32,140],[132,156]];
+    // the forest graves nobody tends
+    for (const [x,y] of [[70,96],[72,96],[74,97]]) S(x,y,"V");
+    PLACES.blackwood = {label:"the Blackwood", rect:[4,88,180,159]};
+    // ---------- Ashcombe House ----------
+    clear(168, 95, 12, "g");
+    b = B("ashcombe","Ashcombe House","haunted",158,89,178,101,[168,89],{floor:":",hours:[0,24],roof:"#222428",sign:"ASHCOMBE"});
+    R(167,90,167,100,"#"); S(167,92,":"); S(167,98,":");
+    R(168,95,177,95,"#"); S(172,95,":");
+    // hall
+    S(159,90,"&"); S(166,90,"O"); S(160,95,"S"); S(161,95,"S"); S(163,97,"K"); S(162,97,"c"); S(164,97,"c"); S(159,100,"k"); S(166,100,"%"); S(160,92,"P");
+    // study
+    S(176,90,"H"); S(175,90,"H"); S(172,92,"W"); S(171,92,"c"); S(169,90,"I"); S(176,93,"O");
+    // nursery
+    S(169,100,"B"); S(176,96,"Z"); S(170,96,"P"); S(177,99,"4"); S(173,100,"c");
+    winsAlong(b);
+    for (const [x,y] of [[160,88],[163,87],[174,88],[177,103],[160,103],[156,95],[180,96]]) S(x,y, "t");
+    for (const [x,y] of [[158,103],[160,104],[162,103]]) S(x,y,"V");
+    R(158,87,178,87,"f"); R(168,86,179,86,"p"); S(168,87,"p"); S(168,88,"p");
+    XP.nursery = [177,99]; XP.house = b;
+    // a path from the town to the forest's edge
+    R(50,82,51,84,"p");
+    PLACES.farmlane = {label:"the farm lane", rect:[4,69,38,71]};
+    // new places need spots
+    for (const k in PLACES){ const p = PLACES[k]; if (p.rect && !p.spots){ p.spots = []; for (let y=p.rect[1];y<=p.rect[3];y++) for (let x=p.rect[0];x<=p.rect[2];x++) if (WALK_T.has(tileT(x,y)) && tileT(x,y)!=="D") p.spots.push([x,y]); } }
+    for (const k of ["mainst","elmst"]){ const p = PLACES[k]; p.rect = [p.rect[0], p.rect[1], TW-4, p.rect[3]]; p.spots = []; for (let y=p.rect[1];y<=p.rect[3];y++) for (let x=p.rect[0];x<=p.rect[2];x++) if (WALK_T.has(tileT(x,y))) p.spots.push([x,y]); }
+    // the woods were a stand of trees; now they're the start of the Blackwood
+    PLACES.woods.rect = [40,70,100,100]; PLACES.woods.spots = []; for (let y=70;y<=100;y++) for (let x=40;x<=100;x++) if (WALK_T.has(tileT(x,y))) PLACES.woods.spots.push([x,y]);
+    PLACES.eastgate = {label:"the east gate", rect:[172,29,180,32]}; PLACES.eastgate.spots = []; for (let y=29;y<=32;y++) for (let x=172;x<=180;x++) PLACES.eastgate.spots.push([x,y]);
+  };
+  // chain onto the Hallowmere renames
+  const before = onTownBuilt;
+  onTownBuilt = () => { XP.build(); if (before) before(); };
+  // free time: the east has its own haunts
+  const fp0 = freePlace;
+  freePlace = n => {
+    const east = (bById(n.home) || {x0:0}).x0 > 100 || (n.work && ["eastmarket","blacklamb","bakehouse","butcher","chandler","tailor","cobbler","cooper","potter","manor","watchhouse","mill","stables"].includes(n.work));
+    const r = Math.random();
+    if (east && r < .45) return {place:pick(["eastmarket","eastmarket","blacklamb","blacklamb","mainst",n.home])};
+    if (r < .12) return {place:pick(["eastmarket","blacklamb","cemetery","mill"])};
+    return fp0(n);
+  };
+}
+
+
+// ===== town3d-src/14-mysteries.js =====
+// Hallowmere mysteries, questlines and respect.
+//  - The Children of the Horned Moon: a cult hidden among the villagers. Find three pieces of evidence and show the
+//    Reeve (the sheriff). If they learn what you know, one of them comes for you in a red robe.
+//  - Ashcombe House: find out why it's haunted, then lay the dead child to rest. Her silver dagger is the reward.
+//  - The werewolf: every third night someone in the village becomes a beast. Work out who, and name them.
+//  - Everyone has a three-part story you can help them with. Solving things earns the village's respect.
+const MX = {};
+if (HALLOW){
+  FIRST.push("Aldous","Beatrix","Cuthbert","Edwina","Godric","Hester","Ivo","Jocosa","Leofric","Mabel","Osric","Petronella","Roland","Sabine","Tobias","Ursula","Wystan","Ysolde","Ambrose","Cecily","Drogo","Elspeth","Fulk","Gunnora","Hamon","Isolde","Jasper","Lettice","Maud","Nicolas","Odo","Rohese","Silas","Tibby","Walter","Wymond","Agatha","Bartholomew","Constance","Eudo","Griselda","Humphrey","Joan","Lambert","Mercy","Piers","Rosamund","Thurstan");
+  LAST.push("Ashdown","Blackthorn","Cobb","Dimmock","Fenwick","Gall","Harrow","Kettle","Lark","Marrow","Nettles","Pryor","Quill","Rook","Sallow","Thorne","Underhill","Vane","Whitlock","Yew");
+  // ---------- state ----------
+  const M = () => T.myst;
+  const fresh = () => ({rep:0, notes:[], cult:{members:[], heat:0, seen:false, solved:false, lastHunt:-1, got:{}, ritual:false}, ww:{id:null, solved:false, kills:0, prints:[], accused:[], victims:[], found:0, wolfsbane:null}, haunt:{diary:false, doll:false, bones:false, panel:false, solved:false, visits:0}});
+  const note = (kind, text) => { const m = M(); if (m.notes.some(x=>x.text===text)) return; m.notes.push({kind, text, s:stampT()}); toast(`Journal: ${text}`, "", 5); sfx("quest"); };
+  const addRep = (v, why) => { const m = M(); m.rep = clamp(m.rep + v, 0, 100); if (v > 0){ for (const n of folk) if (alive(n)){ n.opinion = clamp(n.opinion + v*.5, -100, 100); n.trust = clamp(n.trust + v*.3, 0, 100); } toast(`+${v} respect · ${why}`, "good", 5); } else toast(`${v} respect · ${why}`, "bad", 5); };
+  MX.addRep = addRep;
+  const CULT_ITEMS = ["crimson robe","blood ledger","ritual dagger","bone sigil"];
+  const wolfP = () => byIdT(M().ww.id);
+  const ritualNight = () => T.day % 2 === 1;
+  const wolfNight = () => T.day % 3 === 2 || (T.event && T.event.kind==="hallows" && T.event.day===T.day);
+
+  // ---------- setting up a new game ----------
+  const gt0 = genTown;
+  genTown = () => {
+    const people = gt0();
+    T.myst = fresh();
+    const adults = people.filter(p=>!p.teen && !p.sheriff && !isDet(p) && !p.jobDef.guard);
+    // the cult: five, one of them from the manor if possible
+    const manor = shuffle(adults.filter(p=>p.work==="manor"));
+    const cult = [];
+    if (manor.length) cult.push(manor[0]);
+    for (const p of shuffle(adults.slice())) if (cult.length < 5 && !cult.includes(p)) cult.push(p);
+    M().cult.members = cult.map(p=>p.id);
+    for (const p of cult){ p.cult = true; p.inv.push("bone sigil"); p.dislikes.push("questions about the old ways"); }
+    // the werewolf: someone ordinary
+    const ww = pick(adults.filter(p=>!p.cult && p.work!=="manor"));
+    M().ww.id = ww.id; ww.isWolf = true;
+    // what people half-saw: two true sightings, two false ones
+    const others = shuffle(people.filter(p=>p!==ww && !p.teen));
+    const herr = shuffle(adults.filter(p=>p!==ww && !p.cult)).slice(0,2);
+    const seen = [
+      [others[0], `Weeks ago I saw ${ww.first} ${ww.last} coming home at dawn, barefoot, soaked to the knees and covered in mud. ${cap(they(ww))} didn't see me.`],
+      [others[1], `Once I heard something heavy moving inside ${ww.first}'s house at three in the morning, and growling. Next day ${they(ww)} acted like nothing happened.`],
+      [others[2], `I've seen ${herr[0].first} walking toward the Blackwood after dark more than once. Odd hour for a walk.`],
+      [others[3], `${herr[1].first} had a nasty scratch on ${their(herr[1])} arm last week and wouldn't say how.`]
+    ];
+    for (const [p, text] of seen) if (p) rememberT(p, text);
+    // a couple of people have noticed the robes, or the comings and goings at night
+    const cw = shuffle(people.filter(p=>!p.cult && !p.teen)).slice(0,3);
+    if (cw[0]) rememberT(cw[0], `I've seen lights out in the Blackwood near the old standing stones, late, on odd nights. People in red.`);
+    if (cw[1]) rememberT(cw[1], `${byIdT(cult[1].id).first} came back from the woods at two in the morning with something red bundled under ${their(cult[1])} arm.`);
+    if (cw[2]) rememberT(cw[2], `Three people have gone missing from Millbrook in two years. The Reeve calls it wolves. I don't think it's wolves.`);
+    // everyone's story
+    for (const p of people) p.quest = {stage:0, done:false, specs:null};
+    return people;
+  };
+  const mc0 = makeContainers;
+  makeContainers = () => {
+    const C = mc0(), m = M();
+    const boxIn = (home, name) => Object.keys(C).find(k => C[k].home===home && (!name || C[k].name===name));
+    // cult evidence
+    const cult = m.cult.members.map(byIdT);
+    const robeAt = boxIn(cult[1] ? cult[1].home : null, "Wardrobe") || boxIn(cult[2] ? cult[2].home : null);
+    if (robeAt) C[robeAt].items.push("crimson robe");
+    const desk = Object.keys(C).find(k => C[k].bid==="manor" && C[k].name==="Desk") || boxIn(cult[0] ? cult[0].home : null, "Desk") || boxIn(cult[3] ? cult[3].home : null);
+    if (desk) C[desk].items.push("blood ledger");
+    m.cult.ledgerAt = desk; m.cult.robeAt = robeAt;
+    // the altar stone and the den
+    const [ax, ay] = XP.altar; C[`${ax},${ay}`] = {name:"Altar stone", items:["ritual dagger"], loot:[], home:null, bid:null};
+    const denJ = Object.keys(C).find(k => { const [x,y] = k.split(",").map(Number); return Math.hypot(x-XP.den[0], y-XP.den[1]) < 7; });
+    if (denJ){ C[denJ].name = "Bone pile"; C[denJ].items = ["wolf fur","old boot"]; }
+    // hollow stumps in the forest
+    for (const [x,y] of XP.caches) C[`${x},${y}`] = {name:"Hollow stump", items:[pick(["wolfsbane","rope","matches","bullets","old boot","tallow candles"])], loot:[], home:null, bid:null};
+    // Ashcombe House
+    for (const k of Object.keys(C)){ if (C[k].bid!=="ashcombe") continue; C[k].items = []; if (C[k].name==="Desk") C[k].items.push("Ashcombe diary"); if (C[k].name==="Chest freezer"){ C[k].name = "Toy chest"; C[k].items.push("porcelain doll"); C[k].hide = false; } if (C[k].name==="Wardrobe") C[k].items.push(pick(["tallow candles","holy water"])); }
+    return C;
+  };
+
+  // ---------- the cult ----------
+  const ritualTick = h => {
+    const c = M().cult; if (c.solved) return;
+    if (h===23 && ritualNight()){
+      c.ritual = true;
+      for (const id of c.members){ const n = byIdT(id); if (!n || !alive(n) || n.away || n.wolf) continue; robe(n, true); n.order = {type:"go_to", place:"stonecircle", until:absT()+200}; n.asleep = false; }
+    }
+    if (h===2){ c.ritual = false; for (const id of c.members){ const n = byIdT(id); if (!n || !alive(n)) continue; if (!n.cultHunter) robe(n, false); if (n.order && n.order.place==="stonecircle") n.order = null; } }
+    // the hunt
+    if ((h>=21 || h<=3) && c.heat >= 50 && c.lastHunt !== T.day && !T.lock && Math.random() < .55){
+      const cands = c.members.map(byIdT).filter(n=>n && alive(n) && !n.away && !n.wolf);
+      const n = pick(cands); if (!n) return;
+      c.lastHunt = T.day; c.heat = Math.max(30, c.heat - 25);
+      robe(n, true); n.cultHunter = true; n.strength = Math.max(n.strength, 17); n.timid = false;
+      if (!n.inv.includes("sacrificial knife")) n.inv.unshift("sacrificial knife");
+      n.order = {type:"attack", target:"player", until:absT()+240, creep:true}; n.asleep = false; n.huntWarned = false;
+      rememberT(n, "The Circle sent me for the newcomer. They know too much.");
+    }
+  };
+  const robe = (n, on) => { if (!!n.look.robe === on) return; n.look = Object.assign({}, n.look, {robe:on || undefined}); if (!on) delete n.look.robe; };
+  const cultSecond = () => {
+    const c = M().cult, pl = T.player; if (c.solved) return;
+    // seeing the ritual
+    if (c.ritual){
+      const [ax, ay] = XP.altar, d = Math.hypot(pl.x-ax, pl.y-ay);
+      if (d < 16){
+        const robed = c.members.map(byIdT).filter(n=>n && alive(n) && n.look.robe && canSeeT(pl, n.x, n.y, 15));
+        if (robed.length && !c.seenTonight){
+          c.seenTonight = T.day; c.seen = true;
+          note("cult", `You watched robed figures chanting at the stone circle in the Blackwood, around midnight. ${robed.length} of them.`);
+          banner("THE STONE CIRCLE", "Red robes. Chanting. Something on the altar that moves.", true, 6); sfx("stinger");
+          if (robed.some(n=>canSeeT(n, pl.x, pl.y, 10))){ c.heat += 40; toast("One of the hooded heads turns toward you.", "bad", 5); }
+        }
+        if (!MX.chantAt || performance.now() > MX.chantAt){ MX.chantAt = performance.now() + 3800; try { if (hqInit()){ const t0 = HQ.ac.currentTime, out = HQ.out; HQ.out = HQ.comp; const v = Math.max(.15, 1 - d/16); for (const nn of ["D3","A3","D4"]) INST.choir(t0, NOTE(nn) - (Math.random()<.5 ? 0 : 1), 3.5, .5*v); HQ.out = out; } } catch {} }
+      }
+    }
+    // the hunter closing in
+    for (const id of c.members){
+      const n = byIdT(id); if (!n || !n.cultHunter || !alive(n)) continue;
+      if (!n.huntWarned && distT(n, pl) < 14){ n.huntWarned = true; toast("A figure in a red robe is walking straight toward you.", "bad", 5); HSFX.whisper(); }
+      if (!n.order && !n.fight){ n.cultHunter = false; robe(n, false); }
+    }
+    // picking up evidence
+    for (const it of CULT_ITEMS){
+      if (pl.inv.includes(it) && !c.got[it]){
+        c.got[it] = true; c.heat += it==="bone sigil" ? 10 : 22;
+        note("cult", {"crimson robe":"Found a red hooded robe, stitched with a horned moon, hidden in a villager's wardrobe.", "blood ledger":"Found a ledger of names and dates, written in something brown. Read it.", "ritual dagger":"Took a bone-handled dagger from the altar stone in the Blackwood.", "bone sigil":"Got a horned-moon sigil carved from bone. The cult members wear them."}[it]);
+      }
+    }
+  };
+  const presentEvidence = sh => {
+    const c = M().cult, pl = T.player, have = CULT_ITEMS.filter(it=>pl.inv.includes(it));
+    closeTWindows();
+    if (c.solved){ startTypeT("It's done. Let it rest.", sh); return; }
+    if (have.length < 3){
+      startTypeT(have.length ? `*turns the ${have[0]} over in ${their(sh)} hands* This is something. It isn't proof. Bring me more than one strange thing, and I'll act. (${have.length} of 3)` : "Evidence of what? Bring me something I can hold.", sh);
+      logLineT(sh, "n", TD.full); rememberT(sh, `The newcomer showed me ${have.join(", ")} and spoke of a cult.`); return;
+    }
+    for (const it of have) removeItemT(it);
+    c.solved = true; c.ritual = false;
+    const names = [];
+    for (const id of c.members){ const n = byIdT(id); if (!n || !alive(n)) continue; names.push(n.first+" "+n.last); n.away = true; n.awayUntil = 1e12; n.jailed = true; n.order = null; n.fight = null; robe(n, false); }
+    startTypeT(`*goes pale reading the ledger* ${names.slice(0,3).join(", ")}… God help us. Guards! *to you* You've done this village a service it won't forget.`, sh);
+    logLineT(sh, "n", TD.full);
+    banner("THE CULT IS BROKEN", `${names.length} members of the Children of the Horned Moon are in the Reeve's gaol.`, false, 8);
+    newsT(`ARRESTS: The Reeve has gaoled ${names.join(", ")} as members of a blood cult that met at the standing stones.`, [], false, "event");
+    for (const n of folk) if (alive(n) && !n.jailed) rememberT(n, `The newcomer exposed the cult of the Horned Moon. ${names.join(", ")} were taken to the gaol. The newcomer did that.`);
+    note("cult", "SOLVED: you showed the Reeve the evidence. The cult is in the gaol.");
+    addRep(25, "you broke the cult");
+    saveT();
+  };
+
+  // ---------- the werewolf ----------
+  const becomeWolf = (n, on) => {
+    if (on){
+      if (n.wolf) return;
+      n.wolf = true; n.humanLook = n.look; n.look = Object.assign({}, n.look, {wolf:true}); delete n.look.bandage;
+      n.hpHuman = n.hp; n.hp = n.maxHp = 230; n.str0 = n.strength; n.strength = 24; n.breaksDoors = true; n.timid = false;
+      n.asleep = false; if (n.scene) finishSceneT(n.scene); n.talkingToPlayer = false;
+      HSFX.howl(); setTimeout(()=>HSFX.howl(), 2500);
+    } else {
+      if (!n.wolf) return;
+      const hurt = n.hp < 200;
+      n.wolf = false; n.look = n.humanLook || n.look; delete n.look.wolf; n.maxHp = 100; n.hp = Math.min(100, Math.max(30, n.hpHuman || 100) - (hurt ? 30 : 0));
+      n.strength = n.str0 || n.strength; n.breaksDoors = false; n.order = null; n.fight = null;
+      if (hurt){ n.wounded = T.day; rememberT(n, "I woke with deep cuts on my arm and blood under my nails. I told no one. I'll say I fell in the woodshed."); }
+      else rememberT(n, "Another night I can't remember. Mud on my feet again. Dear God.");
+    }
+  };
+  const wolfHour = h => {
+    const w = M().ww, n = wolfP(); if (!n || w.solved || !alive(n)) return;
+    if (h===0 && wolfNight() && !n.away){ becomeWolf(n, true); n.order = {type:"hunt", until:absT()+260, kills:0}; w.nights = (w.nights||0) + 1; }
+    if (h===4 && n.wolf && !w.revealed) becomeWolf(n, false);
+    if (h===6){
+      for (const p of folk){ if (p.look.bandage && T.day - (p.bandageDay||0) >= 2){ p.look = Object.assign({}, p.look); delete p.look.bandage; } }
+      if (n.wounded === T.day){ n.look = Object.assign({}, n.look, {bandage:true}); n.bandageDay = T.day; }
+      // red herrings bandage up too
+      for (const p of folk) if (alive(p) && !p.look.bandage && ["butcher","woodcutter","cooper","hunter","groom"].includes(jobKey(p)) && Math.random() < .15){ p.look = Object.assign({}, p.look, {bandage:true}); p.bandageDay = T.day; rememberT(p, "Cut my arm at work. Nothing to it."); }
+      // anyone wrongly gaoled is let out once the beast kills again
+      if (w.killedWhileJailed) for (const id of w.accused){ const p = byIdT(id); if (p && p.jailed && !p.cult){ p.jailed = false; p.away = false; p.awayUntil = 0; rememberT(p, "The beast killed while I sat in the gaol. They let me out. I won't forget who put me there."); p.opinion = clamp(p.opinion - 40, -100, 100); newsT(`${p.first} ${p.last} has been released from the gaol. The beast killed again while ${they(p)} sat in a cell.`, [], false, "event"); } }
+      w.killedWhileJailed = false;
+    }
+  };
+  const wolfKill = (v, wolf) => {
+    const pl = T.player, where = placeLabelAt(v.x, v.y);
+    v.dead = true; v.hp = 0; v.fight = null; v.order = null; v.asleep = false; v.talkingToPlayer = false; if (v.scene) finishSceneT(v.scene);
+    if (!v.inv.includes("wolf fur")) v.inv.push("wolf fur");
+    T.bodies.push({id:v.id, name:fullT(v), x:v.x, y:v.y, hidden:null, carried:false, diedAt:absT(), discovered:false, inside:buildingAt(v.x,v.y), killer:"beast", wolf:true});
+    for (const [dx,dy] of [[0,0],[1,0],[0,1],[-1,0],[0,-1]]) addStain(v.x+dx, v.y+dy);
+    const w = M().ww; w.kills++; w.victims.push({id:v.id, day:T.day, at:where}); if (w.accused.some(id=>byIdT(id) && byIdT(id).jailed)) w.killedWhileJailed = true;
+    sfx("scream"); HSFX.scream();
+    if (Math.hypot(pl.x-v.x, pl.y-v.y) < 30) toast(Math.hypot(pl.x-v.x, pl.y-v.y) < 10 ? `The beast tears into ${v.first}.` : "A scream, somewhere close, cut short.", "bad", 5);
+    for (const o of folk){ if (!alive(o) || o===wolf || o.asleep || !canSeeT(o, v.x, v.y, 10)) continue; rememberT(o, `I saw a beast on two legs, taller than a man, tear ${v.first} apart at ${where}. Grey fur. Eyes like lamps.`); sayT(o, pick(["AAAAH!","GOD SAVE US!","The beast! THE BEAST!"]), 3); o.order = {type:"flee", place:o.home, until:absT()+60, run:true}; }
+  };
+  // the hunt itself
+  const ro0 = runOrderT;
+  runOrderT = (n, dt) => {
+    const o = n.order;
+    if (o && o.type==="hunt") return wolfHunt(n, o);
+    if (o && o.type==="wolfhome"){ if (insideOf(n)===n.home || absT() > o.until){ n.order = null; return; } goToT(n, ...(sleepSpot(n) || [n.x, n.y])); return; }
+    return ro0(n, dt);
+  };
+  const wolfHunt = (n, o) => {
+    const pl = T.player, now = performance.now();
+    if (absT() > o.until || (hourNow() >= 4 && hourNow() < 20)){ n.order = {type:"wolfhome", until:absT()+120}; return; }
+    if (!o.at || now > o.at){
+      o.at = now + 1800;
+      const plIn = insideOf(pl), dpl = distT(n, pl);
+      if (dpl < 13 && (!plIn || plIn===insideOf(n) || o.revealed)) o.tgt = "player";
+      else if ((o.kills||0) >= 1 && !o.revealed){ n.order = {type:"wolfhome", until:absT()+120}; return; }
+      else {
+        const prey = folk.filter(p=>alive(p) && p!==n && !p.away && !p.wolf && !p.hidden);
+        const out = prey.filter(p=>!insideOf(p)).sort((a,b)=>distT(a,n)-distT(b,n));
+        o.tgt = (out[0] && distT(out[0], n) < 50 ? out[0] : pick(prey.filter(p=>bById(outerOf(p.home)) && bById(outerOf(p.home)).kind==="home"))) ?.id || null;
+      }
+    }
+    if (o.tgt==="player"){
+      if (distT(n, pl) <= 1.3){ if (!n.fight) startFightT(n, pl); return; }
+      goToT(n, pl.x, pl.y, true); return;
+    }
+    const t = byIdT(o.tgt); if (!t || !alive(t)){ o.at = 0; return; }
+    if (distT(n, t) <= 1.3){ wolfKill(t, n); o.kills = (o.kills||0) + 1; o.at = 0; return; }
+    goToT(n, t.x, t.y, true);
+  };
+  // fights with the beast
+  const hit0 = hitT;
+  hitT = (att, vic, forced) => {
+    if (!vic || !vic.wolf || vic.dead) return hit0(att, vic, forced);
+    const before = vic.hp, w = att===T.player ? selectedWeapon() : weaponOfT(att), silver = w && itemT(w).silver;
+    const save = vic.hp; hit0(att, vic, forced); if (vic.dead) return;
+    const d = Math.max(0, save - vic.hp);
+    if (silver){ vic.hp = Math.max(0, vic.hp - d*2); floatT(vic, "SILVER", "#e8f0ff"); }
+    else if (vic.hp > 0) vic.hp = Math.min(vic.maxHp, vic.hp + d*.55);
+    if (!silver && att===T.player && !MX.toldSilver){ MX.toldSilver = true; toast("Your blows close up as you watch. Steel won't do it. Silver might.", "bad", 6); }
+    if (vic.hp <= 0) wolfSlain(vic, att);
+  };
+  const beaten0 = beaten;
+  beaten = (vic, att) => { if (vic.wolf){ if (vic.hp <= 0) wolfSlain(vic, att); else { vic.hp = Math.max(vic.hp, 40); vic.fight = null; att.fight = null; } return; } return beaten0(vic, att); };
+  const kill0 = killPerson;
+  killPerson = (n, by, kopt={}) => {
+    if (n.wolf) return wolfSlain(n, by);
+    if (n.cultHunter && by===T.player){
+      n.dead = true; n.hp = 0; n.fight = null; n.order = null;
+      if (!n.inv.includes("bone sigil")) n.inv.push("bone sigil");
+      T.bodies.push({id:n.id, name:fullT(n), x:n.x, y:n.y, hidden:null, carried:false, diedAt:absT(), discovered:true, foundDay:T.day, inside:buildingAt(n.x,n.y), killer:"selfdefense"});
+      addStain(n.x, n.y); sfx("snap"); T.shake = .4;
+      toast(`${n.first} falls. Under the red hood, a face you know.`, "bad", 6);
+      note("cult", `${n.first} ${n.last} came for you in a red robe. Search the body.`);
+      newsT(`${n.first} ${n.last} was killed in the night by the newcomer, who says ${they(n)} attacked in a red robe with a black knife. The knife was found.`, [], false, "event");
+      for (const o of folk) if (alive(o)) rememberT(o, `${n.first} attacked the newcomer at night wearing a red robe and was killed. Some say it was self-defense. Some say there's a cult.`);
+      return;
+    }
+    return kill0(n, by, kopt);
+  };
+  const wolfSlain = (n, by) => {
+    const w = M().ww; if (n.dead) return;
+    n.dead = true; n.hp = 0; n.fight = null; n.order = null;
+    for (const o of folk) if (o.fight && o.fight.target===n.id) o.fight = null;
+    if (T.player.fight && T.player.fight.target===n.id) T.player.fight = null;
+    T.bodies.push({id:n.id, name:fullT(n), x:n.x, y:n.y, hidden:null, carried:false, diedAt:absT(), discovered:true, foundDay:T.day, inside:buildingAt(n.x,n.y), killer:"hero"});
+    addStain(n.x, n.y); HSFX.howl(); T.shake = .7;
+    n.look = Object.assign({}, n.humanLook || n.look); delete n.look.wolf; n.wolf = false;
+    w.solved = true; w.revealed = true;
+    banner("THE BEAST IS DEAD", `As it dies, the fur falls away. It's ${n.first} ${n.last}.`, false, 8);
+    newsT(`THE BEAST IS DEAD. It was ${n.first} ${n.last}, the ${n.job}, cursed. ${by===T.player ? "The newcomer struck the killing blow." : ""}`, [], false, "event");
+    for (const o of folk) if (alive(o)) rememberT(o, `The beast that killed ${w.kills} of us was ${n.first} ${n.last}. ${by===T.player ? "The newcomer killed it." : "It's dead."}`);
+    note("wolf", `SOLVED: the werewolf was ${n.first} ${n.last}.`);
+    if (by===T.player) addRep(25, "you killed the beast"); else addRep(12, "the beast is dead");
+    for (const id of w.accused){ const p = byIdT(id); if (p && p.jailed && !p.cult){ p.jailed = false; p.away = false; p.awayUntil = 0; } }
+    saveT();
+  };
+  // the town finds the bodies
+  const disc0 = discoverBody;
+  discoverBody = (b, finder, how) => {
+    if (!b.wolf) return disc0(b, finder, how);
+    if (b.discovered) return;
+    b.discovered = true; b.foundBy = finder ? finder.id : null; b.foundDay = T.day; b.foundAt = placeLabelAt(b.x, b.y);
+    const v = byIdT(b.id);
+    if (finder){ sayT(finder, pick(["Oh God… oh God, what did this?","SOMEONE HELP!","It's "+v.first+"… what's left of "+them(v)+"."]), 4); sfx("scream"); }
+    newsT(`TORN APART: ${b.name} was found at ${b.foundAt}, savaged by something with claws. Grey fur in the wounds.`, [], false, "body");
+    banner("TORN APART", `${b.name}, at ${b.foundAt}. Claw marks. Grey fur.`, true, 6);
+    for (const o of folk) if (alive(o)){ rememberT(o, `${v.first} was found torn apart at ${b.foundAt}. Claws. The beast is back.`); o.mood = pick(["terrified","shaken","grim"]); }
+    T.event = {day:T.day, kind:"curfew", text:`Curfew after dark. The beast killed ${v.first}.`}; T.funeral = {day:T.day+1, who:b.id};
+    M().ww.found++;
+    note("wolf", `${v.first} ${v.last} was killed by the beast at ${b.foundAt}. Look for grey fur on the body, and tracks.`);
+    sfx("stinger");
+  };
+  // naming the beast
+  const accuseWolf = (sh, who) => {
+    const w = M().ww, n = byIdT(who); closeTWindows();
+    if (!n) return;
+    if (w.solved){ startTypeT("The beast is dead. Let the dead lie.", sh); return; }
+    if (who===w.id){
+      startTypeT(`*stares at you a long moment* ${n.first}. The fur on the bodies, the tracks… God help me, it fits. Guards!`, sh); logLineT(sh, "n", TD.full);
+      setTimeout(() => {
+        if (!T || !alive(n)) return; closeTalkT();
+        becomeWolf(n, true); w.revealed = true; n.away = false; n.jailed = false;
+        n.order = {type:"hunt", until:absT()+600, revealed:true}; n.order.tgt = "player";
+        banner("THE BEAST", `${n.first}'s body breaks and stretches. Fur bursts through the skin. Fight it. Silver bites.`, true, 7);
+        sfx("stinger"); T.shake = .8;
+        for (const g of folk) if (alive(g) && !g.away && (g.sheriff || g.jobDef.guard) && distT(g, n) < 40){ g.order = {type:"attack", target:n.id, until:absT()+300}; }
+      }, 2500);
+    } else {
+      startTypeT(`${n.first}? *sighs* If you're sure. I'll hold ${them(n)} in the gaol until we know.`, sh); logLineT(sh, "n", TD.full);
+      n.away = true; n.awayUntil = 1e12; n.jailed = true; w.accused.push(n.id);
+      rememberT(n, "The newcomer accused me of being the beast. I was dragged to the gaol in front of everyone.");
+      for (const o of folk) if (alive(o) && relGetT(o.id, n.id) > 30) o.opinion = clamp(o.opinion - 15, -100, 100);
+      newsT(`${n.first} ${n.last} has been taken to the gaol on the newcomer's word, accused of being the beast.`, [], false, "event");
+      note("wolf", `You named ${n.first} ${n.last}. ${cap(they(n))} ${n.pron==="they"?"are":"is"} in the gaol. If the beast kills again, you were wrong.`);
+      addRep(-6, "a heavy accusation");
+    }
+    saveT();
+  };
+  // the wolfsbane test
+  onGaveHook = (n, gave) => {
+    if (gave!=="wolfsbane") return;
+    const w = M().ww;
+    if (n.id===w.id && !w.solved){ w.wolfsbane = n.id; setTimeout(()=>{ if (T.talkId===n.id){ sayT(n, "*recoils, gagging*", 3); } }, 300); note("wolf", `${n.first} ${n.last} reeled back from the wolfsbane like it burned, eyes watering, and threw it away.`); n.inv.splice(n.inv.indexOf("wolfsbane"), 1); }
+  };
+
+  // ---------- Ashcombe House ----------
+  READ_EXTRA["Ashcombe diary"] = () => {
+    const h = M().haunt; if (!h.diary){ h.diary = true; note("house", "Read Lady Ashcombe's diary. The child, Elspeth, didn't die of fever. Something is behind the nursery wall."); }
+    return ["The diary of Lady Margery Ashcombe", "March. Elspeth will not stop singing to the doll. The same three notes. Edmund says she has a devil in her and the priest agrees, God forgive them both.\nApril. She saw the thing in the wood, she says, the tall pale one that stands and watches. She told the whole village. Edmund struck her for it.\nMay. Edmund has had the mason in. He says we will tell them it was the fever. He says no one will look behind the nursery panel. I can hear her. I can still hear her.\nJune. The singing stopped today.\n(The rest is stuck together. On the last page, in a different hand, a child's letters: LET ME OUT. PUT ME IN THE CHURCH.)"];
+  };
+  READ_EXTRA["blood ledger"] = () => {
+    const c = M().cult, mem = c.members.map(byIdT).filter(Boolean);
+    const lines = mem.slice(0, 4).map((n, i) => `${n.first[0]}. ${n.last[0]}., ${["the hand","the tongue","the eye","the knife"][i]} — ${n.job.split(" ")[0]}`);
+    return ["A ledger, stained brown", `THE CHILDREN OF THE HORNED MOON. We meet at the stones when the moon is horned (every odd night), at midnight.\nWhat was given: a lamb. A lamb. A traveller. A lamb. The Fenwick boy.\nThe Circle:\n${lines.join("\n")}\n…and one more, whose name is not written.`];
+  };
+  const restElspeth = () => {
+    const h = M().haunt; h.solved = true;
+    removeItemT("small bones"); removeItemT("porcelain doll");
+    addItemT("silver dagger");
+    banner("SHE CAN REST", "A small cold hand slips into yours, and then it's gone. On the altar, a silver dagger that wasn't there before.", false, 9);
+    note("house", "SOLVED: you laid Elspeth Ashcombe's bones in the church with her doll. The house is quiet. She left you her silver dagger.");
+    newsT("The bones of Elspeth Ashcombe, missing for forty years, were laid to rest at St. Ambrose. The newcomer found her.", [], false, "event");
+    for (const o of folk) if (alive(o)) rememberT(o, "The newcomer found little Elspeth Ashcombe's bones in the walls of Ashcombe House and brought her to the church. They say the house is quiet now.");
+    addRep(20, "you laid Elspeth to rest");
+    try { if (hqInit()){ const t0 = HQ.ac.currentTime; ["D5","F5","A5","D6"].forEach((m,i)=>INST.musicbox(t0 + i*.45, NOTE(m), 1, 1.2)); } } catch {}
+    saveT();
+  };
+  const hauntSecond = () => {
+    const h = M().haunt, pl = T.player;
+    if (pl.inv.includes("porcelain doll") && !h.doll){ h.doll = true; note("house", "Took the porcelain doll from the toy chest in the nursery. It's very cold."); if (isNightT() && HWO.jump){ setTimeout(()=>{ if (typeof hwJumpscare==="function" && !h.solved) hwJumpscare("ghost"); }, 900); } }
+    if (pl.inv.includes("small bones") && !h.bones){ h.bones = true; note("house", "Found small bones behind the nursery panel, wrapped in a nightdress. Bring them to the church."); }
+    if (insideOf(pl)==="ashcombe" && !h.inNow){ h.inNow = true; h.visits++; if (h.visits===1) note("house", "You went into Ashcombe House. It feels like something is standing just behind you."); }
+    if (insideOf(pl)!=="ashcombe") h.inNow = false;
+  };
+  const dl0 = doorLockedT;
+  doorLockedT = (x, y, who) => { if (T && M() && DOOR_AT[x+","+y]==="ashcombe" && who===T.player && (MX.hauntLock||0) > performance.now()) return true; return dl0(x, y, who); };
+
+  // ---------- questlines ----------
+  const HEIR = ["locket","wedding ring","prayer beads","father's knife","carved wooden horse","silver thimble","mother's comb","lucky coin","rosary","seal ring","little bell"];
+  const WANT = ["loaf of bread","smoked ham","tallow candles","flowers","beer","whiskey","apple pie","book","rope","wolfsbane","holy water","lantern","trout","matches"];
+  const WHY = ["for a wake tomorrow","for my mother, who's poorly","to keep the dark out","for an offering","because I promised someone","for the long winter","and don't ask me why"];
+  const TOPIC = ["the night the mill burned","a debt from last winter","what they saw in the Blackwood","the lights at Ashcombe House","the missing sheep","the old feud between our families","the stranger who came through in spring"];
+  const REWARD = ["lantern","wolfsbane","holy water","silver coin purse","smoked ham","lockpick","hunting rifle","bullets"];
+  const specsFor = n => {
+    const others = folk.filter(o=>alive(o) && o!==n && !o.away);
+    const o1 = pick(others), o2 = pick(others.filter(o=>o!==o1)) || o1;
+    const heir = `${n.first}'s ${pick(HEIR)}`;
+    const order = shuffle([["find"],["fetch"],[Math.random()<.5 ? "deliver" : "visit"]]).map(x=>x[0]);
+    return order.map(type => type==="find" ? {type, item:heir} : type==="fetch" ? {type, item:pick(WANT), why:pick(WHY)} : type==="deliver" ? {type, to:o1.id} : {type, to:o2.id, topic:pick(TOPIC)});
+  };
+  const regHeir = it => { if (!TITEMS[it]) TITEMS[it] = ["Someone's lost keepsake. They'll want it back.",0,{keep:1}]; };
+  const questAvail = n => HALLOW && n && n.quest && !n.quest.done && !T.tasks.some(t=>t.giver===n.id && (t.status==="active" || t.status==="ready")) && !n.jailed && !n.wolf;
+  const offerQuest = n => {
+    const q = n.quest; if (!q.specs) q.specs = specsFor(n);
+    const sp = q.specs[q.stage]; if (!sp) return;
+    let f, line;
+    const reward = 10 + q.stage*8 + Math.floor(Math.random()*10);
+    if (sp.type==="find"){
+      regHeir(sp.item);
+      const spots = XP.caches.map(([x,y])=>`${x},${y}`).concat(Object.keys(T.containers).filter(k=>["oldhut","mill","stables","ashcombe"].includes(T.containers[k].bid)));
+      const k = pick(spots), box = T.containers[k]; if (box) box.items.push(sp.item);
+      const [bx, by] = k.split(",").map(Number), where = box && box.bid ? (PLACES[box.bid] ? PLACES[box.bid].label : placeLabelAt(bx, by)) : `the Blackwood (a hollow stump, ${bx < 60 ? "west" : bx > 120 ? "east" : "in the middle"} of the wood)`;
+      f = {type:"fetch", item:sp.item, text:`Find ${sp.item} (lost near ${where}) and bring it back.`};
+      line = `*quietly* I lost my ${sp.item.split("'s ")[1]} out by ${where}. I can't go back there. Not after dark, not ever. Would you?`;
+    } else if (sp.type==="fetch"){
+      f = {type:"fetch", item:sp.item, text:`Bring ${n.first} ${artT(sp.item)} ${sp.item}.`};
+      line = `I need ${artT(sp.item)} ${sp.item}, ${sp.why}. Bring me one?`;
+    } else if (sp.type==="deliver"){
+      const t = byIdT(sp.to) || pick(folk.filter(o=>alive(o) && o!==n));
+      if (!canAddT(T.player.inv, "letter")){ startTypeT("Your pockets are full. Come back with room.", n); return; }
+      addItemT("letter", true);
+      f = {type:"deliver", item:"letter", to:t.id, text:`Carry ${n.first}'s sealed letter to ${t.first} ${t.last}.`, handed:true};
+      line = `*presses a sealed letter into your hand* For ${t.first} ${t.last}. Into ${their(t)} hands, no one else's. Don't open it.`;
+    } else {
+      const t = byIdT(sp.to) || pick(folk.filter(o=>alive(o) && o!==n));
+      f = {type:"visit", to:t.id, text:`Talk to ${t.first} ${t.last} about ${sp.topic}, for ${n.first}.`};
+      line = `Go and see ${t.first} ${t.last}. Ask about ${sp.topic}. ${cap(they(t))}'ll know what I mean.`;
+    }
+    const task = Object.assign({id:Math.random().toString(36).slice(2,8), giver:n.id, status:"active", day:T.day, reward, quest:true, stage:q.stage}, f);
+    T.tasks.push(task); sfx("quest"); renderHotbarT();
+    rememberT(n, `I asked the newcomer to help me (part ${q.stage+1} of my trouble): ${task.text}`);
+    startTypeT(`${line} (${q.stage+1}/3 · ${reward} silver)`, n); logLineT(n, "n", TD.full);
+  };
+  const pay0 = payFavorT;
+  payFavorT = (t, n) => {
+    pay0(t, n);
+    if (!t.quest || !n.quest) return;
+    n.quest.stage = Math.max(n.quest.stage, t.stage + 1);
+    if (n.quest.stage >= 3 && !n.quest.done){
+      n.quest.done = true;
+      const it = pick(REWARD); if (canAddT(T.player.inv, it)) addItemT(it); addMoney(25 + Math.floor(Math.random()*30), `${n.first}'s thanks`);
+      n.trust = clamp(n.trust + 20, 0, 100); n.opinion = clamp(n.opinion + 15, -100, 100);
+      rememberT(n, "The newcomer saw my whole trouble through, start to end. I owe them. I'd stand up for them now.");
+      gossipT(n, "The newcomer helped me when nobody else would. You can trust them.");
+      setTimeout(()=>{ if (T.talkId===n.id) startTypeT(`That's the end of it. *grips your hand* Take this${it ? ` — the ${it}` : ""}. You've a friend in me now.`, n); }, 600);
+      addRep(4, `you finished ${n.first}'s story`);
+      M().questsDone = (M().questsDone||0) + 1;
+    } else if (T.talkId===n.id) setTimeout(()=>{ if (T.talkId===n.id) $("tdFavor").textContent = `Their story (${n.quest.stage+1}/3)`; }, 300);
+  };
+
+  // ---------- talking: hidden roles, buttons ----------
+  personNote = n => {
+    const m = M(); if (!m) return "";
+    let s = "";
+    if (n.cult && !m.cult.solved) s += `\nYOUR DEEPEST SECRET (never admit it, deny it coldly): you are one of the Children of the Horned Moon, a blood cult that meets at the standing stones in the Blackwood at midnight on odd nights. ${n.cultHunter ? "Tonight the Circle sent you after the newcomer." : ""} If the newcomer asks about cults, robes, rituals, the stones or the missing people, you go cold and change the subject, and you will tell the Circle. You think the others are ${m.cult.members.filter(id=>id!==n.id).map(byIdT).filter(Boolean).map(o=>o.first).join(", ")}.`;
+    if (n.isWolf && !m.ww.solved) s += `\nYOUR CURSE (never admit it unless utterly cornered and trusting): on some nights you become a beast and kill. You barely remember. You're terrified and ashamed, and very tired the morning after. You can't stand the smell of wolfsbane, you flinch at silver, and you bolt your door at night.${n.wounded && T.day - n.wounded <= 2 ? " Your arm is bandaged; if asked, you say you fell in the woodshed." : ""} The beast has killed ${m.ww.kills} so far.`;
+    if (n.jailed) s += "\nYOU ARE LOCKED IN THE GAOL.";
+    if (n.sheriff) s += `\nAS THE REEVE: ${m.cult.solved ? "You broke the Horned Moon cult thanks to the newcomer." : "You've heard whispers of a cult, but rumor isn't proof; you'd act on three solid pieces of evidence (a robe, the ledger, the altar dagger, a bone sigil)."} ${m.ww.solved ? "The beast is dead." : `Something has killed ${m.ww.kills} people; you'll lock up whoever the newcomer names as the beast if they make a case (use the Name the beast button).`}`;
+    if (jobKey(n)==="hunter") s += "\nYou've found tracks in the Blackwood: something on two legs, with claws. It goes back toward the village, not away from it.";
+    if (jobKey(n).startsWith("wise woman")) s += "\nYou know the old cures: wolfsbane makes the wolf-touched gag; silver wounds what steel can't; the dead child of Ashcombe House wants to be buried in holy ground.";
+    if (n.age > 60) s += "\nYou remember Elspeth Ashcombe, the little girl at Ashcombe House forty years ago, who 'died of fever' and was never buried. Lord Edmund Ashcombe was a cruel man.";
+    if (n.quest && !n.quest.done) s += `\nYOUR OWN TROUBLE (you'd ask a trusted newcomer for help with it, in three parts; you're on part ${n.quest.stage+1}).`;
+    s += `\nTHE NEWCOMER'S STANDING IN THE VILLAGE: respect ${Math.round(m.rep)}/100.${m.rep >= 40 ? " People speak well of them." : ""}`;
+    return s;
+  };
+  const CULT_WORDS = /\b(cult|ritual|robe|sigil|horned moon|standing stones|stone circle|sacrifice|the circle)\b/i;
+  const WOLF_WORDS = /\b(werewolf|beast|wolf|claws?|fur)\b/i;
+  onSaidHook = (n, said) => {
+    const m = M();
+    if (CULT_WORDS.test(said) && !m.cult.solved){
+      if (n.cult){ m.cult.heat += 20; rememberT(n, `The newcomer asked about the Circle: "${said.slice(0,100)}". The others must know.`); }
+      else { m.cult.heat += 4; if (Math.random() < .3) for (const id of m.cult.members){ const c = byIdT(id); if (c && relGetT(c.id, n.id) > 20) rememberT(c, `${n.first} says the newcomer has been asking about cults.`); } }
+    }
+  };
+  // buttons in the talk window
+  const dRow = $("tdLeave").parentElement;
+  const mkBtn = (id, label) => { const b = Object.assign(document.createElement("button"), {className:"pbtn", id, type:"button", textContent:label}); b.hidden = true; dRow.insertBefore(b, $("tdLeave")); return b; };
+  const evBtn = mkBtn("tdEvidence", "Show evidence"), wolfBtn = mkBtn("tdBeast", "Name the beast");
+  evBtn.addEventListener("click", () => { const n = byIdT(T.talkId); if (n && !TD.busy) presentEvidence(n); });
+  wolfBtn.addEventListener("click", () => { const n = byIdT(T.talkId); if (n && !TD.busy) openPicker(n); });
+  $("tdFavor").addEventListener("click", e => { const n = byIdT(T.talkId); if (!n || TD.busy) return; if (questAvail(n)){ e.stopImmediatePropagation(); offerQuest(n); } }, true);
+  onTalkOpenHook = n => {
+    const m = M(); if (!m) return;
+    evBtn.hidden = !(n.sheriff && !m.cult.solved && CULT_ITEMS.some(it=>T.player.inv.includes(it)));
+    wolfBtn.hidden = !(n.sheriff && !m.ww.solved && m.ww.kills > 0);
+    $("tdFavor").textContent = questAvail(n) ? `Their story (${n.quest.stage+1}/3)` : "Favor?";
+  };
+  // a small window for naming someone
+  const pick0 = document.createElement("div"); pick0.className = "win"; pick0.id = "mxPick"; pick0.hidden = true;
+  pick0.innerHTML = `<div class="wbox" style="width:min(620px,100%)"><div class="whead"><h2>Name the beast</h2><button class="pbtn" data-tclose type="button">Close</button></div><div class="wbody"><p class="note">Who becomes the beast? Name the wrong person and an innocent goes to the gaol.</p><div id="mxPickList" style="display:flex;flex-wrap:wrap;gap:6px"></div></div></div>`;
+  $("game").append(pick0); TWINS.push("mxPick");
+  pick0.querySelector("[data-tclose]").addEventListener("click", () => { pick0.hidden = true; });
+  const openPicker = sh => {
+    const list = $("mxPickList"); list.textContent = "";
+    for (const p of folk.filter(o=>alive(o) && o.met && !o.sheriff && !o.jailed)){
+      const b = Object.assign(document.createElement("button"), {className:"pbtn", type:"button", textContent:`${p.first} ${p.last}`});
+      b.title = p.job; b.addEventListener("click", () => { pick0.hidden = true; accuseWolf(sh, p.id); });
+      list.append(b);
+    }
+    if (!list.children.length) list.append("You haven't met anyone yet.");
+    pick0.hidden = false;
+  };
+
+  // ---------- things to do with your hands ----------
+  EXTRA_INTERACT = (fx, fy, c, here, k) => {
+    const m = M(), pl = T.player; if (!m) return null;
+    if (c==="4" && here==="ashcombe" && !m.haunt.panel){
+      if (!m.haunt.diary) return {kind:"knock", label:"Knock on the wall panel", run:()=>{ sfx("knock"); toast("Hollow. And then, from inside, something knocks back.", "bad", 4); HSFX.knock(); }};
+      return {kind:"pry", key:"pry"+k, label:"Hold: pry open the nursery panel", hold:true, secs:4, act:"picking", sound:"pick", done:()=>{ m.haunt.panel = true; T.containers[k] = {name:"Space behind the panel", items:["small bones"], loot:[], home:null, bid:"ashcombe"}; HSFX.whisper(); toast("The panel gives. Cold air breathes out of the dark.", "bad", 5); }};
+    }
+    if (c==="+" && here==="church" && pl.inv.includes("small bones") && !m.haunt.solved){
+      const ok = pl.inv.includes("porcelain doll") && m.haunt.diary;
+      if (!ok) return {kind:"rest", label:"Lay the bones on the altar", run:()=>toast(m.haunt.diary ? "She won't rest without her doll." : "You don't know who these bones belong to yet.", "", 4)};
+      return {kind:"rest", key:"rest", label:"Hold: lay Elspeth to rest, with her doll", hold:true, secs:5, act:"praying", sound:"bell", done:restElspeth};
+    }
+    if (c==="9") return {kind:"look", label:"Look at the hanging tree", run:()=>toast(pick(["Three ropes. One of them still holds something wrapped in sacking. It turns slowly, though there's no wind.","Names are carved into the bark, dozens, the oldest grown over.","Somebody has left fresh flowers at the roots."]), "", 5)};
+    if (c==="5") return {kind:"look", label:"Touch the standing stone", run:()=>{ toast(pick(["The stone is warm, like skin.","Horned moons are cut into the stone, and something dark has run down the grooves.","Your hand comes away sticky."]), "", 4); if (!m.cult.solved) note("cult", "The standing stones in the Blackwood are carved with horned moons. Someone uses this place."); }};
+    if (c==="7" && Math.hypot(fx-XP.den[0], fy-XP.den[1]) < 7) return {kind:"look", label:"Search the den", run:()=>{ toast("Bones. Cracked for the marrow. Some of them aren't animal bones.", "bad", 5); note("wolf", "The wolf's den in the Blackwood is full of bones, some of them human. Whatever lairs here isn't a normal wolf."); }};
+    return null;
+  };
+
+  // ---------- clocks ----------
+  onHourHook = h => {
+    if (!M()) return;
+    ritualTick(h); wolfHour(h);
+  };
+  let lastPrint = null;
+  onSecondHook = () => {
+    if (!M()) T.myst = fresh();
+    for (const n of folk) if (n.quest && n.quest.specs) for (const sp of n.quest.specs) if (sp.type==="find") regHeir(sp.item);
+    cultSecond(); hauntSecond();
+    // tracks: the beast leaves bloody prints from the kill to its door
+    const w = wolfP();
+    // nothing distracts the beast: no reporting bodies, no running home, no small talk
+    if (w && w.wolf && alive(w) && !w.fight && (!w.order || !["hunt","wolfhome"].includes(w.order.type))){
+      w.order = {type:"hunt", until:absT() + (M().ww.revealed ? 600 : 200), revealed:!!M().ww.revealed, kills:M().ww.revealed ? 0 : 1};
+      if (M().ww.revealed) w.order.tgt = "player";
+      w.scene = null; w.talkingToPlayer = false;
+    }
+    if (w && w.wolf && alive(w)){ const key = w.x+","+w.y; if (key!==lastPrint){ lastPrint = key; M().ww.prints.push({x:w.x, y:w.y, d:w.dir.slice(), day:T.day, t:absT()}); if (M().ww.prints.length > 500) M().ww.prints.splice(0, 100); } }
+    const pr = M().ww.prints; if (pr.length && absT() - pr[0].t > 1440*1.5){ const i = pr.findIndex(p=>absT() - p.t <= 1440*1.5); pr.splice(0, i < 0 ? pr.length : i); }
+    // first time you stand on fresh tracks
+    if (!M().ww.solved && pr.some(p=>p.x===T.player.x && p.y===T.player.y && absT()-p.t < 1200) && !M().ww.toldPrints){ M().ww.toldPrints = true; note("wolf", "Big clawed prints in blood, walking on two legs. Follow them: they lead somewhere."); }
+    // you follow the tracks to a door
+    for (const p of pr){ if (absT() - p.t > 1200) continue; const b = buildingAt(p.x, p.y); if (b && Math.hypot(T.player.x - p.x, T.player.y - p.y) < 2 && !M().ww.solved){ const bd = bById(outerOf(b)); const who = folk.filter(o=>o.home===b && !o.dead).map(o=>o.first).join(" and "); if (bd && who) note("wolf", `The bloody prints go right inside ${bd.kind==="home" ? `the house where ${who} live${who.includes(" and ") ? "" : "s"}` : bd.name}.`); break; } }
+  };
+
+  // ---------- HUD: respect ----------
+  const hud0 = renderHudT;
+  renderHudT = () => {
+    hud0();
+    const m = M(); if (!m) return;
+    let el = $("mxRep"); if (!el){ el = Object.assign(document.createElement("div"), {id:"mxRep", className:"px money"}); $("tMoney").after(el); }
+    el.textContent = `Respect ${Math.round(m.rep)}`;
+    $("tMoney").textContent = `${Math.round(T.money)} silver`;
+  };
+
+  // ---------- journal ----------
+  JOURNAL_EXTRA.push({id:"myst", label:"Mysteries", render(body, H, P){
+    const m = M(); if (!m){ body.append(P("Nothing yet.")); return; }
+    body.append(H(`Respect in Millbrook: ${Math.round(m.rep)}/100`));
+    const sec = (title, kind, status, hint) => {
+      const h = document.createElement("h3"); h.textContent = `${title} · ${status}`; h.style.margin = "10px 0 4px"; body.append(h);
+      const ns = m.notes.filter(x=>x.kind===kind);
+      if (!ns.length) body.append(P(hint)); else for (const x of ns) body.append(P(`· ${x.text}`));
+    };
+    sec("The Horned Moon", "cult", m.cult.solved ? "SOLVED" : `${CULT_ITEMS.filter(it=>m.cult.got[it]).length}/4 pieces found`, "People go missing. Lights in the Blackwood on odd nights. Ask around, carefully. Show the Reeve three pieces of evidence.");
+    sec("Ashcombe House", "house", m.haunt.solved ? "SOLVED" : "unsolved", "The big house at the Blackwood's edge, east past the last homes. Nobody goes in. Find out why.");
+    sec("The Beast", "wolf", m.ww.solved ? "SOLVED" : `${m.ww.kills} dead`, "Every third night, something walks out of the village on two legs. Watch who's missing at night, follow tracks, try wolfsbane. Name them to the Reeve.");
+    const h = document.createElement("h3"); h.textContent = "Stories you're helping with"; h.style.margin = "12px 0 4px"; body.append(h);
+    const qs = folk.filter(n=>n.quest && (n.quest.stage > 0 || T.tasks.some(t=>t.giver===n.id && t.quest)));
+    if (!qs.length) body.append(P("Everyone has a story. Talk to people and press \"Their story\" to help."));
+    for (const n of qs){ const t = T.tasks.find(x=>x.giver===n.id && x.quest && x.status==="active"); body.append(P(`${n.first} ${n.last}: ${n.quest.done ? "done" : `part ${n.quest.stage+1}/3`}${t ? ` · ${t.text}` : ""}`)); }
+  }});
+  // a word to the wise, once you've settled in
+  const begin0 = begin;
+  begin = () => { begin0(); setTimeout(() => { if (TOWN.active && T && !T.ending) toast("Millbrook keeps worse secrets than yours: a cult, a house nobody enters, and something that walks on two legs every third night. Your journal (J) has a Mysteries page.", "", 10); }, 26000); };
+  window.__myst = {get M(){ return T && T.myst; }, accuseWolf, presentEvidence, becomeWolf, wolfKill, restElspeth, offerQuest, ritualTick, wolfHour};
+}
+
+
 // ===== town3d-src/16-music.js =====
 // Hallowmere's score: composed, not generated. A small synth rig (harpsichord, lute, recorder, fiddle, choir,
 // strings, brass, bells, music box, drums) played through reverb, delay and a compressor, so it sounds like
@@ -5466,7 +6355,9 @@ function hwPaintGround(){
     const ch = tmap[y][x], X = x*TS, Y = y*TS, bid = buildingAt(x,y);
     if (bid || ch === "D"){ const fl = bid ? (bById(outerOf(bid)) || {}).floor || "." : "."; floorOf(X, Y, x, y, ".,:y".includes(ch) ? ch : (bid==="roomA"||bid==="roomB"||bid==="roomC" ? ":" : fl), bid); if (bid && (tileT(x,y-1)==="#" || tileT(x,y-1)==="x")) F(X, Y, TS, 4, "rgba(5,4,8,.4)"); continue; }
     switch (ch){
-      case "g": case "G": case "M": case "V": case "f": case "P": grass(X, Y, x, y, inCem(x,y)); break;
+      case "g": case "G": case "M": case "V": case "f": case "P": case "4": case "5": case "9": grass(X, Y, x, y, inCem(x,y) || y >= 86); if (y >= 86 && rnd(x,y,60) > .7) F(X + ((rnd(x,y,61)*12)|0), Y + ((rnd(x,y,62)*12)|0), 3, 2, "#1e1a14"); break;
+      case "6": case "7": mud(X, Y, x, y, "#2a241c"); break;
+      case "8": cobble(X, Y, x, y, "#5a544a", 4); break;
       case "t": case "T": grass(X, Y, x, y, true); for (let i=0;i<4;i++) F(X + ((rnd(x,y,i+50)*14)|0), Y + ((rnd(x,y,i+51)*14)|0), 3, 1, LEAF[i%5]); break;
       case "r": cobble(X, Y, x, y, "#4a443c", 4); { const ry = y % 5; if (ry===1 || ry===3) for (let i=0;i<TS;i+=2) F(X+i, Y+7, 2, 2, "rgba(20,16,12,.5)"); } break;
       case "s": case "l": flag(X, Y, x, y, "#5a564c"); break;
@@ -5995,7 +6886,7 @@ function updateCamera3D(dt){
     const look = new THREE.Vector3(c.x - Math.sin(c.yaw)*Math.cos(c.fpPitch), 1.55 + Math.sin(c.fpPitch), c.z - Math.cos(c.yaw)*Math.cos(c.fpPitch));
     cam.lookAt(look);
   } else {
-    const pitch = inside ? Math.max(c.pitch, 1.0) : c.pitch, dist = inside ? Math.min(c.dist, 9) : c.dist;
+    const pitch = Math.max(inside ? Math.max(c.pitch, 1.0) : c.pitch, T3.minPitch || 0), dist = inside ? Math.min(c.dist, 9) : Math.min(c.dist, T3.maxDist || 99);
     const want = new THREE.Vector3(c.x + Math.sin(c.yaw)*Math.cos(pitch)*dist, 1 + Math.sin(pitch)*dist, c.z + Math.cos(c.yaw)*Math.cos(pitch)*dist);
     cam.position.lerp(want, Math.min(1, dt*8)); cam.position.x += jx; cam.position.y += jy;
     cam.lookAt(c.x, 1, c.z);
@@ -6041,7 +6932,7 @@ function renderTown(dt){
   T3.glowMesh && (T3.glowMesh.material.color.set(night ? "#ffffff" : "#d8d8c8"));
   const [ppx, ppy] = rposT(pl);
   T3.pLight.position.set(ppx+.5, 1.6, ppy+.5); T3.pLight.intensity = night ? .7 : 0;
-  const hasLight = pl.inv.includes("flashlight") && night;
+  const hasLight = (pl.inv.includes("flashlight") || pl.inv.includes("lantern")) && (night || (T3.darkInside && inside));
   T3.flash.intensity = hasLight ? 2.2 : 0;
   if (hasLight){ T3.flash.position.set(ppx+.5, 1.4, ppy+.5); T3.flash.target.position.set(ppx+.5+pl.dir[0]*6, 0, ppy+.5+pl.dir[1]*6); }
   T3.room.intensity = outer && night ? 1.1 : 0;
@@ -6062,6 +6953,7 @@ function renderTown(dt){
   for (const c of T3.chars.values()) c.used = false;
   for (const n of folk){
     if (n.dead || n.away) continue;
+    { const [qx, qy] = rposT(n); if (Math.hypot(qx + .5 - T3.cam.x, qy + .5 - T3.cam.z) > (T3.cullDist || 1e9)) continue; }
     const L = n.look, c = charFor(n.id, L);
     const inBed = n.asleep && tileT(n.x,n.y)==="B";
     poseChar(c, n, dt, {hide:n.hidden, lie:inBed || n.asleep, y:inBed ? .58 : .1, talk:(T.talkId===n.id && !TD.done) || (n.bubble && n.scene), fight:!!n.fight, hit:n.hitT && now - n.hitT < 130});
@@ -6216,7 +7108,23 @@ function hwStyle(b){
     arcade:{wall:"stone", base:"#3e3a36", roof:"slate", slate:"#2a2c30"},
     church:{wall:"stone", base:"#6a6660", roof:"slate", slate:"#363a42"},
     garage:{wall:"stone", base:"#4a4640", roof:"slate", slate:"#2e2e30", chimney:true, forge:true},
-    barn:{wall:"planks", base:"#4a2e22", roof:"thatch"}
+    barn:{wall:"planks", base:"#4a2e22", roof:"thatch"},
+    mill:{wall:"timber", plaster:"#b8a888", beam:"#2a1a10", roof:"thatch"},
+    stables:{wall:"planks", base:"#4a3424", roof:"thatch"},
+    bakehouse:{wall:"timber", plaster:"#c8b898", beam:"#2a1a10", roof:"thatch", chimney:true},
+    butcher:{wall:"timber", plaster:"#b0a088", beam:"#3a1410", roof:"slate", slate:"#3a3a40"},
+    chandler:{wall:"timber", plaster:"#bcae90", beam:"#24180f", roof:"thatch", chimney:true},
+    tailor:{wall:"timber", plaster:"#c4b8a0", beam:"#2a1a10", roof:"slate", slate:"#3e4048"},
+    blacklamb:{wall:"timber", plaster:"#7a6e5a", beam:"#140c08", roof:"thatch", chimney:true},
+    watchhouse:{wall:"stone", base:"#5a564e", roof:"slate", slate:"#2e3036"},
+    manor:{wall:"stone", base:"#6e685c", roof:"slate", slate:"#30343c", chimney:true},
+    cobbler:{wall:"timber", plaster:"#b4a68a", beam:"#24180f", roof:"thatch"},
+    cooper:{wall:"planks", base:"#4e3828", roof:"thatch"},
+    potter:{wall:"stone", base:"#6a5e50", roof:"thatch", chimney:true},
+    oldhut:{wall:"planks", base:"#3a2a1e", roof:"thatch"},
+    wisehut:{wall:"planks", base:"#3a3424", roof:"thatch", chimney:true},
+    lodge:{wall:"planks", base:"#4a3020", roof:"thatch", chimney:true},
+    ashcombe:{wall:"stone", base:"#3e3a38", roof:"slate", slate:"#1e2024", chimney:true, haunted:true}
   };
   return S[b.id] || {wall:"timber", plaster:"#b0a088", beam:"#2a1a10", roof:"thatch"};
 }
@@ -6233,7 +7141,7 @@ function hwBuildWorld3D(){
   hGeo();
   if (T3.world){ T3.scene.remove(T3.world); T3.world.traverse(o=>{ if (o.geometry && !Object.values(HG).includes(o.geometry)) o.geometry.dispose(); }); }
   const W = new THREE.Group(); T3.world = W; T3.scene.add(W);
-  T3.hw = {fires:[], jacks:[], smokes:[], scarecrows:[], noose:null, graves:[], perches:[], cem:[80,34,100,50]};
+  T3.hw = {fires:[], jacks:[], smokes:[], scarecrows:[], noose:null, graves:[], perches:[], cem:[80,34,100,50], hauntWins:[], hangs:[], stalls:[]};
   // ground
   const gcv = hwPaintGround(), tex = hTex(gcv); tex.anisotropy = 8;
   T3.groundTex = tex;
@@ -6268,7 +7176,8 @@ function hwBuildWorld3D(){
           const ox = o[0]*.56, oz = o[1]*.56, ax = alongX ? 1 : 0, az = alongX ? 0 : 1;
           bx(cx + ox*1.05, .9, cz + oz*1.05, alongX ? 1.04 : .14, .07, alongX ? .14 : 1.04, "#3a2a1c");
           for (const sd of [-1, 1]){ const sx = cx + ax*sd*.66 + ox, sz = cz + az*sd*.66 + oz; bx(sx, .92, sz, alongX ? .3 : .05, .96, alongX ? .05 : .3, rr(7) > .5 ? "#2e3a2c" : "#3a2a1e", 0, 0, rr(8) > .8 ? sd*.06 : 0); }
-          if (rr(9) > .62) candle(cx + ox*.7, .97, cz + oz*.7);
+          if (b && b.id==="ashcombe"){ for (const k of [-1, 1]) bx(cx + ox*1.1, 1.4 + k*.18, cz + oz*1.1, alongX ? 1.1 : .06, .1, alongX ? .06 : 1.1, "#2a2018", 0, 0, alongX ? k*.25 : 0); T3.hw.hauntWins.push([cx + ox*.2, cz + oz*.2, Math.atan2(o[0], o[1])]); }
+          else if (rr(9) > .62) candle(cx + ox*.7, .97, cz + oz*.7);
           else if (rr(9) < .16) jack(cx + ox*.9, cz + oz*.9, .55, Math.atan2(o[0], o[1]), .94);
         }
         break;
@@ -6364,6 +7273,27 @@ function hwBuildWorld3D(){
         break;
       }
       case "v": bx(cx, 0, cz, .8, .2, .9, "#2a1e14"); bx(cx, .2, cz, .6, .08, .7, "#33261a"); break;
+      case "4": if (b){ bx(cx, 0, cz, .9, 1.2, .5, "#2a1c12"); bx(cx, .3, cz + .26, .6, .7, .02, "#3a2818"); }
+        else { put("cyl", cx, .35, cz, .8, .7, .8, "#3a2a1c"); put("cyl", cx, .71, cz, .62, .02, .62, "#120c08"); for (let i=0;i<4;i++) bx(cx + Math.cos(i*1.6)*.42, 0, cz + Math.sin(i*1.6)*.42, .1, .2, .1, "#3a2a1c", .5, i*1.6, 0); put("ball", cx + .3, .05, cz + .35, .25, .12, .2, "#4a5a2a"); }
+        break;
+      case "5": { const h = 2.1 + rr(1)*.9; bx(cx, 0, cz, .75, h, .5, hJit("#5a5a54", rr(2), .25), (rr(3)-.5)*.12, rr(4)*3, (rr(5)-.5)*.12); bx(cx, h*.3, cz, .78, .12, .53, "#3a4a2a", 0, rr(4)*3, 0); break; }
+      case "6": { bx(cx - .45, 0, cz, .3, .6, .7, "#4a4844"); bx(cx + .45, 0, cz, .3, .6, .7, "#4a4844"); bx(cx, .6, cz, 1.4, .18, .9, "#5a5650"); bx(cx, .78, cz, 1.0, .015, .6, "#3a0606"); for (const [a, b2] of [[-.6,-.4],[.6,-.4],[-.6,.4],[.6,.4]]) candle(cx + a, .78, cz + b2, "night"); put("ball", cx + .2, .86, cz, .26, .2, .3, "#d8d0b8"); break; }
+      case "7": put("ball", cx + (rr(1)-.5)*.3, .35, cz + (rr(2)-.5)*.3, 1.1 + rr(3)*.5, .8 + rr(4)*.9, 1.0 + rr(5)*.5, hJit("#4a4844", rr(6), .3)); break;
+      case "8": {
+        for (const [a, b2] of [[-.45,-.4],[.45,-.4],[-.45,.4],[.45,.4]]) bx(cx + a, 0, cz + b2, .07, 1.9, .07, "#3a2616");
+        bx(cx, .8, cz, 1.0, .08, .9, "#4a3020"); bx(cx, 0, cz + .4, 1.0, .8, .06, "#3a2616");
+        put("wedge", cx, 1.9, cz, 1.2, .35, 1.1, ["#6a1a1a","#2a3a5a","#5a4a1a","#2a4a2a"][(x/4|0)%4]);
+        const goods = [["#c86a18","#a0581c"],["#8a8a7a","#6a7a8a"],["#d8c070","#c8a040"],["#7a2a2a","#5a1a1a"]][(x/4|0)%4];
+        for (let i=0;i<5;i++) put("ball", cx - .36 + i*.18, .92, cz + (i%2)*.15 - .1, .16, .12, .16, goods[i%2]);
+        T3.hw.perches.push([cx, 2.27, cz]); break;
+      }
+      case "9": {
+        put("cyl", cx, 1.9, cz, .7, 3.8, .7, "#221a14"); put("cyl", cx, .2, cz, 1.2, .4, 1.2, "#1e1610");
+        const arms = [[0, 1.0, 3.0], [2.1, .9, 3.2], [4.2, 1.1, 2.8]];
+        for (const [a, th, len] of arms){ const [rx, ry] = tilt(Math.cos(a), Math.sin(a), th); bx(cx, 3.0, cz, .2, len, .2, "#221a14", rx, ry, 0); bx(cx + Math.cos(a)*1.8, 3.9, cz + Math.sin(a)*1.8, .1, 1.4, .1, "#1e1610", ...tilt(Math.cos(a+.8), Math.sin(a+.8), .6)); }
+        for (const [a, th, len] of arms){ const ex = cx + Math.cos(a)*Math.sin(th)*len*.75, ez = cz + Math.sin(a)*Math.sin(th)*len*.75, ey = 3.0 + Math.cos(th)*len*.75; T3.hw.hangs.push([ex, ey, ez, a]); }
+        break;
+      }
       case "U": {
         for (let i=0;i<3;i++) bx(x+.2+i*.3, 0, cz + (rr(i)-.5)*.3, .05, .6 + rr(i)*.5, .05, rr(i+3)>.4 ? "#8a7a4a" : "#6a5a34", (rr(i+5)-.5)*.5, 0, (rr(i+6)-.5)*.5);
         if (rr(9) > .6){ put("ball", cx + (rr(10)-.5)*.4, .14, cz + (rr(11)-.5)*.4, .42, .28, .42, rr(12) > .3 ? "#b8581a" : "#6a5a2a"); bx(cx, .26, cz, .03, .1, .03, "#3a4a20"); }
@@ -6496,13 +7426,46 @@ function hwBuildWorld3D(){
     W.add(g); T3.hw.scarecrows.push({g, head, x:sx + .5, z:sy + .5, yaw:0});
     T3.hw.perches.push([sx + .5 + Math.cos(g.rotation.y)*.7, 1.68, sy + .5 - Math.sin(g.rotation.y)*.7]);
   }
+  // the mill wheel turns in the river
+  const mill = BUILDINGS.find(q=>q.id==="mill");
+  if (mill){
+    const wg = new THREE.Group(); wg.position.set(mill.x0 - .6, 1.4, (mill.y0 + mill.y1)/2 + .5);
+    const parts = [{geo:"disc", w:2.6, h:2.6, d:.12, col:"#3a2a1c", x:0, y:0, z:.35, ry:Math.PI/2}, {geo:"disc", w:2.6, h:2.6, d:.12, col:"#3a2a1c", x:0, y:0, z:-.35, ry:Math.PI/2}];
+    for (let k=0;k<10;k++){ const a = k/10*Math.PI*2; parts.push({w:.08, h:.5, d:.8, col:"#4a3424", x:0, y:Math.cos(a)*1.3, z:Math.sin(a)*1.3, rx:-a}); }
+    parts.push({geo:"cyl", w:.3, h:1.2, d:.3, col:"#2a1c12", x:0, y:0, z:0, rx:Math.PI/2});
+    const m = new THREE.Mesh(mergeParts(parts), vcMat()); m.castShadow = true; wg.add(m); W.add(wg); T3.hw.millWheel = m;
+    m.rotation.order = "YXZ";
+  }
+  // things hanging from the hanging tree
+  T3.hw.hangGroups = [];
+  T3.hw.hangs.forEach(([hx, hy, hz], i) => {
+    const g = new THREE.Group(); g.position.set(hx, hy, hz);
+    const parts = [{w:.03, h:1.2, d:.03, col:"#8a7a5a", x:0, y:-.6, z:0}];
+    if (i===0) parts.push({w:.34, h:1.3, d:.28, col:"#5a4a30", x:0, y:-1.85, z:0}, {w:.26, h:.3, d:.26, col:"#6a5a3a", x:0, y:-1.1, z:0}, {w:.36, h:.04, d:.3, col:"#3a2a1a", x:0, y:-1.25, z:0});
+    else parts.push({geo:"cyl", w:.24, h:.04, d:.24, col:"#8a7a5a", x:0, y:-1.24, z:0});
+    const m = new THREE.Mesh(mergeParts(parts), vcMat()); m.castShadow = true; g.add(m); W.add(g); T3.hw.hangGroups.push(g);
+  });
   // instanced meshes
-  const addInst = (list, geo, material, shadow=true) => {
-    if (!list.length) return null;
-    const m = new THREE.InstancedMesh(geo, material, list.length), o = new THREE.Object3D(), col = new THREE.Color();
-    list.forEach((p,i)=>{ o.position.set(p[0],p[1],p[2]); o.scale.set(p[3],p[4],p[5]); o.rotation.set(p[7]||0, p[8]||0, p[9]||0, "YXZ"); o.updateMatrix(); m.setMatrixAt(i, o.matrix); if (p[6]){ col.set(p[6]); m.setColorAt(i, col); } });
+  // One instanced mesh per list, or per 24-tile chunk of a list, each with a real bounding sphere so the
+  // renderer can skip whatever is off screen or past the fog.
+  const instMesh = (items, geo, material, shadow) => {
+    let x0 = 1e9, y0 = 1e9, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9;
+    for (const p of items){ const r = Math.max(p[3], p[5]) * .75 + p[4]; x0 = Math.min(x0, p[0]-r); x1 = Math.max(x1, p[0]+r); z0 = Math.min(z0, p[2]-r); z1 = Math.max(z1, p[2]+r); y0 = Math.min(y0, p[1]-1); y1 = Math.max(y1, p[1]+p[4]+1); }
+    const g = geo.clone(); g.boundingSphere = new THREE.Sphere(new THREE.Vector3((x0+x1)/2, (y0+y1)/2, (z0+z1)/2), Math.hypot(x1-x0, y1-y0, z1-z0)/2 + 1);
+    const m = new THREE.InstancedMesh(g, material, items.length), o = new THREE.Object3D(), col = new THREE.Color();
+    items.forEach((p,i)=>{ o.position.set(p[0],p[1],p[2]); o.scale.set(p[3],p[4],p[5]); o.rotation.set(p[7]||0, p[8]||0, p[9]||0, "YXZ"); o.updateMatrix(); m.setMatrixAt(i, o.matrix); if (p[6]){ col.set(p[6]); m.setColorAt(i, col); } });
     m.castShadow = shadow; m.receiveShadow = true; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
-    W.add(m); return m;
+    m.frustumCulled = true; W.add(m); return m;
+  };
+  const CHUNK = 24;
+  const addInst = (list, geo, material, shadow=true, chunked=true) => {
+    if (!list.length) return null;
+    if (!chunked) return instMesh(list, geo, material, shadow);
+    const buckets = new Map();
+    for (const p of list){ const k = Math.floor(p[0]/CHUNK) + "," + Math.floor(p[2]/CHUNK); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(p); }
+    let first = null;
+    for (const items of buckets.values()){ const m = instMesh(items, geo, material, shadow); first = first || m; }
+    return first;
   };
   const bg = boxGeo();
   addInst(L.box, bg, new THREE.MeshLambertMaterial({color:0xffffff}));
@@ -6526,10 +7489,10 @@ function hwBuildWorld3D(){
     const b = BUILDINGS.find(q=>q.id===id) || null, st = hwStyle(b);
     const group = new THREE.Group(); W.add(group);
     const wmeshes = [];
-    for (const [v, list] of sets){ const wm = addInst(list.map(p=>p.concat([null])), bg, hwWallMat(b, v)); W.remove(wm); group.add(wm); wmeshes.push(wm); }
+    for (const [v, list] of sets){ const wm = addInst(list.map(p=>p.concat([null])), bg, hwWallMat(b, v), true, false); W.remove(wm); group.add(wm); wmeshes.push(wm); }
     const tops = [].concat(...sets.map(s=>s[1])).filter(p=>p[1]+p[4] >= WALL_H-.01).map(p=>[p[0], WALL_H, p[2], 1.06, .14, 1.06, null]);
-    const trim = addInst(tops, bg, mat3(st.wall==="timber" ? st.beam : "#3a3632"));
-    const gl = glass.get(id) ? addInst(glass.get(id).map(p=>p.concat([null])), bg, new THREE.MeshLambertMaterial({map:texGlass(false), emissiveMap:texGlass(true), emissive:0x000000, color:0xc0c8c0})) : null;
+    const trim = addInst(tops, bg, mat3(st.wall==="timber" ? st.beam : "#3a3632"), true, false);
+    const gl = glass.get(id) ? addInst(glass.get(id).map(p=>p.concat([null])), bg, new THREE.MeshLambertMaterial({map:texGlass(false), emissiveMap:texGlass(true), emissive:0x000000, color:0xc0c8c0}), true, false) : null;
     T3.bld.set(id, {b, walls:group, trim, glass:gl, roof:null});
   }
   for (const b of BUILDINGS){
@@ -6592,6 +7555,7 @@ function hwBuildWorld3D(){
 const HW_TUNIC = c => hMix(c, "#3e3226", .5);
 function hwMakeChar3D(L){
   hGeo();
+  if (L.wolf) return hwMakeWolf3D(L);
   const g = new THREE.Group(), [suitC, suitD] = suitCols(L), big = L.big ? 1.12 : 1;
   const seed = [...JSON.stringify(L)].reduce((s,ch)=>(s*31 + ch.charCodeAt(0)) >>> 0, 7);
   const tunic = L.suit==="o" ? "#7a4424" : HW_TUNIC(suitC), tunicD = hMix(tunic, "#000", .25);
@@ -6618,9 +7582,13 @@ function hwMakeChar3D(L){
   if (L.badge){ for (let i=-2;i<=2;i++) p(B, .05,.04,.02, brass, i*.06,1.12 - Math.abs(i)*.04 - .08,.14*big); p(B, .09,.09,.02, "#d8b860", 0,.95,.145*big); p(B, tw+.12,.18,.34, "#1e2a3a", 0,1.12,0); }
   if (hasCloak){ p(B, tw+.06,1.05,.05, cloakCol, 0,.64,-.165*big); p(B, tw+.12,.12,.34*big, cloakCol, 0,1.14,0); if (!hoodUp) p(B, .32,.14,.12, cloakCol, 0,1.2,-.15); }
   p(B, .14,.08,.14, skin, 0,1.2,0);
+  const RC = "#5a0a0e", RD = "#3a0608";
+  if (L.robe){ B.length = 0; p(B, tw+.08,1.12,.33, RC, 0,.68,0); p(B, tw+.18,.46,.4, RD, 0,.3,0); p(B, .05,1.0,.02, "#220204", 0,.72,.172); p(B, tw+.12,.06,.35, "#1a0a06", 0,.86,0); p(B, .07,.07,.02, "#d8d0b8", 0,1.0,.175); p(B, .14,.08,.14, skin, 0,1.2,0); }
+  const sleeve = L.robe ? RC : tunic, cuffC = L.robe ? RD : null;
   // arms (pivot at shoulder)
   for (const list of [AL, AR]){
-    p(list, .15,.28,.17, tunic, 0,-.12,0); p(list, .125,.22,.145, L.suit==="o" ? tunicD : linen, 0,-.36,0); p(list, .14,.05,.16, tunicD, 0,-.46,0); p(list, .1,.1,.11, skin, 0,-.53,0); p(list, .03,.06,.08, skin, .05,-.55,.02);
+    p(list, .15,.28,.17, sleeve, 0,-.12,0); p(list, .125,.22,.145, L.robe ? RC : L.suit==="o" ? tunicD : linen, 0,-.36,0);
+    if (L.robe) p(list, .17,.12,.19, RD, 0,-.44,0); p(list, .14,.05,.16, tunicD, 0,-.46,0); p(list, .1,.1,.11, skin, 0,-.53,0); p(list, .03,.06,.08, skin, .05,-.55,.02);
   }
   // head (pivot at the neck, 1.18 up)
   p(H, .34,.36,.32, skin, 0,.18,0);
@@ -6629,7 +7597,9 @@ function hwMakeChar3D(L){
   const HC = L.hair || "#3f2616", st = L.style;
   if (L.glasses || L.shades){ const lens = L.shades ? "#0a0a0a" : "#8a9a9a"; p(H, .09,.07,.015, lens, -.08,.22,.168); p(H, .09,.07,.015, lens, .08,.22,.168); p(H, .06,.012,.01, "#2a2a2a", 0,.23,.17); }
   if (L.beard) p(H, .3,.12,.06, L.beard, 0,.03,.16);
-  if (hoodUp){
+  if (L.robe){
+    p(H, .44,.46,.4, RC, 0,.22,-.02); p(H, .3,.34,.3, RC, 0,.52,-.1, {geo:"cone", rx:-.35}); p(H, .46,.06,.42, RD, 0,-.02,0);
+  } else if (hoodUp){
     const hc = L.hatColor ? hMix(L.hatColor, "#2a2420", .5) : cloakCol;
     p(H, .42,.08,.38, hc, 0,.4,-.01); p(H, .06,.36,.36, hc, -.2,.2,-.01); p(H, .06,.36,.36, hc, .2,.2,-.01); p(H, .42,.4,.06, hc, 0,.2,-.18); p(H, .3,.2,.12, hc, 0,.12,-.24, {rx:.5}); p(H, .42,.05,.04, hMix(hc, "#000", .3), 0,.38,.17);
   } else if (st==="hat"){
@@ -6653,6 +7623,7 @@ function hwMakeChar3D(L){
     if (st==="slick" || st==="neat"){ p(H, .38,.04,.1, hMix(HC, "#fff", .1), 0,.44,.12); }
   }
   const mk = (list, parent, px, py, pz) => { const m = new THREE.Mesh(mergeParts(list), vcMat()); m.castShadow = true; m.receiveShadow = false; const pv = new THREE.Group(); pv.position.set(px, py, pz); pv.add(m); parent.add(pv); return [pv, m]; };
+  if (L.bandage){ AL.push({w:.14,h:.16,d:.16,col:"#e0d8c8",x:0,y:-.36,z:0}, {w:.145,h:.02,d:.165,col:"#8a1a1a",x:0,y:-.33,z:0}); }
   const [legL] = mk(LL, g, -.11, .62, 0), [legR] = mk(LR, g, .11, .62, 0);
   const torsoMesh = new THREE.Mesh(mergeParts(B), vcMat()); torsoMesh.castShadow = true; g.add(torsoMesh);
   const [armL] = mk(AL, g, -.29*big, 1.12, 0), [armR] = mk(AR, g, .29*big, 1.12, 0);
@@ -6662,12 +7633,38 @@ function hwMakeChar3D(L){
   const tag = new THREE.Object3D(); tag.position.y = 1.9; g.add(tag);
   const c = {g, legL, legR, armL, armR, head, torso:torsoMesh, tag, face, masks:{}, mask:null, key:JSON.stringify(L)};
   c.setMask = type => {
+    if (c.lockMask) type = c.lockMask;
     if (c.mask === type) return;
     if (c.mask && c.masks[c.mask]) c.masks[c.mask].visible = false;
     c.mask = type; face.visible = !type;
     if (type){ if (!c.masks[type]){ c.masks[type] = hwMask(type); head.add(c.masks[type]); } c.masks[type].visible = true; }
   };
+  if (L.robe){ c.lockMask = "goat"; c.setMask("goat"); }
   return c;
+}
+// the beast: hunched, long-armed, grey, with a wolf's head and eyes that catch the light
+function hwMakeWolf3D(L){
+  const g = new THREE.Group(), F1 = "#4a4440", F2 = "#3a3430", F3 = "#5e5650", CL = "#d8d0c0";
+  const LL = [], LR = [], AL = [], AR = [], B = [], H = [];
+  const p = (list, w,h,d, col, x,y,z, extra={}) => list.push(Object.assign({w,h,d,col,x,y,z}, extra));
+  for (const list of [LL, LR]){ p(list, .26,.42,.3, F1, 0,-.12,.04, {rx:-.35}); p(list, .17,.36,.2, F2, 0,-.42,-.1, {rx:.5}); p(list, .2,.08,.32, F2, 0,-.6,.02); for (const k of [-1,0,1]) p(list, .03,.03,.1, CL, k*.06,-.62,.2); }
+  p(B, .7,.62,.5, F1, 0,1.0,.06, {rx:.35}); p(B, .58,.46,.44, F2, 0,.58,0, {rx:.15}); p(B, .76,.3,.56, F3, 0,1.28,.14, {rx:.45});
+  for (let i=0;i<5;i++) p(B, .08,.18,.08, F2, -.16 + i*.08,1.4,-.08, {rx:-.6});
+  p(B, .12,.6,.12, F2, 0,.5,-.34, {rx:-.9});
+  for (const list of [AL, AR]){ p(list, .2,.5,.22, F1, 0,-.22,.06, {rx:-.2}); p(list, .16,.5,.18, F2, 0,-.68,.14, {rx:-.1}); p(list, .2,.12,.2, F2, 0,-.96,.18); for (const k of [-1,0,1]) p(list, .025,.025,.16, CL, k*.06,-1.02,.3, {rx:.6}); }
+  p(H, .4,.38,.42, F1, 0,.12,0); p(H, .22,.18,.36, F2, 0,.04,.34); p(H, .12,.08,.06, "#0a0808", 0,.1,.53);
+  p(H, .2,.04,.3, "#5a1010", 0,-.04,.32); for (let i=0;i<4;i++) p(H, .025,.06,.02, CL, -.06 + i*.04,-.06,.46);
+  for (const s of [-1,1]){ p(H, .1,.24,.06, F2, s*.13,.42,-.04, {rz:-s*.2, geo:"cone"}); }
+  const mk = (list, px, py, pz) => { const m = new THREE.Mesh(mergeParts(list), vcMat()); m.castShadow = true; const pv = new THREE.Group(); pv.position.set(px, py, pz); pv.add(m); g.add(pv); return pv; };
+  const legL = mk(LL, -.18, .78, 0), legR = mk(LR, .18, .78, 0), armL = mk(AL, -.46, 1.36, .12), armR = mk(AR, .46, 1.36, .12);
+  const torso = new THREE.Mesh(mergeParts(B), vcMat()); torso.castShadow = true; g.add(torso);
+  const head = mk(H, 0, 1.52, .32);
+  const eyeM = hMat("wolfeye", () => new THREE.MeshBasicMaterial({color:0xffd040}));
+  for (const s of [-1,1]){ const e = new THREE.Mesh(hGeo().box, eyeM); e.scale.set(.07,.04,.02); e.position.set(s*.1, .2, .215); head.add(e); }
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({map:texGlow("#ffc040"), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:.6})); glow.scale.set(.5,.25,1); glow.position.set(0,.2,.25); head.add(glow);
+  g.scale.setScalar(1.18);
+  const tag = new THREE.Object3D(); tag.position.y = 2.1; g.add(tag);
+  return {g, legL, legR, armL, armR, head, torso, tag, masks:{}, mask:null, setMask(){}, key:JSON.stringify(L), wolf:true};
 }
 // masks, built from a few boxes and a painted front
 function hwMask(type){
@@ -6713,10 +7710,13 @@ function hwSky(dt, now, attract){
     T3.sunSpr.renderOrder = T3.moonSpr.renderOrder = T3.moonHalo.renderOrder = -1;
   }
   const sunUp = Math.max(0, Math.sin(sunA)), inside = !attract && insideOf(T.player);
-  T3.sunSpr.visible = sunUp > 0 && dk < .6 && !inside; T3.sunSpr.position.copy(cam).addScaledVector(sunDir, 160); T3.sunSpr.material.opacity = rain ? .25 : .85;
+  const SD = Math.max(34, (T3.scene.fog.far + 14) * .8), sk = SD / 160;   // sky objects sit just inside the far plane
+  T3.sunSpr.scale.set(46*sk, 46*sk, 1); T3.moonSpr.scale.set(60*sk, 60*sk, 1); T3.moonHalo.scale.set(130*sk, 130*sk, 1);
+  if (T3.stars) T3.stars.scale.setScalar(SD / 185);
+  T3.sunSpr.visible = sunUp > 0 && dk < .6 && !inside; T3.sunSpr.position.copy(cam).addScaledVector(sunDir, SD); T3.sunSpr.material.opacity = rain ? .25 : .85;
   const moonVis = Math.min(1, Math.max(0, (dk - .15) * 2.2));
   T3.moonSpr.visible = T3.moonHalo.visible = moonVis > 0;
-  T3.moonSpr.position.copy(cam).addScaledVector(moonDir, 160); T3.moonHalo.position.copy(T3.moonSpr.position);
+  T3.moonSpr.position.copy(cam).addScaledVector(moonDir, SD); T3.moonHalo.position.copy(T3.moonSpr.position);
   T3.moonSpr.material.opacity = moonVis * (rain ? .55 : 1); T3.moonHalo.material.opacity = moonVis * .45; T3.moonHalo.material.color.set(HWS.blood > .5 ? "#ff3020" : "#c8d0d8");
   // the face
   if (T3.moonSpr.visible && now > HWS.moonAt){
@@ -6773,10 +7773,15 @@ if (HALLOW){
   buildWorld3D = hwBuildWorld3D;
   makeChar3D = hwMakeChar3D;
   T3.stainMake = s => new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.15), new THREE.MeshLambertMaterial({map:texBlood((s.x*7 + s.y*3)|0), transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-2}));
-  T3.nameOf = (n, near) => (HW.masked && HW.masked(n) && near > 2.2) ? "?" : n.met ? n.first : n.job;
+  T3.nameOf = (n, near) => n.wolf ? "???" : n.look.robe && near > 1.6 ? "a red robe" : (HW.masked && HW.masked(n) && near > 2.2) ? "?" : n.met ? n.first : n.job;
   T3.pre = (dt, now, attract) => {
     if (attract) hwAttract(now); else HWS.attractLit = false;
     const sky = hwSky(dt, now, attract);
+    if (typeof MYFX !== "undefined") MYFX.update(dt, now, attract, sky);
+    // nothing past the fog needs drawing
+    const far = Math.max(40, T3.scene.fog.far + 14);
+    if (Math.abs(T3.camera.far - far) > 2){ T3.camera.far = far; T3.camera.updateProjectionMatrix(); }
+    T3.cullDist = Math.min(46, far);
     if (!attract && T){
       for (const n of folk){ const c = T3.chars.get(n.id); if (c && c.setMask) c.setMask(!n.dead && HW.masked(n) ? HW.maskType(n) : null); }
     }
@@ -7092,7 +8097,7 @@ function hwScares(dt, now, sky, P, inside){
   hwWind(inside, dk, sky);
   // the Watcher
   const yaw = T3.cam.yaw, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-  const can = hwCanScare() && dk > .5 && !inside;
+  const can = hwCanScare() && (dk > .5 || HWS.forestDeep) && !inside;
   if (!HWS.w && can && now > HWS.wNext){
     const behind = HWO.jump && T.day >= 2 && HWS.jumpDay !== T.day && HWS.wCount >= 1 && (Math.random() < .35 || window.__hw.forceBehind);
     if (behind){
@@ -7133,13 +8138,13 @@ function hwScares(dt, now, sky, P, inside){
   if (w && w.kind==="jump" && now - w.t > 700){ W.visible = false; HWS.w = null; }
   const want = W.visible ? .45 : 1; HWS.gutter += (want - HWS.gutter) * Math.min(1, dt*3);
 }
-function hwJumpscare(){
+function hwJumpscare(kind){
   const c = HWFX.scare, g = c.getContext("2d");
   c.hidden = false; c.style.opacity = 1; T.shake = .8;
   try { Snd.fx.scream && Snd.fx.scream(); } catch {}
   try { if (hqInit()){ const t0 = HQ.ac.currentTime, out = HQ.out; HQ.out = HQ.comp; for (const m of ["C3","C#3","G3","Ab3"]) INST.stab(t0, NOTE(m), 1, 1.6); INST.kick(t0, 0, 1, 1.2); HQ.out = out; noiseHit(t0, "highpass", 1500, .6, 1.2, .25); } } catch {}
   const start = performance.now();
-  const step = () => { const k = performance.now() - start; drawScareFace(g, 96, 64, k/1000); c.style.opacity = k < 500 ? 1 : Math.max(0, 1 - (k-500)/250); if (k < 760) requestAnimationFrame(step); else c.hidden = true; };
+  const step = () => { const k = performance.now() - start; (kind==="ghost" && typeof drawGhostFace==="function" ? drawGhostFace : drawScareFace)(g, 96, 64, k/1000); c.style.opacity = k < 500 ? 1 : Math.max(0, 1 - (k-500)/250); if (k < 760) requestAnimationFrame(step); else c.hidden = true; };
   step();
 }
 // wind: a filtered noise bed that rises outdoors at night
@@ -7156,6 +8161,187 @@ function hwWind(inside, dk, sky){
   HWS.wind.g.gain.setTargetAtTime(target, HQ.ac.currentTime, 1.2);
 }
 window.__hw = {HWS, HWFX, HWO, forceBehind:false};
+
+
+// ===== town3d-src/23-mystfx.js =====
+// Hallowmere mysteries, seen and heard: the girl in Ashcombe House, the beast's tracks, and the Blackwood at night.
+const MYFX = {ready:false};
+function texPaw(){
+  return hOnce("paw", () => {
+    const [c, g] = hCanvas(32, 32);
+    g.fillStyle = "rgba(70,8,8,.85)";
+    g.beginPath(); g.ellipse(16, 20, 6, 5, 0, 0, Math.PI*2); g.fill();
+    for (const [x, y] of [[8,11],[13,8],[19,8],[24,11]]){ g.beginPath(); g.ellipse(x, y, 2.4, 3, 0, 0, Math.PI*2); g.fill(); g.fillRect(x-.5, y-6, 1, 3); }
+    return hTex(c);
+  });
+}
+function drawGhostFace(g, w, h, t){
+  g.fillStyle = "#000"; g.fillRect(0, 0, w, h);
+  const s = Math.min(w, h) / 64, cx = w/2 + Math.sin(t*55)*s*.6, cy = h/2;
+  const F = (x,y,ww,hh,col) => { g.fillStyle = col; g.fillRect(cx + x*s, cy + y*s, ww*s, hh*s); };
+  F(-26,-32,52,64,"#0a0808"); F(-16,-24,32,44,"#d8dce4"); F(-18,-16,36,30,"#c8ccd8");
+  F(-12,-10,9,11,"#000"); F(3,-10,9,11,"#000"); F(-9,-6,2,2,"#fff"); F(6,-6,2,2,"#fff");
+  F(-5,8,10,12,"#000"); F(-3,10,6,8,"#200000");
+  F(-12,1,2,14,"rgba(40,0,0,.8)"); F(10,1,2,16,"rgba(40,0,0,.8)");
+  F(-26,-32,8,64,"#050404"); F(18,-32,8,64,"#050404");
+}
+function texGetOut(){
+  return hOnce("getout", () => {
+    const [c, g] = hCanvas(128, 48); g.imageSmoothingEnabled = true;
+    g.font = "bold 34px Georgia, serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillStyle = "rgba(110,6,6,.9)"; g.fillText("GET OUT", 64, 24);
+    for (let i=0;i<10;i++){ const x = 12 + Math.random()*104; g.fillRect(x, 30, 2, 6 + Math.random()*12); }
+    return hTex(c, false, true);
+  });
+}
+MYFX.init = () => {
+  if (MYFX.ready) return; MYFX.ready = true;
+  const sc = T3.scene;
+  // the girl: a child in a nightdress, black hair to her waist
+  const gp = [
+    {w:.34,h:.9,d:.24,col:"#e4e6ee",x:0,y:.62,z:0}, {w:.44,h:.4,d:.3,col:"#d8dae4",x:0,y:.26,z:0}, {w:.1,h:.5,d:.1,col:"#e4e6ee",x:-.21,y:.82,z:.02,rz:.08}, {w:.1,h:.5,d:.1,col:"#e4e6ee",x:.21,y:.82,z:.02,rz:-.08},
+    {w:.07,h:.08,d:.08,col:"#c8ccd8",x:-.23,y:.55,z:.03}, {w:.07,h:.08,d:.08,col:"#c8ccd8",x:.23,y:.55,z:.03},
+    {w:.26,h:.28,d:.24,col:"#d0d4e0",x:0,y:1.22,z:0}, {w:.3,h:.62,d:.08,col:"#0a0808",x:0,y:1.02,z:-.14}, {w:.3,h:.1,d:.28,col:"#0a0808",x:0,y:1.38,z:0},
+    {w:.07,h:.36,d:.26,col:"#0a0808",x:-.14,y:1.12,z:0}, {w:.07,h:.36,d:.26,col:"#0a0808",x:.14,y:1.12,z:0},
+    {w:.06,h:.06,d:.02,col:"#000000",x:-.06,y:1.25,z:.125}, {w:.06,h:.06,d:.02,col:"#000000",x:.06,y:1.25,z:.125}, {w:.06,h:.04,d:.02,col:"#1a0000",x:0,y:1.15,z:.125}
+  ];
+  MYFX.ghost = new THREE.Mesh(mergeParts(gp), new THREE.MeshBasicMaterial({vertexColors:true, transparent:true, opacity:.6, depthWrite:false}));
+  MYFX.ghost.visible = false; MYFX.ghost.renderOrder = 5; sc.add(MYFX.ghost);
+  MYFX.ghostGlow = new THREE.Sprite(new THREE.SpriteMaterial({map:texGlow("#a0b8ff"), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:.35})); MYFX.ghostGlow.scale.set(1.6, 2, 1); MYFX.ghostGlow.position.y = .8; MYFX.ghost.add(MYFX.ghostGlow);
+  // paw prints
+  MYFX.paws = new THREE.InstancedMesh(new THREE.PlaneGeometry(.38, .38).rotateX(-Math.PI/2), new THREE.MeshLambertMaterial({map:texPaw(), transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-3}), 520);
+  MYFX.paws.count = 0; MYFX.paws.frustumCulled = false; sc.add(MYFX.paws);
+  // eyes between the trees
+  MYFX.eyes = [];
+  for (let i=0;i<6;i++){
+    const grp = new THREE.Group();
+    for (const s of [-1,1]){ const e = new THREE.Sprite(new THREE.SpriteMaterial({map:texGlow(i%3===0 ? "#ffd040" : "#ff3020"), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, fog:false})); e.scale.set(.16, .16, 1); e.position.x = s*.11; grp.add(e); }
+    grp.visible = false; sc.add(grp); MYFX.eyes.push({g:grp, until:0, next:0});
+  }
+  // the writing on the floor
+  MYFX.getOut = new THREE.Mesh(new THREE.PlaneGeometry(1.6, .6).rotateX(-Math.PI/2), new THREE.MeshBasicMaterial({map:texGetOut(), transparent:true, depthWrite:false}));
+  MYFX.getOut.visible = false; sc.add(MYFX.getOut);
+  MYFX.g = {next:performance.now() + 4000, until:0, mode:null};
+  MYFX.snd = {next:performance.now() + 6000};
+};
+const _mv = new THREE.Vector3(), _mo = new THREE.Object3D();
+MYFX.update = (dt, now, attract, sky) => {
+  if (!T3.hw) return;
+  MYFX.init();
+  const t = now/1000;
+  if (T3.hw.millWheel) T3.hw.millWheel.rotation.x += dt*.7;
+  if (T3.hw.hangGroups) T3.hw.hangGroups.forEach((g, i) => { g.rotation.z = Math.sin(t*.8 + i*2)*.06; g.rotation.y = Math.sin(t*.3 + i)*.4; });
+  if (attract || !T){ MYFX.ghost.visible = false; for (const e of MYFX.eyes) e.g.visible = false; return; }
+  const pl = T.player, [px, py] = rposT(pl), P = {x:px+.5, z:py+.5}, inside = insideOf(pl), m = T.myst;
+  const cam = T3.camera.position, fwd = new THREE.Vector3(); T3.camera.getWorldDirection(fwd);
+  const looking = (x, z, y=1) => { _mv.set(x - cam.x, y - cam.y, z - cam.z).normalize(); return fwd.dot(_mv); };
+  // ---------- the Blackwood ----------
+  const forest = !inside && py >= 86, deep = forest && py >= 100;
+  HWS.forest = forest; HWS.forestDeep = deep;
+  T3.minPitch = forest ? .9 : 0; T3.maxDist = forest ? 9 : 99;
+  // a roof the camera has sunk into gets out of the way
+  for (const [k, r] of T3.bld){ const b = r.b; if (!b || !r.roof || !r.roof.visible) continue; if (cam.x > b.x0 - .8 && cam.x < b.x1 + 1.8 && cam.z > b.y0 - .8 && cam.z < b.y1 + 1.8 && cam.y < WALL_H + Math.min(b.x1-b.x0, b.y1-b.y0)*.55 + 1) r.roof.visible = false; }
+  if (forest){
+    const f = T3.scene.fog, night = sky.dk > .3;
+    f.near = Math.min(f.near, night ? 2.5 : 5); f.far = Math.min(f.far, night ? 17 : deep ? 26 : 34);
+    T3.hemi.intensity *= night ? .55 : .7; T3.sun.intensity *= .6;
+    if (HWS.wNext && HWS.wNext - now > 45000) HWS.wNext = now + 20000 + Math.random()*25000;
+  }
+  // eyes in the dark
+  for (const e of MYFX.eyes){
+    if (!(forest && sky.dk > .3)){ e.g.visible = false; continue; }
+    if (e.g.visible){
+      const d = Math.hypot(e.x - P.x, e.z - P.z);
+      if (now > e.until || d < 6){ e.g.visible = false; e.next = now + 2000 + Math.random()*7000; if (d < 6 && Math.random() < .5) HSFX.whisper(); }
+      else { const blink = Math.sin(t*2.3 + e.x) > .96; e.g.scale.y = blink ? .1 : 1; e.g.lookAt(cam.x, e.y, cam.z); }
+    } else if (now > e.next){
+      for (let k=0;k<6;k++){
+        const a = Math.random()*Math.PI*2, d = 9 + Math.random()*8, x = Math.floor(P.x + Math.cos(a)*d), z = Math.floor(P.z + Math.sin(a)*d);
+        if (!"tT".includes(tileT(x, z))) continue;
+        e.x = x + .5; e.z = z + .5; e.y = .9 + Math.random()*1.1; e.g.position.set(e.x, e.y, e.z); e.g.visible = true; e.until = now + 3000 + Math.random()*6000;
+        if (Math.random() < .4){ try { if (hqInit()) noiseHit(HQ.ac.currentTime, "highpass", 2400, .9, .07, .25); } catch {} }
+        break;
+      }
+      e.next = now + 1500;
+    }
+  }
+  // forest sounds: snapping twigs, something big moving, very far away a scream
+  if (forest && now > MYFX.snd.next){
+    MYFX.snd.next = now + 5000 + Math.random()*11000;
+    try { if (hqInit()){ const t0 = HQ.ac.currentTime; const r = Math.random();
+      if (r < .5){ noiseHit(t0, "highpass", 2200, .8, .06, .3); noiseHit(t0+.09, "highpass", 1800, .8, .05, .2); }
+      else if (r < .8){ for (let i=0;i<4;i++) noiseHit(t0 + i*.42, "lowpass", 260, 1, .14, .35); }
+      else if (sky.dk > .3) HSFX.scream();
+      else HSFX.crow(); } } catch {}
+  }
+  // ---------- the beast's tracks ----------
+  const pr = m && m.ww ? m.ww.prints : [];
+  if (pr.length !== MYFX.pawN || (MYFX.pawAt||0) < now){
+    MYFX.pawN = pr.length; MYFX.pawAt = now + 3000;
+    let n = 0;
+    for (const q of pr){
+      if (n >= 520) break;
+      for (const side of [-1, 1]){
+        if (n >= 520) break;
+        const dx = q.d[0], dz = q.d[1], ox = -dz*.16*side, oz = dx*.16*side;
+        _mo.position.set(q.x + .5 + ox + dx*(side>0 ? .2 : -.2), .02, q.y + .5 + oz + dz*(side>0 ? .2 : -.2)); _mo.rotation.set(0, Math.atan2(-dx, -dz), 0); _mo.scale.set(1,1,1); _mo.updateMatrix();
+        MYFX.paws.setMatrixAt(n++, _mo.matrix);
+      }
+    }
+    MYFX.paws.count = n; MYFX.paws.instanceMatrix.needsUpdate = true;
+  }
+  // ---------- Ashcombe House ----------
+  const G = MYFX.g, gh = MYFX.ghost, solved = !m || m.haunt.solved;
+  const inHouse = inside==="ashcombe" && !solved;
+  T3.darkInside = inHouse;
+  if (inHouse){
+    T3.room.color.set("#5070c0"); T3.room.intensity = .35 + Math.sin(t*13)*.08 + (Math.random() < .03 ? -.3 : 0);
+    T3.pLight.intensity = .22; T3.hemi.intensity *= .5;
+    if (!G.inside){ G.inside = true; G.next = now + 2500; G.slammed = false; G.wrote = false; HSFX.whisper(); }
+    // she shows herself, and then she isn't there
+    if (G.mode && now > G.until){ gh.visible = false; G.mode = null; G.next = now + 6000 + Math.random()*9000; }
+    if (gh.visible){
+      const d = Math.hypot(gh.position.x - P.x, gh.position.z - P.z);
+      gh.material.opacity = .45 + Math.sin(t*30)*.12;
+      gh.rotation.y = Math.atan2(P.x - gh.position.x, P.z - gh.position.z);
+      if (d < 1.8){ gh.visible = false; G.mode = null; G.next = now + 5000; T.shake = .3; HSFX.whisper(); }
+      if (G.mode==="behind" && looking(gh.position.x, gh.position.z) > .8){ G.until = Math.min(G.until, now + 350); }
+    } else if (now > G.next){
+      const b = XP.house, spots = [];
+      for (let y=b.y0+1;y<b.y1;y++) for (let x=b.x0+1;x<b.x1;x++){ if (!WALK_T.has(tileT(x,y))) continue; const d = Math.hypot(x+.5-P.x, y+.5-P.z); if (d > 3 && d < 9) spots.push([x+.5, y+.5]); }
+      const behind = Math.random() < .3, pool = spots.filter(([x,z]) => behind ? looking(x, z) < -.3 : looking(x, z) > .5);
+      const s = pick(pool.length ? pool : spots);
+      if (s){ gh.position.set(s[0], 0, s[1]); gh.visible = true; G.mode = behind ? "behind" : "front"; G.until = now + (behind ? 6000 : 1200 + Math.random()*1600); if (behind) HSFX.whisper(); else if (Math.random() < .5) try { if (hqInit()){ const t0 = HQ.ac.currentTime; ["D5","F5","A5"].forEach((nn,i)=>INST.musicbox(t0 + i*.5, NOTE(nn), 1, .9)); } } catch {} }
+      else G.next = now + 2000;
+    }
+    // the house does things
+    if (now > (G.sndNext||0)){
+      G.sndNext = now + 7000 + Math.random()*12000;
+      const r = Math.random();
+      try {
+        if (r < .25 && !G.slammed && Math.random() < .7){ G.slammed = true; MX.hauntLock = now + 5000; sfx("door"); T.shake = .4; toast("Behind you, the front door slams. It won't open.", "bad", 4); }
+        else if (r < .5 && hqInit()){ const t0 = HQ.ac.currentTime; for (let i=0;i<6;i++) noiseHit(t0 + i*.38, "lowpass", 200, 1, .12, .4); }
+        else if (r < .7 && hqInit()){ const t0 = HQ.ac.currentTime; ["D5","F5","A5","F5","D5"].forEach((nn,i)=>INST.musicbox(t0 + i*.42, NOTE(nn), 1, .8)); }
+        else if (r < .85) HSFX.knock();
+        else HSFX.whisper();
+      } catch {}
+    }
+    if (!G.wrote && G.inside && now - (G.enterAt || (G.enterAt = now)) > 9000){
+      G.wrote = true; MYFX.getOut.position.set(P.x + fwd.x*2.2, .03, P.z + fwd.z*2.2); MYFX.getOut.rotation.y = Math.atan2(-fwd.x, -fwd.z) + Math.PI; MYFX.getOut.visible = true;
+    }
+  } else {
+    if (G.inside){ G.inside = false; G.enterAt = 0; if (G.mode==="front" || G.mode==="behind"){ gh.visible = false; G.mode = null; } }
+    T3.room.color.set("#ffd9a0");
+    // at night she stands in a window and watches the road
+    const b = XP.house, wins = T3.hw.hauntWins;
+    const dh = b ? Math.hypot((b.x0+b.x1)/2 - P.x, (b.y0+b.y1)/2 - P.z) : 999;
+    if (!solved && sky.dk > .4 && dh < 32 && dh > 9 && wins.length){
+      if (G.mode!=="window" || now > G.until){ const w = pick(wins); gh.position.set(w[0], .2, w[1]); gh.rotation.y = w[2]; G.mode = "window"; G.until = now + 15000 + Math.random()*15000; }
+      gh.visible = Math.sin(t*1.7) > -.6; gh.material.opacity = .55;
+    } else if (G.mode==="window"){ gh.visible = false; G.mode = null; }
+    if (solved || dh > 40) MYFX.getOut.visible = false;
+  }
+};
 
 
 // ===== town3d-src/30-standalone.js =====

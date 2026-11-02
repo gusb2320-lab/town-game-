@@ -5,7 +5,7 @@ let THEME_NOTE = "";                                 // extra setting notes for 
 const E = window.CB9;
 if (!E) throw new Error("Cellblock Nine engine not loaded");
 const { Snd, sfx, PAL, $, clamp, pick, rnd, shuffle, toast, banner, drawPerson, shade, wrap, contourAt } = E;
-const TS = 16, TW = 104, TH = 84, CAP = 6;
+const TS = 16, TW = HALLOW ? 184 : 104, TH = HALLOW ? 164 : 84, CAP = 6;   // the Halloween edition is a much bigger map
 const TSAVE = HALLOW ? "millbrook-hallow-v1" : "cellblock9-town-v1";
 const DIRS4 = [[0,-1],[1,0],[0,1],[-1,0]];
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];

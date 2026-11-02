@@ -304,7 +304,7 @@ function hwScares(dt, now, sky, P, inside){
   hwWind(inside, dk, sky);
   // the Watcher
   const yaw = T3.cam.yaw, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-  const can = hwCanScare() && dk > .5 && !inside;
+  const can = hwCanScare() && (dk > .5 || HWS.forestDeep) && !inside;
   if (!HWS.w && can && now > HWS.wNext){
     const behind = HWO.jump && T.day >= 2 && HWS.jumpDay !== T.day && HWS.wCount >= 1 && (Math.random() < .35 || window.__hw.forceBehind);
     if (behind){
@@ -345,13 +345,13 @@ function hwScares(dt, now, sky, P, inside){
   if (w && w.kind==="jump" && now - w.t > 700){ W.visible = false; HWS.w = null; }
   const want = W.visible ? .45 : 1; HWS.gutter += (want - HWS.gutter) * Math.min(1, dt*3);
 }
-function hwJumpscare(){
+function hwJumpscare(kind){
   const c = HWFX.scare, g = c.getContext("2d");
   c.hidden = false; c.style.opacity = 1; T.shake = .8;
   try { Snd.fx.scream && Snd.fx.scream(); } catch {}
   try { if (hqInit()){ const t0 = HQ.ac.currentTime, out = HQ.out; HQ.out = HQ.comp; for (const m of ["C3","C#3","G3","Ab3"]) INST.stab(t0, NOTE(m), 1, 1.6); INST.kick(t0, 0, 1, 1.2); HQ.out = out; noiseHit(t0, "highpass", 1500, .6, 1.2, .25); } } catch {}
   const start = performance.now();
-  const step = () => { const k = performance.now() - start; drawScareFace(g, 96, 64, k/1000); c.style.opacity = k < 500 ? 1 : Math.max(0, 1 - (k-500)/250); if (k < 760) requestAnimationFrame(step); else c.hidden = true; };
+  const step = () => { const k = performance.now() - start; (kind==="ghost" && typeof drawGhostFace==="function" ? drawGhostFace : drawScareFace)(g, 96, 64, k/1000); c.style.opacity = k < 500 ? 1 : Math.max(0, 1 - (k-500)/250); if (k < 760) requestAnimationFrame(step); else c.hidden = true; };
   step();
 }
 // wind: a filtered noise bed that rises outdoors at night

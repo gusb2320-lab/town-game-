@@ -328,6 +328,20 @@ Townspeople you may mention: ${folk.filter(alive).map(n=>`${n.first} (${n.job})`
 async function writeBiosT(){
   if (!E.aiOn()){ proceduralBios(); return; }
   try {
+    // big towns are written in batches so each reply stays short
+    if (folk.length > 26){
+      const chunks = []; for (let i=0;i<folk.length;i+=22) chunks.push(folk.slice(i, i+22));
+      await Promise.all(chunks.map(async ch => {
+        const list = ch.map(n=>`${n.id}: ${fullT(n)}, ${n.age}, ${n.pron}, ${n.job}. Traits: ${n.traits.join(", ")}. Hobbies: ${n.hobbies.join(", ")}. Family: ${familyLine(n)}. Secret: ${n.secret}.`).join("\n");
+        try {
+          const r = await E.getSample().json(`${THEME_NOTE}Invent some of the townspeople of Millbrook, a ${HALLOW ? "large, fog-bound medieval village" : "small American town"}. For each person write a vivid 2-3 sentence bio (backstory, what they want, one contradiction), a "style" (how they talk, one sentence) and a "quirk" (a few words). Make every voice distinct.
+${list}
+Reply only JSON: {"people":[{"id":"p0","bio":"...","style":"...","quirk":"..."}]}`, {modelTier:"default", cache:false});
+          for (const p of (r && Array.isArray(r.people) ? r.people : [])){ const n = byIdT(p.id); if (!n) continue; if (typeof p.bio==="string") n.bio = p.bio.slice(0,500); if (typeof p.style==="string") n.style = p.style.slice(0,200); if (typeof p.quirk==="string") n.quirk = p.quirk.slice(0,120); }
+        } catch (e){ if (e && E.AI_OFF.includes(e.code)) E.setAiOff(); }
+      }));
+      proceduralBios(); saveT(); return;
+    }
     const list = folk.map(n=>`${n.id}: ${fullT(n)}, ${n.age}, ${n.pron}, ${n.job}. Traits: ${n.traits.join(", ")}. Hobbies: ${n.hobbies.join(", ")}. Family: ${familyLine(n)}. Secret: ${n.secret}.${n.nosy?" The town busybody.":""}`).join("\n");
     const r = await E.getSample().json(`${THEME_NOTE}Invent the townspeople of Millbrook, a small, sleepy, gossipy ${HALLOW ? "medieval village" : "American town"} with a train station, a diner, a bar called the Rusty Nail, a church, an arcade and a pond. For each person write a vivid 2-3 sentence backstory consistent with the facts given (no detectives, no crime-solving pasts), a one-sentence speaking style, and a small quirk.
 ${list}

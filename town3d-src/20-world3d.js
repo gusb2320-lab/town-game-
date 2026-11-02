@@ -301,7 +301,7 @@ function updateCamera3D(dt){
     const look = new THREE.Vector3(c.x - Math.sin(c.yaw)*Math.cos(c.fpPitch), 1.55 + Math.sin(c.fpPitch), c.z - Math.cos(c.yaw)*Math.cos(c.fpPitch));
     cam.lookAt(look);
   } else {
-    const pitch = inside ? Math.max(c.pitch, 1.0) : c.pitch, dist = inside ? Math.min(c.dist, 9) : c.dist;
+    const pitch = Math.max(inside ? Math.max(c.pitch, 1.0) : c.pitch, T3.minPitch || 0), dist = inside ? Math.min(c.dist, 9) : Math.min(c.dist, T3.maxDist || 99);
     const want = new THREE.Vector3(c.x + Math.sin(c.yaw)*Math.cos(pitch)*dist, 1 + Math.sin(pitch)*dist, c.z + Math.cos(c.yaw)*Math.cos(pitch)*dist);
     cam.position.lerp(want, Math.min(1, dt*8)); cam.position.x += jx; cam.position.y += jy;
     cam.lookAt(c.x, 1, c.z);
@@ -347,7 +347,7 @@ function renderTown(dt){
   T3.glowMesh && (T3.glowMesh.material.color.set(night ? "#ffffff" : "#d8d8c8"));
   const [ppx, ppy] = rposT(pl);
   T3.pLight.position.set(ppx+.5, 1.6, ppy+.5); T3.pLight.intensity = night ? .7 : 0;
-  const hasLight = pl.inv.includes("flashlight") && night;
+  const hasLight = (pl.inv.includes("flashlight") || pl.inv.includes("lantern")) && (night || (T3.darkInside && inside));
   T3.flash.intensity = hasLight ? 2.2 : 0;
   if (hasLight){ T3.flash.position.set(ppx+.5, 1.4, ppy+.5); T3.flash.target.position.set(ppx+.5+pl.dir[0]*6, 0, ppy+.5+pl.dir[1]*6); }
   T3.room.intensity = outer && night ? 1.1 : 0;
@@ -368,6 +368,7 @@ function renderTown(dt){
   for (const c of T3.chars.values()) c.used = false;
   for (const n of folk){
     if (n.dead || n.away) continue;
+    { const [qx, qy] = rposT(n); if (Math.hypot(qx + .5 - T3.cam.x, qy + .5 - T3.cam.z) > (T3.cullDist || 1e9)) continue; }
     const L = n.look, c = charFor(n.id, L);
     const inBed = n.asleep && tileT(n.x,n.y)==="B";
     poseChar(c, n, dt, {hide:n.hidden, lie:inBed || n.asleep, y:inBed ? .58 : .1, talk:(T.talkId===n.id && !TD.done) || (n.bubble && n.scene), fight:!!n.fight, hit:n.hitT && now - n.hitT < 130});

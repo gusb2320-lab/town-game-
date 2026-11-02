@@ -58,7 +58,23 @@ function hwStyle(b){
     arcade:{wall:"stone", base:"#3e3a36", roof:"slate", slate:"#2a2c30"},
     church:{wall:"stone", base:"#6a6660", roof:"slate", slate:"#363a42"},
     garage:{wall:"stone", base:"#4a4640", roof:"slate", slate:"#2e2e30", chimney:true, forge:true},
-    barn:{wall:"planks", base:"#4a2e22", roof:"thatch"}
+    barn:{wall:"planks", base:"#4a2e22", roof:"thatch"},
+    mill:{wall:"timber", plaster:"#b8a888", beam:"#2a1a10", roof:"thatch"},
+    stables:{wall:"planks", base:"#4a3424", roof:"thatch"},
+    bakehouse:{wall:"timber", plaster:"#c8b898", beam:"#2a1a10", roof:"thatch", chimney:true},
+    butcher:{wall:"timber", plaster:"#b0a088", beam:"#3a1410", roof:"slate", slate:"#3a3a40"},
+    chandler:{wall:"timber", plaster:"#bcae90", beam:"#24180f", roof:"thatch", chimney:true},
+    tailor:{wall:"timber", plaster:"#c4b8a0", beam:"#2a1a10", roof:"slate", slate:"#3e4048"},
+    blacklamb:{wall:"timber", plaster:"#7a6e5a", beam:"#140c08", roof:"thatch", chimney:true},
+    watchhouse:{wall:"stone", base:"#5a564e", roof:"slate", slate:"#2e3036"},
+    manor:{wall:"stone", base:"#6e685c", roof:"slate", slate:"#30343c", chimney:true},
+    cobbler:{wall:"timber", plaster:"#b4a68a", beam:"#24180f", roof:"thatch"},
+    cooper:{wall:"planks", base:"#4e3828", roof:"thatch"},
+    potter:{wall:"stone", base:"#6a5e50", roof:"thatch", chimney:true},
+    oldhut:{wall:"planks", base:"#3a2a1e", roof:"thatch"},
+    wisehut:{wall:"planks", base:"#3a3424", roof:"thatch", chimney:true},
+    lodge:{wall:"planks", base:"#4a3020", roof:"thatch", chimney:true},
+    ashcombe:{wall:"stone", base:"#3e3a38", roof:"slate", slate:"#1e2024", chimney:true, haunted:true}
   };
   return S[b.id] || {wall:"timber", plaster:"#b0a088", beam:"#2a1a10", roof:"thatch"};
 }
@@ -75,7 +91,7 @@ function hwBuildWorld3D(){
   hGeo();
   if (T3.world){ T3.scene.remove(T3.world); T3.world.traverse(o=>{ if (o.geometry && !Object.values(HG).includes(o.geometry)) o.geometry.dispose(); }); }
   const W = new THREE.Group(); T3.world = W; T3.scene.add(W);
-  T3.hw = {fires:[], jacks:[], smokes:[], scarecrows:[], noose:null, graves:[], perches:[], cem:[80,34,100,50]};
+  T3.hw = {fires:[], jacks:[], smokes:[], scarecrows:[], noose:null, graves:[], perches:[], cem:[80,34,100,50], hauntWins:[], hangs:[], stalls:[]};
   // ground
   const gcv = hwPaintGround(), tex = hTex(gcv); tex.anisotropy = 8;
   T3.groundTex = tex;
@@ -110,7 +126,8 @@ function hwBuildWorld3D(){
           const ox = o[0]*.56, oz = o[1]*.56, ax = alongX ? 1 : 0, az = alongX ? 0 : 1;
           bx(cx + ox*1.05, .9, cz + oz*1.05, alongX ? 1.04 : .14, .07, alongX ? .14 : 1.04, "#3a2a1c");
           for (const sd of [-1, 1]){ const sx = cx + ax*sd*.66 + ox, sz = cz + az*sd*.66 + oz; bx(sx, .92, sz, alongX ? .3 : .05, .96, alongX ? .05 : .3, rr(7) > .5 ? "#2e3a2c" : "#3a2a1e", 0, 0, rr(8) > .8 ? sd*.06 : 0); }
-          if (rr(9) > .62) candle(cx + ox*.7, .97, cz + oz*.7);
+          if (b && b.id==="ashcombe"){ for (const k of [-1, 1]) bx(cx + ox*1.1, 1.4 + k*.18, cz + oz*1.1, alongX ? 1.1 : .06, .1, alongX ? .06 : 1.1, "#2a2018", 0, 0, alongX ? k*.25 : 0); T3.hw.hauntWins.push([cx + ox*.2, cz + oz*.2, Math.atan2(o[0], o[1])]); }
+          else if (rr(9) > .62) candle(cx + ox*.7, .97, cz + oz*.7);
           else if (rr(9) < .16) jack(cx + ox*.9, cz + oz*.9, .55, Math.atan2(o[0], o[1]), .94);
         }
         break;
@@ -206,6 +223,27 @@ function hwBuildWorld3D(){
         break;
       }
       case "v": bx(cx, 0, cz, .8, .2, .9, "#2a1e14"); bx(cx, .2, cz, .6, .08, .7, "#33261a"); break;
+      case "4": if (b){ bx(cx, 0, cz, .9, 1.2, .5, "#2a1c12"); bx(cx, .3, cz + .26, .6, .7, .02, "#3a2818"); }
+        else { put("cyl", cx, .35, cz, .8, .7, .8, "#3a2a1c"); put("cyl", cx, .71, cz, .62, .02, .62, "#120c08"); for (let i=0;i<4;i++) bx(cx + Math.cos(i*1.6)*.42, 0, cz + Math.sin(i*1.6)*.42, .1, .2, .1, "#3a2a1c", .5, i*1.6, 0); put("ball", cx + .3, .05, cz + .35, .25, .12, .2, "#4a5a2a"); }
+        break;
+      case "5": { const h = 2.1 + rr(1)*.9; bx(cx, 0, cz, .75, h, .5, hJit("#5a5a54", rr(2), .25), (rr(3)-.5)*.12, rr(4)*3, (rr(5)-.5)*.12); bx(cx, h*.3, cz, .78, .12, .53, "#3a4a2a", 0, rr(4)*3, 0); break; }
+      case "6": { bx(cx - .45, 0, cz, .3, .6, .7, "#4a4844"); bx(cx + .45, 0, cz, .3, .6, .7, "#4a4844"); bx(cx, .6, cz, 1.4, .18, .9, "#5a5650"); bx(cx, .78, cz, 1.0, .015, .6, "#3a0606"); for (const [a, b2] of [[-.6,-.4],[.6,-.4],[-.6,.4],[.6,.4]]) candle(cx + a, .78, cz + b2, "night"); put("ball", cx + .2, .86, cz, .26, .2, .3, "#d8d0b8"); break; }
+      case "7": put("ball", cx + (rr(1)-.5)*.3, .35, cz + (rr(2)-.5)*.3, 1.1 + rr(3)*.5, .8 + rr(4)*.9, 1.0 + rr(5)*.5, hJit("#4a4844", rr(6), .3)); break;
+      case "8": {
+        for (const [a, b2] of [[-.45,-.4],[.45,-.4],[-.45,.4],[.45,.4]]) bx(cx + a, 0, cz + b2, .07, 1.9, .07, "#3a2616");
+        bx(cx, .8, cz, 1.0, .08, .9, "#4a3020"); bx(cx, 0, cz + .4, 1.0, .8, .06, "#3a2616");
+        put("wedge", cx, 1.9, cz, 1.2, .35, 1.1, ["#6a1a1a","#2a3a5a","#5a4a1a","#2a4a2a"][(x/4|0)%4]);
+        const goods = [["#c86a18","#a0581c"],["#8a8a7a","#6a7a8a"],["#d8c070","#c8a040"],["#7a2a2a","#5a1a1a"]][(x/4|0)%4];
+        for (let i=0;i<5;i++) put("ball", cx - .36 + i*.18, .92, cz + (i%2)*.15 - .1, .16, .12, .16, goods[i%2]);
+        T3.hw.perches.push([cx, 2.27, cz]); break;
+      }
+      case "9": {
+        put("cyl", cx, 1.9, cz, .7, 3.8, .7, "#221a14"); put("cyl", cx, .2, cz, 1.2, .4, 1.2, "#1e1610");
+        const arms = [[0, 1.0, 3.0], [2.1, .9, 3.2], [4.2, 1.1, 2.8]];
+        for (const [a, th, len] of arms){ const [rx, ry] = tilt(Math.cos(a), Math.sin(a), th); bx(cx, 3.0, cz, .2, len, .2, "#221a14", rx, ry, 0); bx(cx + Math.cos(a)*1.8, 3.9, cz + Math.sin(a)*1.8, .1, 1.4, .1, "#1e1610", ...tilt(Math.cos(a+.8), Math.sin(a+.8), .6)); }
+        for (const [a, th, len] of arms){ const ex = cx + Math.cos(a)*Math.sin(th)*len*.75, ez = cz + Math.sin(a)*Math.sin(th)*len*.75, ey = 3.0 + Math.cos(th)*len*.75; T3.hw.hangs.push([ex, ey, ez, a]); }
+        break;
+      }
       case "U": {
         for (let i=0;i<3;i++) bx(x+.2+i*.3, 0, cz + (rr(i)-.5)*.3, .05, .6 + rr(i)*.5, .05, rr(i+3)>.4 ? "#8a7a4a" : "#6a5a34", (rr(i+5)-.5)*.5, 0, (rr(i+6)-.5)*.5);
         if (rr(9) > .6){ put("ball", cx + (rr(10)-.5)*.4, .14, cz + (rr(11)-.5)*.4, .42, .28, .42, rr(12) > .3 ? "#b8581a" : "#6a5a2a"); bx(cx, .26, cz, .03, .1, .03, "#3a4a20"); }
@@ -338,13 +376,46 @@ function hwBuildWorld3D(){
     W.add(g); T3.hw.scarecrows.push({g, head, x:sx + .5, z:sy + .5, yaw:0});
     T3.hw.perches.push([sx + .5 + Math.cos(g.rotation.y)*.7, 1.68, sy + .5 - Math.sin(g.rotation.y)*.7]);
   }
+  // the mill wheel turns in the river
+  const mill = BUILDINGS.find(q=>q.id==="mill");
+  if (mill){
+    const wg = new THREE.Group(); wg.position.set(mill.x0 - .6, 1.4, (mill.y0 + mill.y1)/2 + .5);
+    const parts = [{geo:"disc", w:2.6, h:2.6, d:.12, col:"#3a2a1c", x:0, y:0, z:.35, ry:Math.PI/2}, {geo:"disc", w:2.6, h:2.6, d:.12, col:"#3a2a1c", x:0, y:0, z:-.35, ry:Math.PI/2}];
+    for (let k=0;k<10;k++){ const a = k/10*Math.PI*2; parts.push({w:.08, h:.5, d:.8, col:"#4a3424", x:0, y:Math.cos(a)*1.3, z:Math.sin(a)*1.3, rx:-a}); }
+    parts.push({geo:"cyl", w:.3, h:1.2, d:.3, col:"#2a1c12", x:0, y:0, z:0, rx:Math.PI/2});
+    const m = new THREE.Mesh(mergeParts(parts), vcMat()); m.castShadow = true; wg.add(m); W.add(wg); T3.hw.millWheel = m;
+    m.rotation.order = "YXZ";
+  }
+  // things hanging from the hanging tree
+  T3.hw.hangGroups = [];
+  T3.hw.hangs.forEach(([hx, hy, hz], i) => {
+    const g = new THREE.Group(); g.position.set(hx, hy, hz);
+    const parts = [{w:.03, h:1.2, d:.03, col:"#8a7a5a", x:0, y:-.6, z:0}];
+    if (i===0) parts.push({w:.34, h:1.3, d:.28, col:"#5a4a30", x:0, y:-1.85, z:0}, {w:.26, h:.3, d:.26, col:"#6a5a3a", x:0, y:-1.1, z:0}, {w:.36, h:.04, d:.3, col:"#3a2a1a", x:0, y:-1.25, z:0});
+    else parts.push({geo:"cyl", w:.24, h:.04, d:.24, col:"#8a7a5a", x:0, y:-1.24, z:0});
+    const m = new THREE.Mesh(mergeParts(parts), vcMat()); m.castShadow = true; g.add(m); W.add(g); T3.hw.hangGroups.push(g);
+  });
   // instanced meshes
-  const addInst = (list, geo, material, shadow=true) => {
-    if (!list.length) return null;
-    const m = new THREE.InstancedMesh(geo, material, list.length), o = new THREE.Object3D(), col = new THREE.Color();
-    list.forEach((p,i)=>{ o.position.set(p[0],p[1],p[2]); o.scale.set(p[3],p[4],p[5]); o.rotation.set(p[7]||0, p[8]||0, p[9]||0, "YXZ"); o.updateMatrix(); m.setMatrixAt(i, o.matrix); if (p[6]){ col.set(p[6]); m.setColorAt(i, col); } });
+  // One instanced mesh per list, or per 24-tile chunk of a list, each with a real bounding sphere so the
+  // renderer can skip whatever is off screen or past the fog.
+  const instMesh = (items, geo, material, shadow) => {
+    let x0 = 1e9, y0 = 1e9, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9;
+    for (const p of items){ const r = Math.max(p[3], p[5]) * .75 + p[4]; x0 = Math.min(x0, p[0]-r); x1 = Math.max(x1, p[0]+r); z0 = Math.min(z0, p[2]-r); z1 = Math.max(z1, p[2]+r); y0 = Math.min(y0, p[1]-1); y1 = Math.max(y1, p[1]+p[4]+1); }
+    const g = geo.clone(); g.boundingSphere = new THREE.Sphere(new THREE.Vector3((x0+x1)/2, (y0+y1)/2, (z0+z1)/2), Math.hypot(x1-x0, y1-y0, z1-z0)/2 + 1);
+    const m = new THREE.InstancedMesh(g, material, items.length), o = new THREE.Object3D(), col = new THREE.Color();
+    items.forEach((p,i)=>{ o.position.set(p[0],p[1],p[2]); o.scale.set(p[3],p[4],p[5]); o.rotation.set(p[7]||0, p[8]||0, p[9]||0, "YXZ"); o.updateMatrix(); m.setMatrixAt(i, o.matrix); if (p[6]){ col.set(p[6]); m.setColorAt(i, col); } });
     m.castShadow = shadow; m.receiveShadow = true; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
-    W.add(m); return m;
+    m.frustumCulled = true; W.add(m); return m;
+  };
+  const CHUNK = 24;
+  const addInst = (list, geo, material, shadow=true, chunked=true) => {
+    if (!list.length) return null;
+    if (!chunked) return instMesh(list, geo, material, shadow);
+    const buckets = new Map();
+    for (const p of list){ const k = Math.floor(p[0]/CHUNK) + "," + Math.floor(p[2]/CHUNK); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(p); }
+    let first = null;
+    for (const items of buckets.values()){ const m = instMesh(items, geo, material, shadow); first = first || m; }
+    return first;
   };
   const bg = boxGeo();
   addInst(L.box, bg, new THREE.MeshLambertMaterial({color:0xffffff}));
@@ -368,10 +439,10 @@ function hwBuildWorld3D(){
     const b = BUILDINGS.find(q=>q.id===id) || null, st = hwStyle(b);
     const group = new THREE.Group(); W.add(group);
     const wmeshes = [];
-    for (const [v, list] of sets){ const wm = addInst(list.map(p=>p.concat([null])), bg, hwWallMat(b, v)); W.remove(wm); group.add(wm); wmeshes.push(wm); }
+    for (const [v, list] of sets){ const wm = addInst(list.map(p=>p.concat([null])), bg, hwWallMat(b, v), true, false); W.remove(wm); group.add(wm); wmeshes.push(wm); }
     const tops = [].concat(...sets.map(s=>s[1])).filter(p=>p[1]+p[4] >= WALL_H-.01).map(p=>[p[0], WALL_H, p[2], 1.06, .14, 1.06, null]);
-    const trim = addInst(tops, bg, mat3(st.wall==="timber" ? st.beam : "#3a3632"));
-    const gl = glass.get(id) ? addInst(glass.get(id).map(p=>p.concat([null])), bg, new THREE.MeshLambertMaterial({map:texGlass(false), emissiveMap:texGlass(true), emissive:0x000000, color:0xc0c8c0})) : null;
+    const trim = addInst(tops, bg, mat3(st.wall==="timber" ? st.beam : "#3a3632"), true, false);
+    const gl = glass.get(id) ? addInst(glass.get(id).map(p=>p.concat([null])), bg, new THREE.MeshLambertMaterial({map:texGlass(false), emissiveMap:texGlass(true), emissive:0x000000, color:0xc0c8c0}), true, false) : null;
     T3.bld.set(id, {b, walls:group, trim, glass:gl, roof:null});
   }
   for (const b of BUILDINGS){
@@ -434,6 +505,7 @@ function hwBuildWorld3D(){
 const HW_TUNIC = c => hMix(c, "#3e3226", .5);
 function hwMakeChar3D(L){
   hGeo();
+  if (L.wolf) return hwMakeWolf3D(L);
   const g = new THREE.Group(), [suitC, suitD] = suitCols(L), big = L.big ? 1.12 : 1;
   const seed = [...JSON.stringify(L)].reduce((s,ch)=>(s*31 + ch.charCodeAt(0)) >>> 0, 7);
   const tunic = L.suit==="o" ? "#7a4424" : HW_TUNIC(suitC), tunicD = hMix(tunic, "#000", .25);
@@ -460,9 +532,13 @@ function hwMakeChar3D(L){
   if (L.badge){ for (let i=-2;i<=2;i++) p(B, .05,.04,.02, brass, i*.06,1.12 - Math.abs(i)*.04 - .08,.14*big); p(B, .09,.09,.02, "#d8b860", 0,.95,.145*big); p(B, tw+.12,.18,.34, "#1e2a3a", 0,1.12,0); }
   if (hasCloak){ p(B, tw+.06,1.05,.05, cloakCol, 0,.64,-.165*big); p(B, tw+.12,.12,.34*big, cloakCol, 0,1.14,0); if (!hoodUp) p(B, .32,.14,.12, cloakCol, 0,1.2,-.15); }
   p(B, .14,.08,.14, skin, 0,1.2,0);
+  const RC = "#5a0a0e", RD = "#3a0608";
+  if (L.robe){ B.length = 0; p(B, tw+.08,1.12,.33, RC, 0,.68,0); p(B, tw+.18,.46,.4, RD, 0,.3,0); p(B, .05,1.0,.02, "#220204", 0,.72,.172); p(B, tw+.12,.06,.35, "#1a0a06", 0,.86,0); p(B, .07,.07,.02, "#d8d0b8", 0,1.0,.175); p(B, .14,.08,.14, skin, 0,1.2,0); }
+  const sleeve = L.robe ? RC : tunic, cuffC = L.robe ? RD : null;
   // arms (pivot at shoulder)
   for (const list of [AL, AR]){
-    p(list, .15,.28,.17, tunic, 0,-.12,0); p(list, .125,.22,.145, L.suit==="o" ? tunicD : linen, 0,-.36,0); p(list, .14,.05,.16, tunicD, 0,-.46,0); p(list, .1,.1,.11, skin, 0,-.53,0); p(list, .03,.06,.08, skin, .05,-.55,.02);
+    p(list, .15,.28,.17, sleeve, 0,-.12,0); p(list, .125,.22,.145, L.robe ? RC : L.suit==="o" ? tunicD : linen, 0,-.36,0);
+    if (L.robe) p(list, .17,.12,.19, RD, 0,-.44,0); p(list, .14,.05,.16, tunicD, 0,-.46,0); p(list, .1,.1,.11, skin, 0,-.53,0); p(list, .03,.06,.08, skin, .05,-.55,.02);
   }
   // head (pivot at the neck, 1.18 up)
   p(H, .34,.36,.32, skin, 0,.18,0);
@@ -471,7 +547,9 @@ function hwMakeChar3D(L){
   const HC = L.hair || "#3f2616", st = L.style;
   if (L.glasses || L.shades){ const lens = L.shades ? "#0a0a0a" : "#8a9a9a"; p(H, .09,.07,.015, lens, -.08,.22,.168); p(H, .09,.07,.015, lens, .08,.22,.168); p(H, .06,.012,.01, "#2a2a2a", 0,.23,.17); }
   if (L.beard) p(H, .3,.12,.06, L.beard, 0,.03,.16);
-  if (hoodUp){
+  if (L.robe){
+    p(H, .44,.46,.4, RC, 0,.22,-.02); p(H, .3,.34,.3, RC, 0,.52,-.1, {geo:"cone", rx:-.35}); p(H, .46,.06,.42, RD, 0,-.02,0);
+  } else if (hoodUp){
     const hc = L.hatColor ? hMix(L.hatColor, "#2a2420", .5) : cloakCol;
     p(H, .42,.08,.38, hc, 0,.4,-.01); p(H, .06,.36,.36, hc, -.2,.2,-.01); p(H, .06,.36,.36, hc, .2,.2,-.01); p(H, .42,.4,.06, hc, 0,.2,-.18); p(H, .3,.2,.12, hc, 0,.12,-.24, {rx:.5}); p(H, .42,.05,.04, hMix(hc, "#000", .3), 0,.38,.17);
   } else if (st==="hat"){
@@ -495,6 +573,7 @@ function hwMakeChar3D(L){
     if (st==="slick" || st==="neat"){ p(H, .38,.04,.1, hMix(HC, "#fff", .1), 0,.44,.12); }
   }
   const mk = (list, parent, px, py, pz) => { const m = new THREE.Mesh(mergeParts(list), vcMat()); m.castShadow = true; m.receiveShadow = false; const pv = new THREE.Group(); pv.position.set(px, py, pz); pv.add(m); parent.add(pv); return [pv, m]; };
+  if (L.bandage){ AL.push({w:.14,h:.16,d:.16,col:"#e0d8c8",x:0,y:-.36,z:0}, {w:.145,h:.02,d:.165,col:"#8a1a1a",x:0,y:-.33,z:0}); }
   const [legL] = mk(LL, g, -.11, .62, 0), [legR] = mk(LR, g, .11, .62, 0);
   const torsoMesh = new THREE.Mesh(mergeParts(B), vcMat()); torsoMesh.castShadow = true; g.add(torsoMesh);
   const [armL] = mk(AL, g, -.29*big, 1.12, 0), [armR] = mk(AR, g, .29*big, 1.12, 0);
@@ -504,12 +583,38 @@ function hwMakeChar3D(L){
   const tag = new THREE.Object3D(); tag.position.y = 1.9; g.add(tag);
   const c = {g, legL, legR, armL, armR, head, torso:torsoMesh, tag, face, masks:{}, mask:null, key:JSON.stringify(L)};
   c.setMask = type => {
+    if (c.lockMask) type = c.lockMask;
     if (c.mask === type) return;
     if (c.mask && c.masks[c.mask]) c.masks[c.mask].visible = false;
     c.mask = type; face.visible = !type;
     if (type){ if (!c.masks[type]){ c.masks[type] = hwMask(type); head.add(c.masks[type]); } c.masks[type].visible = true; }
   };
+  if (L.robe){ c.lockMask = "goat"; c.setMask("goat"); }
   return c;
+}
+// the beast: hunched, long-armed, grey, with a wolf's head and eyes that catch the light
+function hwMakeWolf3D(L){
+  const g = new THREE.Group(), F1 = "#4a4440", F2 = "#3a3430", F3 = "#5e5650", CL = "#d8d0c0";
+  const LL = [], LR = [], AL = [], AR = [], B = [], H = [];
+  const p = (list, w,h,d, col, x,y,z, extra={}) => list.push(Object.assign({w,h,d,col,x,y,z}, extra));
+  for (const list of [LL, LR]){ p(list, .26,.42,.3, F1, 0,-.12,.04, {rx:-.35}); p(list, .17,.36,.2, F2, 0,-.42,-.1, {rx:.5}); p(list, .2,.08,.32, F2, 0,-.6,.02); for (const k of [-1,0,1]) p(list, .03,.03,.1, CL, k*.06,-.62,.2); }
+  p(B, .7,.62,.5, F1, 0,1.0,.06, {rx:.35}); p(B, .58,.46,.44, F2, 0,.58,0, {rx:.15}); p(B, .76,.3,.56, F3, 0,1.28,.14, {rx:.45});
+  for (let i=0;i<5;i++) p(B, .08,.18,.08, F2, -.16 + i*.08,1.4,-.08, {rx:-.6});
+  p(B, .12,.6,.12, F2, 0,.5,-.34, {rx:-.9});
+  for (const list of [AL, AR]){ p(list, .2,.5,.22, F1, 0,-.22,.06, {rx:-.2}); p(list, .16,.5,.18, F2, 0,-.68,.14, {rx:-.1}); p(list, .2,.12,.2, F2, 0,-.96,.18); for (const k of [-1,0,1]) p(list, .025,.025,.16, CL, k*.06,-1.02,.3, {rx:.6}); }
+  p(H, .4,.38,.42, F1, 0,.12,0); p(H, .22,.18,.36, F2, 0,.04,.34); p(H, .12,.08,.06, "#0a0808", 0,.1,.53);
+  p(H, .2,.04,.3, "#5a1010", 0,-.04,.32); for (let i=0;i<4;i++) p(H, .025,.06,.02, CL, -.06 + i*.04,-.06,.46);
+  for (const s of [-1,1]){ p(H, .1,.24,.06, F2, s*.13,.42,-.04, {rz:-s*.2, geo:"cone"}); }
+  const mk = (list, px, py, pz) => { const m = new THREE.Mesh(mergeParts(list), vcMat()); m.castShadow = true; const pv = new THREE.Group(); pv.position.set(px, py, pz); pv.add(m); g.add(pv); return pv; };
+  const legL = mk(LL, -.18, .78, 0), legR = mk(LR, .18, .78, 0), armL = mk(AL, -.46, 1.36, .12), armR = mk(AR, .46, 1.36, .12);
+  const torso = new THREE.Mesh(mergeParts(B), vcMat()); torso.castShadow = true; g.add(torso);
+  const head = mk(H, 0, 1.52, .32);
+  const eyeM = hMat("wolfeye", () => new THREE.MeshBasicMaterial({color:0xffd040}));
+  for (const s of [-1,1]){ const e = new THREE.Mesh(hGeo().box, eyeM); e.scale.set(.07,.04,.02); e.position.set(s*.1, .2, .215); head.add(e); }
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({map:texGlow("#ffc040"), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:.6})); glow.scale.set(.5,.25,1); glow.position.set(0,.2,.25); head.add(glow);
+  g.scale.setScalar(1.18);
+  const tag = new THREE.Object3D(); tag.position.y = 2.1; g.add(tag);
+  return {g, legL, legR, armL, armR, head, torso, tag, masks:{}, mask:null, setMask(){}, key:JSON.stringify(L), wolf:true};
 }
 // masks, built from a few boxes and a painted front
 function hwMask(type){
@@ -555,10 +660,13 @@ function hwSky(dt, now, attract){
     T3.sunSpr.renderOrder = T3.moonSpr.renderOrder = T3.moonHalo.renderOrder = -1;
   }
   const sunUp = Math.max(0, Math.sin(sunA)), inside = !attract && insideOf(T.player);
-  T3.sunSpr.visible = sunUp > 0 && dk < .6 && !inside; T3.sunSpr.position.copy(cam).addScaledVector(sunDir, 160); T3.sunSpr.material.opacity = rain ? .25 : .85;
+  const SD = Math.max(34, (T3.scene.fog.far + 14) * .8), sk = SD / 160;   // sky objects sit just inside the far plane
+  T3.sunSpr.scale.set(46*sk, 46*sk, 1); T3.moonSpr.scale.set(60*sk, 60*sk, 1); T3.moonHalo.scale.set(130*sk, 130*sk, 1);
+  if (T3.stars) T3.stars.scale.setScalar(SD / 185);
+  T3.sunSpr.visible = sunUp > 0 && dk < .6 && !inside; T3.sunSpr.position.copy(cam).addScaledVector(sunDir, SD); T3.sunSpr.material.opacity = rain ? .25 : .85;
   const moonVis = Math.min(1, Math.max(0, (dk - .15) * 2.2));
   T3.moonSpr.visible = T3.moonHalo.visible = moonVis > 0;
-  T3.moonSpr.position.copy(cam).addScaledVector(moonDir, 160); T3.moonHalo.position.copy(T3.moonSpr.position);
+  T3.moonSpr.position.copy(cam).addScaledVector(moonDir, SD); T3.moonHalo.position.copy(T3.moonSpr.position);
   T3.moonSpr.material.opacity = moonVis * (rain ? .55 : 1); T3.moonHalo.material.opacity = moonVis * .45; T3.moonHalo.material.color.set(HWS.blood > .5 ? "#ff3020" : "#c8d0d8");
   // the face
   if (T3.moonSpr.visible && now > HWS.moonAt){
@@ -615,10 +723,15 @@ if (HALLOW){
   buildWorld3D = hwBuildWorld3D;
   makeChar3D = hwMakeChar3D;
   T3.stainMake = s => new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.15), new THREE.MeshLambertMaterial({map:texBlood((s.x*7 + s.y*3)|0), transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-2}));
-  T3.nameOf = (n, near) => (HW.masked && HW.masked(n) && near > 2.2) ? "?" : n.met ? n.first : n.job;
+  T3.nameOf = (n, near) => n.wolf ? "???" : n.look.robe && near > 1.6 ? "a red robe" : (HW.masked && HW.masked(n) && near > 2.2) ? "?" : n.met ? n.first : n.job;
   T3.pre = (dt, now, attract) => {
     if (attract) hwAttract(now); else HWS.attractLit = false;
     const sky = hwSky(dt, now, attract);
+    if (typeof MYFX !== "undefined") MYFX.update(dt, now, attract, sky);
+    // nothing past the fog needs drawing
+    const far = Math.max(40, T3.scene.fog.far + 14);
+    if (Math.abs(T3.camera.far - far) > 2){ T3.camera.far = far; T3.camera.updateProjectionMatrix(); }
+    T3.cullDist = Math.min(46, far);
     if (!attract && T){
       for (const n of folk){ const c = T3.chars.get(n.id); if (c && c.setMask) c.setMask(!n.dead && HW.masked(n) ? HW.maskType(n) : null); }
     }

@@ -59,6 +59,26 @@ http://127.0.0.1:3000/millbrook-hallow.html is the 3D Millbrook rebuilt as a med
 - Scares: something stands at the edge of the fog and watches you, three knocks at 3 a.m., and sometimes it's right behind you.
 - Pause menu: camera sensitivity slider, invert camera, jumpscares on or off, film grain on or off. The sensitivity and invert settings also apply to the plain 3D build.
 
+### The expanded village
+
+Hallowmere's Millbrook is about four times the size of the original town, with 70 villagers:
+
+- **East over the river**: a market with stalls, the Mill (with a turning wheel), the Stables, the Bakehouse, a butcher, chandler, tailor, cobbler, cooper and potter, a second tavern (the Black Lamb), the Watch House with its guards, Ravensworth Manor, and three streets of homes.
+- **The Blackwood**: a big, dark forest south of everything, with paths, a stone circle, the hanging tree, a bog, a wolf's den, an abandoned woodcutter's hut, the wise woman's hut and the hunter's lodge. Fog is thicker there, the camera rises above the canopy, eyes watch from between the trees, and the thing in the fog comes by day as well as by night.
+- **New trades**: bakers, butchers, millers, manor staff, gate guards, a night watchman, a gravedigger, monks, woodcutters, a hunter, market vendors, a fortune teller, a beggar and more. Each has a workplace and routine; several shops and new odd jobs open up.
+- **Distinct voices**: every villager gets their own pitch, timbre and pace. Women are always pitched higher than men.
+- **Questlines**: everyone has a three-part story ("Their story" in the talk window): find a lost keepsake somewhere in the village or the Blackwood, fetch something, carry a sealed letter or ask someone a question. Finishing one earns a reward, their loyalty and respect.
+- **Respect**: shown under your silver. Solving mysteries and finishing stories raises it, and everyone's opinion of you rises with it.
+- **The tavern** (the Hanged Man / Rusty Nail) can be entered again; shelves were blocking the door. This fix applies to every edition.
+
+### Mysteries
+
+- **The Horned Moon**: five villagers are a blood cult that meets at the stone circle at midnight on odd nights. Find a robe, a ledger, the altar dagger or a bone sigil, and show any three to the Reeve (the sheriff). If they learn what you know, from your questions, your snooping or seeing you at the stones, one of them comes for you at night in a red robe.
+- **Ashcombe House**: the boarded-up manor at the forest's edge. Inside, a ghost girl appears and vanishes, doors slam and lock, a music box plays, footsteps cross the floor above, and "GET OUT" is written on the floor. Read the diary, find what's behind the nursery wall, take her doll, and lay her to rest at the church altar. Her silver dagger is the reward.
+- **The Beast**: every third night one villager becomes a werewolf, breaks into homes and kills. Clues: bloody paw prints leading to its door, an empty bed at night, a bandaged arm the next morning, villagers' half-memories, and wolfsbane (it can't stand it). Name it to the Reeve and it transforms and fights; steel wounds close up, silver doesn't. Name the wrong person and an innocent goes to the gaol.
+
+The expansion is in `town3d-src/13-expand.js` (map, trades, shops, items), `14-mysteries.js` (cult, house, beast, questlines, respect, journal page) and `23-mystfx.js` (ghost, tracks, forest atmosphere).
+
 It has its own save. The edition lives in `town3d-src/12-hallow.js` (names, jobs, events, intro), `16-music.js` (score and sound), `18-tex.js` (painted textures), `21-hallow-world.js` (world, people, sky) and `22-fx.js` (effects and scares), plus `hallow.css`. They switch on when the page sets `window.MILLBROOK_HALLOW`; `npm run build` writes `public/millbrook-hallow.html`.
 
 ## Part three: Operation Birch

@@ -134,6 +134,7 @@ function onHourT(h){
   if (T.notoriety > 0 && !T.wanted) T.notoriety = Math.max(0, T.notoriety - .5);
   // the case goes cold if you give it nothing
   const D = T.det; if (D && detAlive()){ const recent = D.evidence.filter(e=>e.kind!=="timing").slice(-1)[0]; if (h===23 && (!recent || !String(recent.s).includes(`day ${T.day})`))) D.suspicion = Math.max(0, D.suspicion - 3); }
+  if (onHourHook) onHourHook(h);
   if (T.debts.some(d=>!d.paid && T.day-d.day >= 4) && h===12){ const d = T.debts.find(x=>!x.paid && T.day-x.day >= 4); const n = byIdT(d.who); if (n && alive(n)){ n.opinion = clamp(n.opinion-5,-100,100); gossipT(n, `The newcomer owes me $${d.amount} and won't pay up.`); } }
   saveT();
 }
@@ -252,6 +253,7 @@ function holdTick(tg, dt){
 }
 
 // ---------- what E does right now ----------
+let EXTRA_INTERACT = null, onHourHook = null, onSecondHook = null;   // edition hooks
 function interactTargetT(){
   const pl = T.player, [fx,fy] = facingT(), c = tileT(fx,fy), here = insideOf(pl), k = fx+","+fy;
   const box = T.containers[k];
@@ -293,6 +295,7 @@ function interactTargetT(){
     if (here==="post" && !T.phonesCut && "CH".includes(c)) return {kind:"cut", key:"cutphones", label:"Hold: rip out the phone exchange", hold:true, secs:4, act:"robbing", sound:"cut", done:cutPhones};
     if (here==="sheriff" && fx===59 && fy===24 && !T.radioSmashed) return {kind:"radio", key:"radio", label:"Hold: smash the sheriff's radio", hold:true, secs:3, sound:"punch", done:()=>{ T.radioSmashed = true; toast("Sparks, then nothing. The sheriff can't call anyone now.", "good", 4); sfx("snap"); }};
   }
+  if (EXTRA_INTERACT){ const r = EXTRA_INTERACT(fx, fy, c, here, k); if (r) return r; }
   // furniture
   if (box) return {kind:"box", label: box.mine ? "Open your footlocker" : `Open the ${box.name.toLowerCase()}`, run:()=>openBoxT(k)};
   if (here==="roomC" && fx===86 && fy===15) return {kind:"sleep", label: hourNow()>=20 || hourNow()<6 ? "Sleep until morning" : "Nap for two hours", run:sleepT};
@@ -416,6 +419,7 @@ function perSecondT(){
   if (T.lock && T.lock.kind==="chase" && pl.x <= 1 && pl.y >= 28 && pl.y <= 33) ending("wild");
   if (T.mode==="slasher" && T.wanted) T.wanted = false;
   if (T.money < 0) T.money = 0;
+  if (onSecondHook) onSecondHook();
 }
 function musicT(){
   const pl = T.player, inside = insideOf(pl), night = isNightT();
@@ -714,4 +718,4 @@ buildTownDom();
 wireTownDom();
 syncTownSound();
 if (matchMedia("(pointer:coarse)").matches){ $("taBtn").style.display = ""; $("tfBtn").style.display = ""; }
-window.__town = {bById, doorLockedT, walkPlayer, get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot};
+window.__town = {bById, doorLockedT, walkPlayer, get T(){ return T; }, get folk(){ return folk; }, begin, cont, openTalkT, askTownNpc, applyTownAction, detBrain, setDetMove, arrestSequence, killPerson, startFishing, startDarts, startCards, startArcade, startDance, openShop, advanceTimeT, ending, playCutscene, discoverBody, interactTargetT, nextShot, tileT, bfsT, npcWalkT, PLACES, BUILDINGS, get tmap(){ return tmap; }, randomSpot, onHourT, perSecondT};

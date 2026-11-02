@@ -33,6 +33,25 @@ function genVoice(p){
     slide: .88+Math.random()*.16, formant: p.pron==="he" ? .8+Math.random()*.15 : p.pron==="she" ? 1.05+Math.random()*.18 : .95+Math.random()*.12,
     speed: .8+Math.random()*.55, vib: Math.random()<.15};
 }
+// Everyone sounds different: women are pitched higher, men lower, and no two voices share a pitch, timbre and pace.
+function distinctVoices(people){
+  const bands = {he:[62, 150], she:[215, 380], they:[150, 215]};
+  const waves = ["sawtooth","square","triangle"];
+  for (const g of ["he","she","they"]){
+    const grp = shuffle(people.filter(p=>p.pron===g));
+    grp.forEach((p, i) => {
+      const [lo, hi] = bands[g], t = grp.length > 1 ? i/(grp.length-1) : .5;
+      const v = p.voice;
+      v.base = lo + (hi-lo)*t + (p.teen ? 30 : 0) - (p.age > 64 ? 12 : 0);
+      v.wave = waves[i % 3];
+      v.formant = (g==="he" ? .74 : g==="she" ? 1.08 : .95) + ((i*7) % 5) * .045;
+      v.speed = .75 + ((i*3) % 7) * .09;
+      v.len = .045 + ((i*5) % 4) * .015;
+      v.range = 2 + ((i*11) % 6);
+      v.vib = (i % 4) === 3;
+    });
+  }
+}
 function genLook(p){
   const shirt = pick(SHIRTS);
   E.SUITS["t_"+p.id] = [shirt, shade(shirt,-.3), shade(shirt,.25)];
@@ -86,11 +105,13 @@ function genTown(){
   const adults = homeless.filter(p=>p!==teen);
   // three married couples, a parent and teen, and roommates if needed
   const pairs = [];
-  for (let i=0;i<3;i++){ const a = adults.shift(), b = adults.shift(); if (a && b){ pairs.push([a,b,"married"]); } }
+  const couples = Math.max(3, adults.length + 2 - free.length);   // enough couples that everyone has a roof
+  for (let i=0;i<couples;i++){ const a = adults.shift(), b = adults.shift(); if (a && b){ pairs.push([a,b,"married"]); } }
   if (teen){ const parent = adults.shift(); if (parent) pairs.push([parent, teen, "parent"]); }
   for (const [a,b,kind] of pairs){ const h = free.shift(); a.home = b.home = h.id; if (kind==="married"){ a.spouse = b.id; b.spouse = a.id; b.last = a.last; } else { b.last = a.last; b.parent = a.id; a.child = b.id; } }
   while (adults.length){ const a = adults.shift(); const h = free.shift(); if (h) a.home = h.id; else { const b2 = adults.length ? adults.shift() : null; a.home = pairs[0][0].home; if (b2) adults.unshift(b2); } }
   for (const p of people) if (!p.home) p.home = pick(homes).id;
+  distinctVoices(people);
   // relationships
   T.rel = {};
   for (let i=0;i<people.length;i++) for (let j=i+1;j<people.length;j++) T.rel[relKeyT(people[i].id, people[j].id)] = Math.round(Math.random()*26-8);
@@ -152,7 +173,7 @@ function canSeeT(n, tx, ty, range){
   return true;
 }
 function lit(x,y){ return tileT(Math.round(x),Math.round(y))==="l" || [[0,1],[1,0],[0,-1],[-1,0],[0,2],[2,0]].some(([dx,dy])=>tileT(Math.round(x)+dx,Math.round(y)+dy)==="l"); }
-function bfsT(sx,sy,tx,ty,walk,limit=9000){
+function bfsT(sx,sy,tx,ty,walk,limit=TW*TH){
   if (sx===tx && sy===ty) return [];
   const prev = new Int32Array(TW*TH).fill(-1), start = sy*TW+sx, goal = ty*TW+tx, q = [start]; prev[start] = start;
   for (let h=0;h<q.length && h<limit;h++){ const c = q[h]; if (c===goal) break; const cx = c%TW, cy = (c/TW)|0;

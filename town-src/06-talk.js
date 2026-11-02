@@ -70,6 +70,7 @@ function openTalkT(n, opts={}){
     else if (first) startTypeT(greetingT(n), n);
     else { const last = [...n.log].reverse().find(l=>l.who==="n"); startTypeT(last && last.d===T.day ? last.text : greetingT(n), n); }
   }
+  if (onTalkOpenHook) onTalkOpenHook(n);
   if (!opts.approach && !document.body.classList.contains("touch")) setTimeout(()=>{ if (T && T.talkId===n.id) $("tdInput").focus(); }, 0);
 }
 function greetingT(n){
@@ -204,6 +205,8 @@ const TOWN_ACTIONS_DOC = `ACTIONS: things you actually DO, right now, in the wor
 const SHERIFF_DOC = `SHERIFF ACTIONS: {"type":"arrest","reason":"x"} take them to the cells (only for a real crime you know about) {"type":"fine","amount":20} {"type":"search"} pat down their pockets`;
 const DET_DOC = `INVESTIGATOR ACTIONS (only you): {"type":"search"} ask to look in their pockets and do it if they let you (or insist) {"type":"close_case"} only if you are now convinced they are NOT ${PNUMT}: you'll quietly leave Millbrook {"type":"arrest"} only if suspicion is 85+ and you're ready to blow your cover`;
 
+let personNote = n => "";   // an edition can add hidden roles and mysteries to a person's prompt
+let onSaidHook = null, onGaveHook = null, onTalkOpenHook = null;
 function townPrompt(n, said, gave, approach, extra={}){
   const pl = T.player, det = isDet(n), D = T.det;
   const mems = n.memories.slice(-90).map(m=>`- [${m.s}] ${m.text}`).join("\n") || "- Nothing. You've never dealt with them.";
@@ -235,7 +238,7 @@ AGE ${n.age}. JOB: ${n.job}${n.work ? ` (you work at ${placeName(n.work)}${n.hou
 PERSONALITY: ${n.traits.join(", ")}. HOBBIES: ${n.hobbies.join(", ")}. YOU LIKE: ${n.likes.join(", ")}. YOU DISLIKE: ${n.dislikes.join(", ")}.
 HOW YOU TALK: ${n.style} QUIRK: ${n.quirk}.${habits.length ? ` YOUR HABITS: ${habits.join("; ")} (let them show in *actions* now and then).` : ""}
 YOUR SECRET (guard it; hint at most, unless you deeply trust them): ${n.secret}.
-YOU CARRY: ${n.inv.join(", ") || "nothing"}, and $${Math.round(n.money)}.${sheriffRole ? "\n"+sheriffRole : ""}${secretRole}
+YOU CARRY: ${n.inv.join(", ") || "nothing"}, and $${Math.round(n.money)}.${sheriffRole ? "\n"+sheriffRole : ""}${secretRole}${personNote(n)}
 PEOPLE IN TOWN AND HOW YOU FEEL ABOUT THEM:
 ${relLinesT(n)}
 HABITS YOU'VE NOTICED IN NEIGHBORS (share if asked): ${knows.slice(0,6).join("; ") || "none in particular"}.
@@ -280,6 +283,7 @@ async function askTownNpc(n, {said="", gave=null, approach=null, accuse=false} =
     const handled = checkFavorOnGiveT(n, gave);
     if (!handled && n.likes.includes(gave)) n.trust = clamp(n.trust+2,0,100);
     if (isEvidence(gave) && isDet(n)) addEvidence(`The newcomer handed me a ${gave}.`, 10, "gift");
+    if (onGaveHook) onGaveHook(n, gave);
     renderHotbarT();
   }
   if (said){
@@ -287,6 +291,7 @@ async function askTownNpc(n, {said="", gave=null, approach=null, accuse=false} =
     if (isDet(n)) T.det.claims.push(`Told me: "${said.slice(0,120)}"`);
     if (INCRIMINATING.test(said)){ rememberT(n, `The newcomer said something strange about ${said.match(INCRIMINATING)[0].toLowerCase()}: "${said.slice(0,120)}"`); if (!isDet(n)) addEvidenceVia(n, `${n.first} heard the newcomer mention "${said.match(INCRIMINATING)[0]}".`, 4); }
     checkVisitFavorT(n);
+    if (onSaidHook) onSaidHook(n, said);
   }
   $("tdYou").textContent = (gave ? `[gave ${gave}] ` : "") + (said ? `You: ${said}` : "");
   $("tdMem").textContent = "";

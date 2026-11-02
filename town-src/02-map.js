@@ -98,7 +98,7 @@ function buildTown(){
   S(96,21,"D"); DOOR_AT["96,21"] = "station"; R(94,23,96,23,"C"); for (const x of [93,95,97,99]) S(x,26,"n");
   // south side of Main Street
   b = B("bar","The Rusty Nail","bar",3,33,17,44,[10,33],{floor:".",roof:"#8b5a3c",hours:[14,26],sign:"RUSTY NAIL"});
-  R(5,36,12,36,"e"); R(5,34,12,34,"H"); for (let x=5;x<=12;x+=2) S(x,37,"c");
+  R(5,36,12,36,"e"); R(5,34,8,34,"H"); R(12,34,12,34,"H");   // shelves stop short of the door for (let x=5;x<=12;x+=2) S(x,37,"c");
   S(6,40,"K"); S(5,40,"c"); S(7,40,"c"); S(10,40,"K"); S(9,40,"c"); S(11,40,"c"); S(14,38,"Q"); S(16,35,"%"); S(4,43,"j");
   R(13,41,13,43,"#"); S(13,42,"D"); DOOR_AT["13,42"] = "barback"; S(16,43,"B"); S(14,43,"O");
   win(b,[[5,33],[15,33]]); S(8,45,"Y");
@@ -206,7 +206,7 @@ function doorLockedT(x,y, who){
   return false;
 }
 const walkPlayer = (x,y) => WALK_T.has(tileT(x,y)) && !(tileT(x,y)==="D" && doorLockedT(x,y,T.player));
-function npcWalkT(x,y,n){ const c = tileT(x,y); if (!WALK_T.has(c)) return false; if (c==="D") return !doorLockedT(x,y,n); return true; }
+function npcWalkT(x,y,n){ const c = tileT(x,y); if (!WALK_T.has(c)) return false; if (c==="D") return (n && n.breaksDoors) || !doorLockedT(x,y,n); return true; }
 
 // ---------- containers ----------
 const LOOT = {

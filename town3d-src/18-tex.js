@@ -193,7 +193,9 @@ function hwPaintGround(){
     const ch = tmap[y][x], X = x*TS, Y = y*TS, bid = buildingAt(x,y);
     if (bid || ch === "D"){ const fl = bid ? (bById(outerOf(bid)) || {}).floor || "." : "."; floorOf(X, Y, x, y, ".,:y".includes(ch) ? ch : (bid==="roomA"||bid==="roomB"||bid==="roomC" ? ":" : fl), bid); if (bid && (tileT(x,y-1)==="#" || tileT(x,y-1)==="x")) F(X, Y, TS, 4, "rgba(5,4,8,.4)"); continue; }
     switch (ch){
-      case "g": case "G": case "M": case "V": case "f": case "P": grass(X, Y, x, y, inCem(x,y)); break;
+      case "g": case "G": case "M": case "V": case "f": case "P": case "4": case "5": case "9": grass(X, Y, x, y, inCem(x,y) || y >= 86); if (y >= 86 && rnd(x,y,60) > .7) F(X + ((rnd(x,y,61)*12)|0), Y + ((rnd(x,y,62)*12)|0), 3, 2, "#1e1a14"); break;
+      case "6": case "7": mud(X, Y, x, y, "#2a241c"); break;
+      case "8": cobble(X, Y, x, y, "#5a544a", 4); break;
       case "t": case "T": grass(X, Y, x, y, true); for (let i=0;i<4;i++) F(X + ((rnd(x,y,i+50)*14)|0), Y + ((rnd(x,y,i+51)*14)|0), 3, 1, LEAF[i%5]); break;
       case "r": cobble(X, Y, x, y, "#4a443c", 4); { const ry = y % 5; if (ry===1 || ry===3) for (let i=0;i<TS;i+=2) F(X+i, Y+7, 2, 2, "rgba(20,16,12,.5)"); } break;
       case "s": case "l": flag(X, Y, x, y, "#5a564c"); break;
