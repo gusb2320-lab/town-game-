@@ -1,0 +1,31 @@
+/* Hallowmere: a gothic skin over the same windows and readouts. */
+body.hallow{--k:#0d0a09;--d:#2a2220;--m:#5a4a40;--l:#a89880;--w:#e8dcc4;--o:#b8862c;--y:#d8b060;--g:#9ab070;--r:#8a1a1a;--b:#3a4a5a;--c:#a0c8b8;--paper:#d8c8a0;--paper2:#a08860;--ink:#1a120c;--goth:"Pirata One","IM Fell English",Georgia,serif;--fell:"IM Fell English",Georgia,serif;background:#050404}
+body.hallow .wbox{background:linear-gradient(#1c1612,#14100d);border-color:#050403;box-shadow:inset 0 0 0 3px #3a2a1e,inset 0 0 0 4px #6a5030,0 8px 0 rgba(0,0,0,.6)}
+body.hallow .whead h2,body.hallow .title,body.hallow .bigbtn{font-family:var(--goth);letter-spacing:.02em}
+body.hallow .whead h2{font-size:26px;font-weight:400;color:var(--y)}
+body.hallow .bigbtn{font-size:22px;padding:10px 20px;background:#6a1414;color:#f0e0c0;border:3px solid #050403;box-shadow:inset 0 0 0 2px #a0702a,inset 0 -5px 0 #3a0808}
+body.hallow .bigbtn.alt{background:#2a2420;box-shadow:inset 0 0 0 2px #6a5030,inset 0 -5px 0 #120e0c}
+body.hallow .eyebrow{font-family:var(--fell);font-size:15px;letter-spacing:.18em;color:#a08050}
+body.hallow #mbTitle{background:radial-gradient(ellipse at 80% 20%, rgba(80,10,10,.05) 0%, rgba(5,4,4,.0) 40%),linear-gradient(90deg, rgba(5,4,4,.95) 0%, rgba(8,5,5,.78) 45%, rgba(5,4,4,.05) 100%)}
+body.hallow #mbTitle .title{font-size:clamp(46px,11vw,96px);font-weight:400;color:#e8dcc4;text-shadow:0 0 18px rgba(140,10,10,.55),4px 4px 0 #3a0606;line-height:.95}
+body.hallow #mbTitle .title .hwSub{display:block;font-family:var(--fell);font-style:italic;font-size:.4em;color:#c89a40;text-shadow:2px 2px 0 #000;margin-top:6px;letter-spacing:.06em}
+body.hallow #mbTitle p{font-family:var(--fell);font-size:19px;line-height:1.35;color:#d0c4ac}
+body.hallow #mbTitle .keys,body.hallow #mbTitle .note{font-family:var(--vt)}
+body.hallow .hwWarn{font-size:15px!important;color:#9a7050!important;border-left:3px solid #6a1414;padding-left:10px}
+body.hallow .ov-name{background:rgba(10,8,6,.82);color:#e0cfa8;border-bottom:2px solid #5a1010}
+body.hallow .ov-bubble{background:#d8c8a0;color:#1a120c;border-color:#1a0e08;box-shadow:2px 3px 0 rgba(0,0,0,.5)}
+body.hallow .ov-bubble.scene{background:#c8bfa8}
+body.hallow .ov-bubble::after{border-top-color:#1a0e08}
+body.hallow .ov-bubble em{color:#6a1010}
+body.hallow #ovPrompt{background:#120e0c;border:2px solid #5a4028}
+body.hallow #ovPrompt b{background:#b8862c}
+body.hallow #ovFade{background:#050303;font-family:var(--goth);letter-spacing:.08em;color:#c8b898}
+body.hallow #banner b{font-family:var(--goth);font-weight:400;letter-spacing:.04em}
+#hwGrain{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;image-rendering:pixelated;mix-blend-mode:overlay;opacity:.5}
+#hwVignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center, rgba(0,0,0,0) 48%, rgba(0,0,0,.55) 100%);transition:background 3s}
+body.hw-night #hwVignette{background:radial-gradient(ellipse at center, rgba(0,0,0,0) 36%, rgba(0,0,0,.78) 100%)}
+#hwScare{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;image-rendering:pixelated;z-index:90}
+.mbSlider{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mbSlider input[type=range]{flex:1;min-width:140px;accent-color:var(--o)}
+.mbSlider output{min-width:52px;color:var(--y)}
+@media (prefers-reduced-motion:reduce){#hwGrain{display:none}}

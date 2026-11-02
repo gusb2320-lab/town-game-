@@ -38,7 +38,7 @@ function begin(){
   genTown();
   T.containers = makeContainers();
   // the traveling salesman can get you papers, for a price
-  const sales = folk.find(n=>n.job.includes("salesman")); if (sales) sales.inv.push("fake ID");
+  const sales = folk.find(n=>jobKey(n).includes("salesman")); if (sales) sales.inv.push("fake ID");
   const junk = Object.keys(T.containers).filter(k=>T.containers[k].name==="Junk pile"); if (junk.length) T.containers[pick(junk)].items.push("lockpick");
   const back = Object.keys(T.containers).find(k=>T.containers[k].bid==="barback" && T.containers[k].name==="Wardrobe"); if (back) T.containers[back].items.push("shotgun","bullets","bullets","bullets");
   for (const n of folk) n.suitCols = E.SUITS["t_"+n.id];
@@ -59,7 +59,7 @@ function begin(){
     const tip = (txt, ms, secs) => setTimeout(()=>{ if (TOWN.active && T && !T.mode && !T.ending) toast(txt, "", secs); }, ms);
     tip("Talk to anyone (E). Make friends, take odd jobs, play games. Someone in town is not who they say they are.", 5200, 9);
     tip("Get rid of that jumpsuit. Watch for habits. Keep your story straight.", 15000, 7);
-    const hk = folk.find(n=>n.job==="hotel keeper"); if (hk){ hk.x = hk.fx = 82; hk.y = hk.fy = 26; hk.order = {type:"approach", reason:"Welcome the new guest of Room C to the Millbrook Arms. Their first two nights are paid; rent is $15 a night after that, at the front desk. Ask their name for the ledger.", until:absT()+40}; }
+    const hk = folk.find(n=>jobKey(n)==="hotel keeper"); if (hk){ hk.x = hk.fx = 82; hk.y = hk.fy = 26; hk.order = {type:"approach", reason:"Welcome the new guest of Room C to the Millbrook Arms. Their first two nights are paid; rent is $15 a night after that, at the front desk. Ask their name for the ledger.", until:absT()+40}; }
     lastHourT = hourNow(); saveT(); renderHotbarT();
   });
 }
@@ -137,6 +137,7 @@ function onHourT(h){
   if (T.debts.some(d=>!d.paid && T.day-d.day >= 4) && h===12){ const d = T.debts.find(x=>!x.paid && T.day-x.day >= 4); const n = byIdT(d.who); if (n && alive(n)){ n.opinion = clamp(n.opinion-5,-100,100); gossipT(n, `The newcomer owes me $${d.amount} and won't pay up.`); } }
   saveT();
 }
+let onNewDay = null;   // an edition can add its own daily events
 function newDayT(){
   const dn = dayName();
   T.weather = Math.random() < .22 ? "rain" : "clear";
@@ -155,10 +156,11 @@ function newDayT(){
   for (const n of folk) if (alive(n)){ n.mood = n.mood==="grieving" && Math.random()<.5 ? "grieving" : pick(["fine","cheerful","tired","busy","chatty","grumpy","fine"]); n.habitKnow = null; }
   // creepy: sometimes you wake up and something has moved
   const D = T.det; if (D && detAlive() && D.suspicion >= 55 && insideOf(T.player)==="roomC" && Math.random() < .3){ const tell = TELLS.find(t=>t.id===pick(detP().tells)); setTimeout(()=>{ toast(`You wake up. The chair has been turned to face your bed. ${tell.clue} on the seat.`, "bad", 8); sfx("stinger"); T.clues.push({s:stampT(), text:`Morning: the chair turned to face my bed. ${tell.clue}.`, tell:tell.id}); }, 1500); D.notes.push({s:stampT(), text:"Watched them sleep. They talk in their sleep. Numbers."}); addEvidence("They mumble a prison number in their sleep.", 6, "sleep"); }
+  if (onNewDay) onNewDay();
 }
 function rentCheck(){
   if (T.day <= T.rentPaid) return;
-  const hk = folk.find(n=>n.job==="hotel keeper" && alive(n));
+  const hk = folk.find(n=>jobKey(n)==="hotel keeper" && alive(n));
   if (T.day > T.rentPaid + 2 && T.player.inv.includes("room key")){
     removeItemT("room key"); T.evicted = true; toast("The hotel keeper changed your lock. Pay what you owe at the front desk to get back in.", "bad", 7);
     for (const k of ["89,15","89,19"]){ const box = T.containers[k]; if (hk && box) for (const it of box.items.splice(0)) hk.inv.push(it); }

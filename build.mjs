@@ -62,3 +62,13 @@ const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
 const page = (await read("town3d-src", "page.html")).replace("{{STYLE}}", () => style);
 await writeFile(path.join(here, "public", "millbrook3d.html"), page);
 console.log("Built public/millbrook3d.html.");
+
+// the Halloween edition: the same scripts, switched to Hallowmere before they load
+const hcss = await read("town3d-src", "hallow.css");
+const hpage = page
+  .replace("<title>Millbrook</title>", "<title>Millbrook: Hallowmere</title>")
+  .replace("family=Press+Start+2P&family=VT323", "family=Press+Start+2P&family=VT323&family=Pirata+One&family=IM+Fell+English:ital@0;1")
+  .replace("</style>", () => hcss + "</style>")
+  .replace('<script src="vendor/three.min.js"></script>', '<script>window.MILLBROOK_HALLOW = true;</script>\n<script src="vendor/three.min.js"></script>');
+await writeFile(path.join(here, "public", "millbrook-hallow.html"), hpage);
+console.log("Built public/millbrook-hallow.html.");

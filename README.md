@@ -47,6 +47,20 @@ Part two also stands alone as a 3D game: open http://127.0.0.1:3000/millbrook3d.
 
 It has its own title screen and its own save. `town3d-src/` holds the 3D renderer and the standalone title screen; `npm run build` combines them with `town-src/` into `public/millbrook3d/`, and copies the shared sound, sprite and icon code out of `public/index.html` into `public/millbrook3d/engine.js`. Three.js r128 is vendored in `public/vendor/` (MIT licence included).
 
+## Millbrook: Hallowmere (Halloween edition)
+
+http://127.0.0.1:3000/millbrook-hallow.html is the 3D Millbrook rebuilt as a medieval village in All Hallows' week, for adults. The rules, the cast and the detective are the same. Everything else changes:
+
+- Timber-framed and stone buildings under thatch and slate, leaded windows with shutters and candles, studded doors, torches on posts and by every shop door, a gallows and a bonfire in the square, a well, a gibbet, skulls on pikes at the edge of town, a graveyard behind iron railings, dead trees, pumpkin fields and scarecrows.
+- People wear tunics, belts, boots, cloaks and hoods, with painted faces. After dark some wear masks (skull, plague doctor, goat, porcelain, sack, crow), and a masked stranger shows only "?" until you're close. Every seventh day is All Hallows' Eve: everyone is masked and the moon turns red.
+- A sun by day. At night, a huge moon with a face whose eyes follow you. It blinks, and it grins after someone dies.
+- A composed retro score (harpsichord, choir, strings, bells, through reverb and delay) and horror sound design: wind, wolves, crows, the midnight bell, whispers.
+- Effects: fire and embers, chimney smoke, ground mist, graveyard wisps, falling leaves, bats, crows that scatter, lightning in the rain, blood, film grain.
+- Scares: something stands at the edge of the fog and watches you, three knocks at 3 a.m., and sometimes it's right behind you.
+- Pause menu: camera sensitivity slider, invert camera, jumpscares on or off, film grain on or off. The sensitivity and invert settings also apply to the plain 3D build.
+
+It has its own save. The edition lives in `town3d-src/12-hallow.js` (names, jobs, events, intro), `16-music.js` (score and sound), `18-tex.js` (painted textures), `21-hallow-world.js` (world, people, sky) and `22-fx.js` (effects and scares), plus `hallow.css`. They switch on when the page sets `window.MILLBROOK_HALLOW`; `npm run build` writes `public/millbrook-hallow.html`.
+
 ## Part three: Operation Birch
 
 Kill the detective and search the body for their badge, then use it from your pockets. A phone rings in Room C, and the truth comes out: you were a Russian intelligence officer (codename SPARROW) all along, and the escape was the plan. You go back into Cellblock Nine as a new guard on probation, wearing the dead agent's name.

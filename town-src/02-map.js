@@ -1,5 +1,6 @@
 // Map: layout, buildings, furniture, containers, doors, tile art and roofs.
 let tmap = [];
+let onTownBuilt = null;   // an edition can reshape the town after it is laid out
 const BUILDINGS = [];
 const DOOR_AT = {};       // "x,y" -> building id
 const PLACES = {};        // routine destinations
@@ -148,6 +149,7 @@ function buildTown(){
   });
   for (const k in PLACES){ const p = PLACES[k]; if (p.rect && !p.spots){ p.spots = []; for (let y=p.rect[1];y<=p.rect[3];y++) for (let x=p.rect[0];x<=p.rect[2];x++) if (WALK_T.has(tileT(x,y)) && tileT(x,y)!=="D") p.spots.push([x,y]); } }
   // the player's room key opens Room C
+  if (onTownBuilt) onTownBuilt();
   return HOMES;
 }
 function roomRect(id){

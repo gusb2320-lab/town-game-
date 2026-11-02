@@ -76,7 +76,7 @@ function greetingT(n){
   const h = hourNow(), part = h<12 ? "morning" : h<17 ? "afternoon" : "evening";
   if (!n.met || !n.log.length){
     if (n.sheriff) return `*tips hat* Sheriff ${n.last}. Don't believe we've met. Passing through?`;
-    if (n.job==="hotel keeper") return `Ah, our guest in Room C. Everything to your liking?`;
+    if (jobKey(n)==="hotel keeper") return `Ah, our guest in Room C. Everything to your liking?`;
     if (n.teen) return pick(["*looks up from a gameboy* …Who are you?","Whoa. A new person. Nobody new ever comes here.","You're the one staying at the hotel, right?"]);
     if (n.nosy) return `Well! You must be the new face everyone's talking about. I'm ${n.first}. ${n.first} ${n.last}. And you are?`;
     return pick([`Good ${part}. Don't think I know you.`, `*looks you up and down* New in town?`, `Hello there. I'm ${n.first}.`, `Oh! Hi. You're the one at the Millbrook Arms?`]);
@@ -228,7 +228,7 @@ EXTRA JSON FIELDS FOR YOU: "suspicion_change" (-10..15: how much more or less th
   const sheriffRole = n.sheriff ? `You are the town sheriff. You know nothing about any undercover investigator. You keep the peace and you're proud of this town. ${T.det.sheriffFile ? `You've been building your own file on the newcomer (${Math.round(T.det.sheriffFile)}/100).` : ""}` : "";
   const warn = n.warn && n.warn.day >= T.day-2 ? `You recently noticed ${n.warn.who ? byIdT(n.warn.who).first+" asking a lot of pointed questions about the newcomer" : "someone asking questions about the newcomer"}. ${n.trust >= 45 ? "You like them enough that you might warn them." : ""}` : "";
   const cover = n.coverFor && n.coverFor > absT() ? "You promised to cover for the newcomer if anyone asks." : "";
-  return `You are voicing ${fullT(n)} in "Millbrook", the second half of the 8-bit game "Cellblock Nine". It's a small, sleepy, nosy town where anything can happen. Stay completely in character. Never mention AI, games or players.
+  return `${THEME_NOTE}You are voicing ${fullT(n)} in "Millbrook", the second half of the 8-bit game "Cellblock Nine". It's a small, sleepy, nosy town where anything can happen. Stay completely in character. Never mention AI, games or players.
 
 WHO YOU ARE: ${n.bio}
 AGE ${n.age}. JOB: ${n.job}${n.work ? ` (you work at ${placeName(n.work)}${n.hours ? `, ${n.hours[0]}:00 to ${n.hours[1]%24}:00` : ""})` : ""}. HOME: ${homeLine(n)}. FAMILY: ${familyLine(n)}.

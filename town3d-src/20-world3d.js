@@ -28,6 +28,8 @@ function init3D(){
   T3.chars = new Map(); T3.mats = new Map();
   T3.ov = $("ov3d"); T3.ovEls = new Map();
   T3.pixel = (()=>{ try { return localStorage.getItem("mb3d-pixel")!=="0"; } catch { return true; } })();
+  T3.sens = (()=>{ try { const v = parseFloat(localStorage.getItem("mb3d-sens")); return v > 0 ? v : 1; } catch { return 1; } })();
+  T3.invY = (()=>{ try { return localStorage.getItem("mb3d-invy")==="1"; } catch { return false; } })();
   resize3D(); addEventListener("resize", resize3D);
   wireCamera3D();
   T3.ready = true;
@@ -167,6 +169,7 @@ function buildWorld3D(){
   if (!T3.rain){ const pts = []; for (let i=0;i<1400;i++) pts.push((Math.random()-.5)*40, Math.random()*18, (Math.random()-.5)*40); const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pts,3)); T3.rain = new THREE.Points(g, new THREE.PointsMaterial({color:0xa0c0ff, size:.08, transparent:true, opacity:.7})); T3.rain.visible = false; T3.scene.add(T3.rain); }
   // dynamic layers
   T3.dyn = new THREE.Group(); W.add(T3.dyn);
+  T3.chars.clear(); T3.dynObj = null;
   T3.builtFor = tmap;
 }
 function signMesh(text, col){
@@ -268,7 +271,7 @@ function bubbleHtml(text){ return esc(text).replace(/\*([^*]*)\*?/g, "<em>$1</em
 function wireCamera3D(){
   const cvs = E.cv; let drag = null;
   cvs.addEventListener("pointerdown", e => { if (!TOWN.active) return; drag = {x:e.clientX, y:e.clientY, id:e.pointerId}; try { cvs.setPointerCapture(e.pointerId); } catch {} });
-  cvs.addEventListener("pointermove", e => { if (!drag || drag.id!==e.pointerId) return; const dx = e.clientX-drag.x, dy = e.clientY-drag.y; drag.x = e.clientX; drag.y = e.clientY; T3.cam.yaw -= dx*.006; if (T3.cam.fp) T3.cam.fpPitch = clamp(T3.cam.fpPitch - dy*.004, -1.1, .9); else T3.cam.pitch = clamp(T3.cam.pitch + dy*.004, .25, 1.45); });
+  cvs.addEventListener("pointermove", e => { if (!drag || drag.id!==e.pointerId) return; const dx = e.clientX-drag.x, dy = e.clientY-drag.y; drag.x = e.clientX; drag.y = e.clientY; const sn = T3.sens || 1, iy = T3.invY ? -1 : 1; T3.cam.yaw -= dx*.006*sn; if (T3.cam.fp) T3.cam.fpPitch = clamp(T3.cam.fpPitch - dy*.004*sn*iy, -1.1, .9); else T3.cam.pitch = clamp(T3.cam.pitch + dy*.004*sn*iy, .25, 1.45); });
   const end = () => { drag = null; }; cvs.addEventListener("pointerup", end); cvs.addEventListener("pointercancel", end);
   cvs.addEventListener("wheel", e => { if (!TOWN.active || T3.cam.fp) return; e.preventDefault(); T3.cam.dist = clamp(T3.cam.dist * (e.deltaY > 0 ? 1.1 : .9), 3.5, 22); }, {passive:false});
   document.addEventListener("keydown", e => {
@@ -389,7 +392,7 @@ function renderTown(dt){
     const inB = insideOf(n); if (inB && outerOf(inB)!==outer) continue;
     const [nx, ny] = rposT(n), near = Math.hypot(nx-ppx, ny-ppy), top = n.asleep ? .9 : 1.95;
     if (n.bubble){ if (now > n.bubble.until) n.bubble = null; else if (near < 14) ovAt("b:"+n.id, "ov-bubble"+(n.scene?" scene":""), nx+.5, top+.15, ny+.5, bubbleHtml(n.bubble.text), 26); }
-    if (!n.bubble && near < 5.5) ovAt("l:"+n.id, "ov-name"+(n.sheriff?" sheriff":n.partner?" partner":""), nx+.5, top, ny+.5, esc(n.met ? n.first : n.job) + (T.tasks.some(t=>t.giver===n.id && t.status==="ready") ? " ✓" : ""), 12);
+    if (!n.bubble && near < 5.5) ovAt("l:"+n.id, "ov-name"+(n.sheriff?" sheriff":n.partner?" partner":""), nx+.5, top, ny+.5, esc(T3.nameOf ? T3.nameOf(n, near) : n.met ? n.first : n.job) + (T.tasks.some(t=>t.giver===n.id && t.status==="ready") ? " ✓" : ""), 12);
     if (n.emote){ if (now > n.emote.until) n.emote = null; else ovAt("e:"+n.id, "ov-emote", nx+.5, top+.55, ny+.5, esc(n.emote.ch==="#" ? "✶" : n.emote.ch), 26); }
     if (n.asleep && near < 10) ovAt("z:"+n.id, "ov-z", nx+.5, 1.1, ny+.5, "z<small>z</small>", 14);
   }
@@ -414,17 +417,18 @@ function renderTown(dt){
   const wo = T.fx.find(f=>f.kind==="whiteout"); $("ovWhite").style.opacity = wo ? Math.min(1, wo.life*2) : 0;
   const vg = $("ovVignette"); vg.className = T.mode==="slasher" ? "slasher" : pl.carrying ? "carry" : (T.lock && (T.lock.kind==="chase" || T.lock.kind==="brawl")) ? "chase" : "";
   if (T.shake > 0) T.shake = Math.max(0, T.shake - dt);
+  if (T3.pre) T3.pre(dt, now, false);
   T3.renderer.render(T3.scene, T3.camera);
 }
 function dynLayer3D(dt, now){
   const D = T3.dyn, keep = new Set();
   const get = (key, make) => { let o = T3.dynObj && T3.dynObj.get(key); if (!o){ o = make(); D.add(o); (T3.dynObj || (T3.dynObj = new Map())).set(key, o); } keep.add(key); return o; };
   const bg = boxGeoC();
-  for (const s of T.stains){ if (s.cleaned) continue; const o = get(`st:${s.x},${s.y}`, () => { const m = new THREE.Mesh(new THREE.CircleGeometry(.38, 7), new THREE.MeshLambertMaterial({color:0x6e0e1c, transparent:true, opacity:.85})); m.rotation.x = -Math.PI/2; return m; }); o.position.set(s.x+.5, .015, s.y+.5); }
+  for (const s of T.stains){ if (s.cleaned) continue; const o = get(`st:${s.x},${s.y}`, () => { const m = T3.stainMake ? T3.stainMake(s) : new THREE.Mesh(new THREE.CircleGeometry(.38, 7), new THREE.MeshLambertMaterial({color:0x6e0e1c, transparent:true, opacity:.85})); m.rotation.x = -Math.PI/2; return m; }); o.position.set(s.x+.5, .015, s.y+.5); }
   for (const g of T.graves){ const o = get(`gr:${g.x},${g.y}:${g.open}`, () => { const m = new THREE.Mesh(bg, mat3(g.open ? "#1a1210" : "#6e4e30")); m.scale.set(.85, g.open ? .02 : .3, .9); m.castShadow = true; return m; }); o.position.set(g.x+.5, g.open ? .01 : 0, g.y+.5); }
   const dep = trainHere();
   if (dep !== undefined){
-    const o = get("train", () => { const gp = new THREE.Group(); for (let car=0;car<4;car++){ const m = new THREE.Mesh(bg, mat3(car===0 ? "#b13e53" : "#29366f")); m.scale.set(4, 1.8, 1.6); m.position.set(car*4.3, .2, 0); m.castShadow = true; gp.add(m); for (let w=0;w<3;w++){ const win = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({color:0xffd27a})); win.scale.set(.7,.5,1.62); win.position.set(car*4.3-1.2+w*1.2, 1.1, 0); gp.add(win); } } const st = new THREE.Mesh(bg, mat3("#566c86")); st.scale.set(.6,.9,.6); st.position.set(-1.2, 2, 0); gp.add(st); return gp; });
+    const o = get("train", T3.trainMake || (() => { const gp = new THREE.Group(); for (let car=0;car<4;car++){ const m = new THREE.Mesh(bg, mat3(car===0 ? "#b13e53" : "#29366f")); m.scale.set(4, 1.8, 1.6); m.position.set(car*4.3, .2, 0); m.castShadow = true; gp.add(m); for (let w=0;w<3;w++){ const win = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({color:0xffd27a})); win.scale.set(.7,.5,1.62); win.position.set(car*4.3-1.2+w*1.2, 1.1, 0); gp.add(win); } } const st = new THREE.Mesh(bg, mat3("#566c86")); st.scale.set(.6,.9,.6); st.position.set(-1.2, 2, 0); gp.add(st); return gp; }));
     const p = (T.t - (dep-12)) / 15, xx = p < .4 ? TW + 20 - (p/.4)*(TW+20-84) : p < .8 ? 84 : 84 - (p-.8)/.2*120;
     o.position.set(xx, 0, 16);
   }
@@ -452,5 +456,6 @@ function renderAttract3D(dt){
   T3.camera.position.set(52 + Math.cos(t*.05)*38, 26, 42 + Math.sin(t*.05)*30); T3.camera.lookAt(52, 0, 42);
   for (const c of T3.chars.values()) c.g.visible = false;
   for (const [k, el] of T3.ovEls){ el.remove(); T3.ovEls.delete(k); }
+  if (T3.pre) T3.pre(dt, performance.now(), true);
   T3.renderer.render(T3.scene, T3.camera);
 }

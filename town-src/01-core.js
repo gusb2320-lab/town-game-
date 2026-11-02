@@ -1,10 +1,12 @@
 // Core: engine hooks from the prison game, constants, pools, items, state helpers.
 const STANDALONE = !!window.MILLBROOK_STANDALONE;   // the 3D build of Millbrook runs without the prison
+const HALLOW = !!window.MILLBROOK_HALLOW;            // the Halloween edition: a medieval Millbrook on All Hallows' week
+let THEME_NOTE = "";                                 // extra setting notes for every Claude prompt (set by an edition)
 const E = window.CB9;
 if (!E) throw new Error("Cellblock Nine engine not loaded");
 const { Snd, sfx, PAL, $, clamp, pick, rnd, shuffle, toast, banner, drawPerson, shade, wrap, contourAt } = E;
 const TS = 16, TW = 104, TH = 84, CAP = 6;
-const TSAVE = "cellblock9-town-v1";
+const TSAVE = HALLOW ? "millbrook-hallow-v1" : "cellblock9-town-v1";
 const DIRS4 = [[0,-1],[1,0],[0,1],[-1,0]];
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const PNUMT = "#4471";
@@ -151,6 +153,7 @@ const byIdT = id => folk.find(n=>n.id===id);
 const nmT = id => { const n = byIdT(id); return n ? n.first : "someone"; };
 const fullT = n => `${n.first} ${n.last}`;
 const alive = n => n && !n.dead;
+const jobKey = n => (n.jobDef && n.jobDef.key) || n.job;   // the job a rule looks for, even when an edition renames it
 const isDet = n => n && T.det && n.id===T.det.id;
 function rememberT(n, text){ if (!n || !text || n.dead) return; n.memories.push({s:stampT(), text:String(text).slice(0,300)}); if (n.memories.length>160) n.memories.splice(6,1); }
 function gossipT(n, text){ if (n && text && !n.dead) n.gossip.push({text:String(text).slice(0,240), to:[]}); }

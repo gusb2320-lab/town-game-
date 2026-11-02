@@ -6,11 +6,13 @@ window.MILLBROOK_STANDALONE = true;
 // ===== town-src/01-core.js =====
 // Core: engine hooks from the prison game, constants, pools, items, state helpers.
 const STANDALONE = !!window.MILLBROOK_STANDALONE;   // the 3D build of Millbrook runs without the prison
+const HALLOW = !!window.MILLBROOK_HALLOW;            // the Halloween edition: a medieval Millbrook on All Hallows' week
+let THEME_NOTE = "";                                 // extra setting notes for every Claude prompt (set by an edition)
 const E = window.CB9;
 if (!E) throw new Error("Cellblock Nine engine not loaded");
 const { Snd, sfx, PAL, $, clamp, pick, rnd, shuffle, toast, banner, drawPerson, shade, wrap, contourAt } = E;
 const TS = 16, TW = 104, TH = 84, CAP = 6;
-const TSAVE = "cellblock9-town-v1";
+const TSAVE = HALLOW ? "millbrook-hallow-v1" : "cellblock9-town-v1";
 const DIRS4 = [[0,-1],[1,0],[0,1],[-1,0]];
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const PNUMT = "#4471";
@@ -157,6 +159,7 @@ const byIdT = id => folk.find(n=>n.id===id);
 const nmT = id => { const n = byIdT(id); return n ? n.first : "someone"; };
 const fullT = n => `${n.first} ${n.last}`;
 const alive = n => n && !n.dead;
+const jobKey = n => (n.jobDef && n.jobDef.key) || n.job;   // the job a rule looks for, even when an edition renames it
 const isDet = n => n && T.det && n.id===T.det.id;
 function rememberT(n, text){ if (!n || !text || n.dead) return; n.memories.push({s:stampT(), text:String(text).slice(0,300)}); if (n.memories.length>160) n.memories.splice(6,1); }
 function gossipT(n, text){ if (n && text && !n.dead) n.gossip.push({text:String(text).slice(0,240), to:[]}); }
@@ -194,6 +197,7 @@ function clearSaveT(){ try { localStorage.removeItem(TSAVE); } catch {} }
 // ===== town-src/02-map.js =====
 // Map: layout, buildings, furniture, containers, doors, tile art and roofs.
 let tmap = [];
+let onTownBuilt = null;   // an edition can reshape the town after it is laid out
 const BUILDINGS = [];
 const DOOR_AT = {};       // "x,y" -> building id
 const PLACES = {};        // routine destinations
@@ -342,6 +346,7 @@ function buildTown(){
   });
   for (const k in PLACES){ const p = PLACES[k]; if (p.rect && !p.spots){ p.spots = []; for (let y=p.rect[1];y<=p.rect[3];y++) for (let x=p.rect[0];x<=p.rect[2];x++) if (WALK_T.has(tileT(x,y)) && tileT(x,y)!=="D") p.spots.push([x,y]); } }
   // the player's room key opens Room C
+  if (onTownBuilt) onTownBuilt();
   return HOMES;
 }
 function roomRect(id){
@@ -602,7 +607,7 @@ function genLook(p){
 function newPerson(i, jobDef){
   const pron = jobDef.teen ? pick(["he","she","they"]) : Math.random()<.46 ? "he" : Math.random()<.9 ? "she" : "they";
   const p = {
-    id:"p"+i, first:pick(FIRST), last:pick(LAST), pron, age: jobDef.teen ? 16 : jobDef.job.includes("retire") ? 66+Math.floor(Math.random()*14) : 24+Math.floor(Math.random()*40),
+    id:"p"+i, first:pick(FIRST), last:pick(LAST), pron, age: jobDef.teen ? 16 : (jobDef.key||jobDef.job).includes("retire") ? 66+Math.floor(Math.random()*14) : 24+Math.floor(Math.random()*40),
     job:jobDef.job, jobDef, work:jobDef.work, hours:jobDef.hours||null, sheriff:!!jobDef.sheriff, teen:!!jobDef.teen,
     traits:shuffle(TRAITS.slice()).slice(0, 2+Math.floor(Math.random()*2)), hobbies:shuffle(HOBBIES.slice()).slice(0,2), likes:shuffle(LIKES.slice()).slice(0,3),
     dislikes:shuffle(["loud people","liars","the city","cats","rain","newcomers","the sheriff","gossip","church","card cheats"].slice()).slice(0,2),
@@ -999,7 +1004,7 @@ function detBrainPrompt(){
   const told = D.claims.slice(-10).map(c=>`- ${c}`).join("\n") || "- nothing yet";
   const missing = T.bodies.filter(b=>!b.discovered).length ? `${T.missing.length} townsperson(s) reported missing: ${T.missing.map(id=>byIdT(id).first).join(", ")}.` : (T.missing.length ? `Missing: ${T.missing.map(id=>byIdT(id).first).join(", ")}.` : "No one is missing.");
   const found = T.bodies.filter(b=>b.discovered).map(b=>`${b.name} found dead at ${b.foundAt}`).join("; ") || "none";
-  return `You are ${d.first} ${d.last}. Everyone in Millbrook knows you as the ${d.job}. Secretly you are an undercover investigator for the State Bureau, sent to find escaped convict ${PNUMT} from Cellblock Nine. You suspect the newcomer who calls themself "${T.alias}". You are patient, methodical, and quietly unsettling. Your habits: ${d.tells.map(id=>TELLS.find(t=>t.id===id).habit).join("; ")}.
+  return `${THEME_NOTE}You are ${d.first} ${d.last}. Everyone in Millbrook knows you as the ${d.job}. Secretly you are an undercover investigator for the State Bureau, sent to find escaped convict ${PNUMT} from Cellblock Nine. You suspect the newcomer who calls themself "${T.alias}". You are patient, methodical, and quietly unsettling. Your habits: ${d.tells.map(id=>TELLS.find(t=>t.id===id).habit).join("; ")}.
 
 CASE FILE — suspicion ${Math.round(D.suspicion)}/100 (100 = enough to arrest).
 Evidence:
@@ -1192,7 +1197,7 @@ async function interviewScene(d, t){
     T.aiSceneBusy = true;
     const sc = {a:d, b:t, kind:"interview", lines:[], effect:{}, waiting:true}; startSceneT(sc);
     try {
-      const r = await E.getSample().json(`Write a short exchange in "Millbrook", the second half of an 8-bit prison-escape game. ${d.first} ${d.last} (publicly the ${d.job}; secretly an undercover State Bureau investigator hunting escaped convict ${PNUMT}) is casually pumping ${t.first} ${t.last} (${t.job}; ${t.traits.join(", ")}) for information about the newcomer who calls themself "${T.alias}". ${d.first} must never reveal their real job.
+      const r = await E.getSample().json(`${THEME_NOTE}Write a short exchange in "Millbrook", the second half of an 8-bit prison-escape game. ${d.first} ${d.last} (publicly the ${d.job}; secretly an undercover State Bureau investigator hunting escaped convict ${PNUMT}) is casually pumping ${t.first} ${t.last} (${t.job}; ${t.traits.join(", ")}) for information about the newcomer who calls themself "${T.alias}". ${d.first} must never reveal their real job.
 What ${t.first} knows about the newcomer:
 ${aboutP.map(m=>"- "+m.text).join("\n") || "- almost nothing"}
 ${t.first}'s feelings about the newcomer: opinion ${Math.round(t.opinion)}/100, trust ${Math.round(t.trust)}/100${t.partner?", and they're sweethearts":""}. ${loyal ? `${t.first} is loyal and may cover for them or change the subject.` : ""}
@@ -1394,7 +1399,7 @@ function playerDownT(by){
     newsT(`${by ? by.first : "Someone"} knocked the newcomer out cold.`, by ? [by.id] : []);
     toast(`You wake up in the clinic.${stolen ? ` Your ${stolen} is gone.` : ""}`, "bad", 6);
     T.notoriety = clamp(T.notoriety+5,0,100); saveT();
-  }, "K . O .");
+  }, HALLOW ? "YOU FELL" : "K . O .");
   sfx("sad");
 }
 // Evidence reaches the detective through gossip and the sheriff, not instantly.
@@ -1730,7 +1735,7 @@ function greetingT(n){
   const h = hourNow(), part = h<12 ? "morning" : h<17 ? "afternoon" : "evening";
   if (!n.met || !n.log.length){
     if (n.sheriff) return `*tips hat* Sheriff ${n.last}. Don't believe we've met. Passing through?`;
-    if (n.job==="hotel keeper") return `Ah, our guest in Room C. Everything to your liking?`;
+    if (jobKey(n)==="hotel keeper") return `Ah, our guest in Room C. Everything to your liking?`;
     if (n.teen) return pick(["*looks up from a gameboy* …Who are you?","Whoa. A new person. Nobody new ever comes here.","You're the one staying at the hotel, right?"]);
     if (n.nosy) return `Well! You must be the new face everyone's talking about. I'm ${n.first}. ${n.first} ${n.last}. And you are?`;
     return pick([`Good ${part}. Don't think I know you.`, `*looks you up and down* New in town?`, `Hello there. I'm ${n.first}.`, `Oh! Hi. You're the one at the Millbrook Arms?`]);
@@ -1882,7 +1887,7 @@ EXTRA JSON FIELDS FOR YOU: "suspicion_change" (-10..15: how much more or less th
   const sheriffRole = n.sheriff ? `You are the town sheriff. You know nothing about any undercover investigator. You keep the peace and you're proud of this town. ${T.det.sheriffFile ? `You've been building your own file on the newcomer (${Math.round(T.det.sheriffFile)}/100).` : ""}` : "";
   const warn = n.warn && n.warn.day >= T.day-2 ? `You recently noticed ${n.warn.who ? byIdT(n.warn.who).first+" asking a lot of pointed questions about the newcomer" : "someone asking questions about the newcomer"}. ${n.trust >= 45 ? "You like them enough that you might warn them." : ""}` : "";
   const cover = n.coverFor && n.coverFor > absT() ? "You promised to cover for the newcomer if anyone asks." : "";
-  return `You are voicing ${fullT(n)} in "Millbrook", the second half of the 8-bit game "Cellblock Nine". It's a small, sleepy, nosy town where anything can happen. Stay completely in character. Never mention AI, games or players.
+  return `${THEME_NOTE}You are voicing ${fullT(n)} in "Millbrook", the second half of the 8-bit game "Cellblock Nine". It's a small, sleepy, nosy town where anything can happen. Stay completely in character. Never mention AI, games or players.
 
 WHO YOU ARE: ${n.bio}
 AGE ${n.age}. JOB: ${n.job}${n.work ? ` (you work at ${placeName(n.work)}${n.hours ? `, ${n.hours[0]}:00 to ${n.hours[1]%24}:00` : ""})` : ""}. HOME: ${homeLine(n)}. FAMILY: ${familyLine(n)}.
@@ -2448,7 +2453,7 @@ function townScenePrompt(a, b){
   const aboutP = n => n.memories.filter(m=>/newcomer/i.test(m.text)).slice(-3).map(m=>m.text).join(" | ") || "barely knows them";
   const who = (n) => `${fullT(n)}, ${n.age}, the ${n.job}. ${n.bio} Personality: ${n.traits.join(", ")}. Talks: ${n.style} ${n.tells.length ? "Habits: "+n.tells.map(id=>TELLS.find(t=>t.id===id).habit).join("; ")+"." : ""} Family: ${familyLine(n)}. Carries: ${n.inv.join(", ")||"nothing"}, $${Math.round(n.money)}. Private secret (hint at most): ${n.secret}.${isDet(n) ? ` SECRETLY an undercover State Bureau investigator hunting escaped convict ${PNUMT}; suspects the newcomer (suspicion ${Math.round(T.det.suspicion)}/100). Never reveals it; may steer talk toward the newcomer.` : ""}`;
   const near = distT(a, pl) < 6;
-  return `Write a short in-character exchange between two neighbors in "Millbrook", a small nosy town in the 8-bit game "Cellblock Nine". These are ongoing lives with their own storylines: romances, feuds, debts, affairs, rivalries, friendships. The player (a newcomer called "${T.alias}") is not part of this conversation.
+  return `${THEME_NOTE}Write a short in-character exchange between two neighbors in "Millbrook", a small nosy town in the 8-bit game "Cellblock Nine". These are ongoing lives with their own storylines: romances, feuds, debts, affairs, rivalries, friendships. The player (a newcomer called "${T.alias}") is not part of this conversation.
 
 A = ${who(a)}
 B = ${who(b)}
@@ -2565,7 +2570,7 @@ function approachReasonT(n){
   if (n.opinion >= 25 && Math.random()<.18) return `You like them. Invite them to do something (${n.hobbies.join(" or ")}) with an invite action.`;
   if (n.nosy && Math.random()<.5) return "You're the town busybody. Pry into the newcomer's business: where they're from, what they do all day.";
   if (n.teen && Math.random()<.12) return "You're bored. Dare them to do something, or tell them something weird you saw.";
-  if (n.job.includes("salesman") && Math.random()<.15) return "Try to sell them something you carry with a trade_offer.";
+  if (jobKey(n).includes("salesman") && Math.random()<.15) return "Try to sell them something you carry with a trade_offer.";
   const recent = T.news.slice(-4).filter(x=>!x.who.includes(n.id));
   if (recent.length && Math.random()<.3) return `Share your take on this news: ${pick(recent).text}`;
   if (!n.met && Math.random()<.35) return "Introduce yourself to the new face in town.";
@@ -2636,7 +2641,7 @@ async function printGazette(){
   if (T.day===2) issue.stories.unshift(`ESCAPED CONVICT STILL AT LARGE: State police say inmate ${PNUMT} broke out of Cellblock Nine last week. Considered dangerous. Report strangers to the sheriff.`);
   if (E.aiOn() && optOn("optEvents")){
     try {
-      const r = await E.getSample().json(`Write today's front page of the Millbrook Gazette, a tiny small-town paper, in its cozy, gossipy voice. Day ${T.day}, ${dayName()}.
+      const r = await E.getSample().json(`${THEME_NOTE}Write today's front page of the Millbrook Gazette, a tiny small-town paper, in its cozy, gossipy voice. Day ${T.day}, ${dayName()}.
 Yesterday's events:\n${items.map(x=>"- "+x.text).join("\n") || "- nothing much"}
 ${T.day===2 ? `Include a short item: escaped convict ${PNUMT} from Cellblock Nine is still at large; report strangers.` : ""}
 ${T.missing.length ? `Missing: ${T.missing.map(nmT).join(", ")}.` : ""}
@@ -2657,7 +2662,7 @@ async function writeBiosT(){
   if (!E.aiOn()){ proceduralBios(); return; }
   try {
     const list = folk.map(n=>`${n.id}: ${fullT(n)}, ${n.age}, ${n.pron}, ${n.job}. Traits: ${n.traits.join(", ")}. Hobbies: ${n.hobbies.join(", ")}. Family: ${familyLine(n)}. Secret: ${n.secret}.${n.nosy?" The town busybody.":""}`).join("\n");
-    const r = await E.getSample().json(`Invent the townspeople of Millbrook, a small, sleepy, gossipy American town with a train station, a diner, a bar called the Rusty Nail, a church, an arcade and a pond. For each person write a vivid 2-3 sentence backstory consistent with the facts given (no detectives, no crime-solving pasts), a one-sentence speaking style, and a small quirk.
+    const r = await E.getSample().json(`${THEME_NOTE}Invent the townspeople of Millbrook, a small, sleepy, gossipy ${HALLOW ? "medieval village" : "American town"} with a train station, a diner, a bar called the Rusty Nail, a church, an arcade and a pond. For each person write a vivid 2-3 sentence backstory consistent with the facts given (no detectives, no crime-solving pasts), a one-sentence speaking style, and a small quirk.
 ${list}
 Reply only JSON: {"people":[{"id":"p0","bio":"...","style":"...","quirk":"..."}]}`, {modelTier:"default", cache:false});
     for (const p of (r && Array.isArray(r.people) ? r.people : [])){ const n = byIdT(p.id); if (!n) continue; if (typeof p.bio==="string") n.bio = p.bio.slice(0,500); if (typeof p.style==="string") n.style = p.style.slice(0,200); if (typeof p.quirk==="string") n.quirk = p.quirk.slice(0,120); }
@@ -2860,7 +2865,7 @@ function startDarts(opp){
 const SUITS_C = ["♠","♥","♦","♣"], RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
 function handVal(h){ let v = 0, aces = 0; for (const c of h){ const r = c.r; if (r==="A"){ aces++; v += 11; } else if ("JQK".includes(r)) v += 10; else v += Number(r); } while (v > 21 && aces){ v -= 10; aces--; } return v; }
 function startCards(opp){
-  const dealer = opp || folk.find(n=>alive(n) && n.job==="bartender" && insideOf(n)==="bar") || null;
+  const dealer = opp || folk.find(n=>alive(n) && jobKey(n)==="bartender" && insideOf(n)==="bar") || null;
   const cheat = dealer && /cheats at cards/.test(dealer.secret);
   const G = {kind:"cards", opp:dealer, phase:"bet", bet:5, me:[], them:[], deck:[], won:0, hands:0, info:`Blackjack. Get closer to 21 than ${dealer ? dealer.first : "the house"} without going over.`};
   const deal = () => { if (G.deck.length < 12){ G.deck = []; for (const s of SUITS_C) for (const r of RANKS) G.deck.push({r, s}); shuffle(G.deck); } return G.deck.pop(); };
@@ -2917,7 +2922,7 @@ function startCards(opp){
 // ---------- arcade: Brick Breaker ----------
 function seedScores(){
   if (T.highscores.arcade) return;
-  const teen = folk.find(n=>n.teen), owner = folk.find(n=>n.job==="arcade owner");
+  const teen = folk.find(n=>n.teen), owner = folk.find(n=>jobKey(n)==="arcade owner");
   T.highscores.arcade = [[teen ? teen.first : "ACE", 4200],[owner ? owner.first : "BOB", 2600],[pick(folk).first, 1500],[pick(folk).first, 900],[pick(folk).first, 400]];
 }
 function startArcade(opp){
@@ -3013,7 +3018,7 @@ function workAt(x, y){
   const c = tileT(x,y), bid = buildingAt(x,y);
   const w = WORK.find(j => j.tiles.includes(c) && (j.bid ? bid===j.bid : !bid));
   if (!w) return null;
-  const boss = folk.find(n=>alive(n) && n.job===w.boss);
+  const boss = folk.find(n=>alive(n) && jobKey(n)===w.boss);
   if (!boss) return null;
   const present = w.bid ? insideOf(boss)===w.bid : distT(boss, T.player) < 14;
   if (!present) return null;
@@ -3047,7 +3052,7 @@ const SHOPS = {
   garage:{keeper:"mechanic", name:"Rusty's Garage", sell:["wrench","rope","flashlight"]}
 };
 let shopId = null, shopTab = "buy";
-function shopKeeper(id){ const s = SHOPS[id]; return folk.find(n=>alive(n) && (n.job===s.keeper || n.job===s.alt) && insideOf(n)===id && !n.away); }
+function shopKeeper(id){ const s = SHOPS[id]; return folk.find(n=>alive(n) && (jobKey(n)===s.keeper || jobKey(n)===s.alt) && insideOf(n)===id && !n.away); }
 function openShop(id){
   const s = SHOPS[id]; if (!s) return;
   const k = shopKeeper(id);
@@ -3970,7 +3975,7 @@ function begin(){
   genTown();
   T.containers = makeContainers();
   // the traveling salesman can get you papers, for a price
-  const sales = folk.find(n=>n.job.includes("salesman")); if (sales) sales.inv.push("fake ID");
+  const sales = folk.find(n=>jobKey(n).includes("salesman")); if (sales) sales.inv.push("fake ID");
   const junk = Object.keys(T.containers).filter(k=>T.containers[k].name==="Junk pile"); if (junk.length) T.containers[pick(junk)].items.push("lockpick");
   const back = Object.keys(T.containers).find(k=>T.containers[k].bid==="barback" && T.containers[k].name==="Wardrobe"); if (back) T.containers[back].items.push("shotgun","bullets","bullets","bullets");
   for (const n of folk) n.suitCols = E.SUITS["t_"+n.id];
@@ -3991,7 +3996,7 @@ function begin(){
     const tip = (txt, ms, secs) => setTimeout(()=>{ if (TOWN.active && T && !T.mode && !T.ending) toast(txt, "", secs); }, ms);
     tip("Talk to anyone (E). Make friends, take odd jobs, play games. Someone in town is not who they say they are.", 5200, 9);
     tip("Get rid of that jumpsuit. Watch for habits. Keep your story straight.", 15000, 7);
-    const hk = folk.find(n=>n.job==="hotel keeper"); if (hk){ hk.x = hk.fx = 82; hk.y = hk.fy = 26; hk.order = {type:"approach", reason:"Welcome the new guest of Room C to the Millbrook Arms. Their first two nights are paid; rent is $15 a night after that, at the front desk. Ask their name for the ledger.", until:absT()+40}; }
+    const hk = folk.find(n=>jobKey(n)==="hotel keeper"); if (hk){ hk.x = hk.fx = 82; hk.y = hk.fy = 26; hk.order = {type:"approach", reason:"Welcome the new guest of Room C to the Millbrook Arms. Their first two nights are paid; rent is $15 a night after that, at the front desk. Ask their name for the ledger.", until:absT()+40}; }
     lastHourT = hourNow(); saveT(); renderHotbarT();
   });
 }
@@ -4069,6 +4074,7 @@ function onHourT(h){
   if (T.debts.some(d=>!d.paid && T.day-d.day >= 4) && h===12){ const d = T.debts.find(x=>!x.paid && T.day-x.day >= 4); const n = byIdT(d.who); if (n && alive(n)){ n.opinion = clamp(n.opinion-5,-100,100); gossipT(n, `The newcomer owes me $${d.amount} and won't pay up.`); } }
   saveT();
 }
+let onNewDay = null;   // an edition can add its own daily events
 function newDayT(){
   const dn = dayName();
   T.weather = Math.random() < .22 ? "rain" : "clear";
@@ -4087,10 +4093,11 @@ function newDayT(){
   for (const n of folk) if (alive(n)){ n.mood = n.mood==="grieving" && Math.random()<.5 ? "grieving" : pick(["fine","cheerful","tired","busy","chatty","grumpy","fine"]); n.habitKnow = null; }
   // creepy: sometimes you wake up and something has moved
   const D = T.det; if (D && detAlive() && D.suspicion >= 55 && insideOf(T.player)==="roomC" && Math.random() < .3){ const tell = TELLS.find(t=>t.id===pick(detP().tells)); setTimeout(()=>{ toast(`You wake up. The chair has been turned to face your bed. ${tell.clue} on the seat.`, "bad", 8); sfx("stinger"); T.clues.push({s:stampT(), text:`Morning: the chair turned to face my bed. ${tell.clue}.`, tell:tell.id}); }, 1500); D.notes.push({s:stampT(), text:"Watched them sleep. They talk in their sleep. Numbers."}); addEvidence("They mumble a prison number in their sleep.", 6, "sleep"); }
+  if (onNewDay) onNewDay();
 }
 function rentCheck(){
   if (T.day <= T.rentPaid) return;
-  const hk = folk.find(n=>n.job==="hotel keeper" && alive(n));
+  const hk = folk.find(n=>jobKey(n)==="hotel keeper" && alive(n));
   if (T.day > T.rentPaid + 2 && T.player.inv.includes("room key")){
     removeItemT("room key"); T.evicted = true; toast("The hotel keeper changed your lock. Pay what you owe at the front desk to get back in.", "bad", 7);
     for (const k of ["89,15","89,19"]){ const box = T.containers[k]; if (hk && box) for (const it of box.items.splice(0)) hk.inv.push(it); }
@@ -5014,6 +5021,676 @@ function slasherEnding(kind, opt={}){
 }
 
 
+// ===== town3d-src/12-hallow.js =====
+// Hallowmere: the Halloween edition. Millbrook becomes a fog-bound medieval village during All Hallows' week.
+// The rules of the game don't change; the names, the tone, the nights and the things in the fog do.
+const HW = {};
+if (HALLOW){
+  THEME_NOTE = `SETTING (Halloween edition, overrides any modern detail below): Millbrook is a fog-bound medieval village in the week of All Hallows' Eve. Thatch and timber, torches and tallow candles, a gallows in the square, a graveyard that is too full. Shops are period trades (the Crooked Spoon cookhouse, the Hanged Man tavern, the apothecary, the smithy, the Reeve's gaol). Coins are silver. People speak plainly with old touches ("aye", "ye", "the Reeve", "God keep you"), are superstitious, and are frightened of the dark, of wolves, of the thing that walks at the edge of the fog, and of strangers. The tone is adult folk horror: dread, grief, paranoia and dark humor, never camp. Keep every rule and fact you are given.\n\n`;
+  const NAMES = {diner:["The Crooked Spoon","COOKHOUSE"], store:["Hartley's Provisions","PROVISIONS"], barber:["The Barber-Surgeon","SURGEON"], clinic:["The Apothecary","APOTHECARY"], sheriff:["The Reeve's Gaol","GAOL"], post:["The Messenger's House","MESSENGERS"], hotel:["The Millbrook Arms","INN"], station:["The Coach House","COACHES"], bar:["The Hanged Man","HANGED MAN"], library:["The Scriptorium","SCRIPTORIUM"], arcade:["The Dice Cellar","DICE"], church:["St. Ambrose","ST AMBROSE"], garage:["The Smithy","SMITHY"], barn:["The Tithe Barn","TITHE BARN"]};
+  const JOBS_H = {"diner owner":"keeper of the Crooked Spoon", "short-order cook":"cook at the Crooked Spoon", "shopkeeper":"provisioner", "bartender":"tapster at the Hanged Man", "barber":"barber-surgeon", "nurse":"apothecary", "postmaster":"messenger", "hotel keeper":"innkeeper", "station master":"coachman", "librarian":"scribe", "arcade owner":"keeper of the dice cellar", "pastor":"priest", "mechanic":"blacksmith", "farmer":"farmer", "fisherman":"fisherman", "painter":"painter of portraits", "retired schoolteacher":"old schoolmistress", "retiree who walks everywhere":"widow who walks the lanes", "teenager who lives at the arcade":"orphan who haunts the dice cellar", "traveling salesman who arrived last month":"traveling peddler who came last month"};
+  for (const j of JOBS){ j.key = j.job; j.job = JOBS_H[j.job] || j.job; }
+  onTownBuilt = () => {
+    for (const b of BUILDINGS){ const nm = NAMES[b.id]; if (nm){ b.name = nm[0]; b.sign = nm[1]; } if (PLACES[b.id] && nm) PLACES[b.id].label = nm[0]; }
+    // a gallows in the square: two posts that nothing walks through
+    for (const [x,y] of [[35,43],[37,43]]) if (tmap[y] && tmap[y][x]==="q") tmap[y][x] = "X";
+    // a bonfire pit
+    if (tmap[44] && tmap[44][42]==="q") tmap[44][42] = "X";
+    HW.gallows = [36,43]; HW.bonfire = [42,44];
+    // nobody is sent to stand in the fire or between the posts
+    for (const k in PLACES){ const pl = PLACES[k]; if (pl.spots) pl.spots = pl.spots.filter(([x,y]) => tileT(x,y)!=="X"); }
+  };
+  onNewDay = () => {
+    if (T.day % 7 === 3){
+      T.event = {day:T.day, kind:"hallows", label:"ALL HALLOWS' EVE", text:"All Hallows' Eve. Masks after dark, lanterns in every window, and a fire in the square to keep the dead in the ground."};
+      newsT(T.event.text, [], true, "event"); banner("ALL HALLOWS' EVE", "Masks after dark. Lanterns in every window.", true, 6);
+      for (const n of folk) if (alive(n)) rememberT(n, "It's All Hallows' Eve. Everyone wears a mask after dark. The dead are restless tonight, they say.");
+    }
+  };
+  // masks after dark: who wears what, decided by who they are
+  HW.MASKS = ["skull","plague","goat","porcelain","sack","crow"];
+  HW.maskType = n => HW.MASKS[[...n.id].reduce((s,c)=>s*31+c.charCodeAt(0),7) % HW.MASKS.length];
+  HW.masked = n => {
+    if (!T || !n || n.dead) return false;
+    const h = hourNow(), dark = h >= 19 || h < 6;
+    if (!dark) return false;
+    if (T.event && T.event.kind==="hallows" && T.event.day===T.day) return true;
+    if (h < 6 && T.event && T.event.kind==="hallows" && T.event.day===T.day-1) return true;
+    return rnd(parseInt(n.id.slice(1))||1, T.day, 77) < (isDet(n) ? .6 : .3);
+  };
+  // the medieval road to Millbrook
+  Object.assign(CUTS, {intro(){
+    const L = {suit:"o", skin:"#d49a6a", hair:"#3f2616", style:"short"};
+    const moon = (g,x,y,r,t) => { g.fillStyle = "#e8e0c8"; g.beginPath(); g.arc(x,y,r,0,7); g.fill(); g.fillStyle = "#c8bfa0"; g.beginPath(); g.arc(x-r*.35,y-r*.2,r*.12,0,7); g.fill(); g.beginPath(); g.arc(x+r*.3,y+r*.35,r*.09,0,7); g.fill(); const look = Math.sin(t*.8)*r*.06; g.fillStyle = "#1a1418"; g.fillRect(x-r*.42+look, y-r*.15, r*.22, r*.12); g.fillRect(x+r*.18+look, y-r*.15, r*.22, r*.12); g.fillRect(x-r*.3, y+r*.3, r*.6, r*.06); };
+    return [
+      {dur:4.5, sfx:"stinger", cap:"Cellblock Nine. A keep of black stone on a black hill. You drop from the wall into the moat at the hour of the wolf.", draw(g,t){
+        sky(g,"#06050a","#16101a"); moon(g, 250, 40, 22, t); for (let i=0;i<40;i++) R_(g,(i*73)%CW,(i*37)%80,1,1,"#c8c0b0");
+        R_(g,0,64,CW,90,"#1e1a22"); for (let x=0;x<CW;x+=14) R_(g,x,58,9,7,"#1e1a22"); R_(g,40,24,30,40,"#16131a"); R_(g,36,18,38,8,"#16131a"); R_(g,230,30,24,34,"#16131a");
+        const fl = .6 + Math.sin(t*20)*.2; g.fillStyle = `rgba(255,140,40,${fl})`; g.fillRect(52,34,6,8); g.fillRect(240,42,5,7);
+        R_(g,0,150,CW,30,"#0a1418"); for (let i=0;i<8;i++) R_(g,(i*41+t*20)%CW,156+(i%3)*5,10,1,"#1a3038");
+        runner(g, 40 + t*40, 130, t, L);
+      }},
+      {dur:5, sfx:"grr", cap:"Hounds behind you. You run through the dead wood until your lungs burn and the trees stop looking like trees.", draw(g,t){
+        sky(g,"#08080c","#141818"); R_(g,0,140,CW,40,"#0e1410");
+        for (let i=0;i<12;i++){ const x = ((i*53 - t*80) % (CW+60) + CW+60) % (CW+60) - 30; R_(g,x,40+(i%3)*10,5,110,"#0c0a0c"); R_(g,x-12,60+(i%2)*14,14,3,"#0c0a0c"); R_(g,x+4,74+(i%3)*8,16,3,"#0c0a0c"); }
+        g.fillStyle = "rgba(160,170,180,.12)"; for (let i=0;i<5;i++) g.fillRect(((i*90 - t*30) % 400 + 400) % 400 - 40, 120+i*6, 120, 14);
+        runner(g, 150, 118, t, L);
+        if (t > 3) { g.fillStyle = "#c01020"; g.fillRect(20, 110, 3, 2); g.fillRect(28, 110, 3, 2); }
+      }},
+      {dur:5.5, cap:"Dawn, grey as ash. A cart creaks along the road. The carter does not ask your name. *\"Millbrook's yonder. Lanterns are already up. It's Hallows' week.\"*", draw(g,t){
+        sky(g,"#6a6460","#a8a090"); R_(g,0,110,CW,70,"#4a4a30"); R_(g,0,124,CW,22,"#5a4a38");
+        const cx = Math.max(150, 330 - t*80);
+        R_(g,cx,108,50,14,"#4a3020"); R_(g,cx,104,50,4,"#6a4830"); for (const wx of [10,40]){ g.fillStyle = "#2a1a10"; g.beginPath(); g.arc(cx+wx,124,8,0,7); g.fill(); g.fillStyle = "#6a4830"; g.beginPath(); g.arc(cx+wx,124,5,0,7); g.fill(); }
+        R_(g,cx+52,100,24,14,"#2a2420"); R_(g,cx+70,94,8,10,"#2a2420"); R_(g,cx+56,114,3,12,"#2a2420"); R_(g,cx+70,114,3,12,"#2a2420");
+        R_(g,cx+20,92,10,12,"#3a3a40"); R_(g,cx+20,86,10,7,"#c8a080"); R_(g,cx+17,84,16,4,"#2a2420");
+        drawPerson(g, 120, 108, L, t > 2.4 ? [1,0] : [0,1], 0, {});
+      }},
+      {dur:5.5, cap:"Fields of rotting pumpkins. Crows on every post. A scarecrow turns its head as you pass. You tell yourself it didn't.", draw(g,t){
+        sky(g,"#7a6a58","#b0a088"); R_(g,0,96,CW,84,"#3a3020");
+        for (let r=0;r<6;r++) for (let i=0;i<14;i++){ const x = i*24 + (r%2)*12, y = 104 + r*12; R_(g,x,y,8,6,"#c86a18"); R_(g,x+3,y-2,2,2,"#3a5a20"); }
+        R_(g,200,50,4,60,"#4a3020"); R_(g,184,62,36,4,"#4a3020"); R_(g,194,40,16,14,"#c8b080"); R_(g,190,36,24,4,"#2a2018");
+        const turn = t > 3 ? 1 : 0; R_(g,197+turn*3,44,3,3,"#1a1010"); R_(g,204+turn*3,44,3,3,"#1a1010");
+        for (let i=0;i<5;i++) R_(g,40+i*60,90,6,4,"#141014");
+        drawPerson(g, 60 + t*20, 120, L, [1,0], Math.floor(t*6)%4, {});
+      }},
+      {dur:5, sfx:"bell", cap:"MILLBROOK, says the sign. Below it, carved deep with a knife: GO BACK.", draw(g,t){
+        sky(g,"#5a5048","#8a8070"); R_(g,0,124,CW,56,"#3a3428");
+        for (const [x,h,c] of [[30,30,"#5a4030"],[70,24,"#4a3a2a"],[110,36,"#5a4a3a"],[160,26,"#4a3020"],[200,30,"#5a4030"],[250,24,"#3a3020"]]){ R_(g,x,100-h,34,h,"#c8b898"); R_(g,x,100-h,34,3,"#3a2a1e"); R_(g,x,100-h,3,h,"#3a2a1e"); R_(g,x+31,100-h,3,h,"#3a2a1e"); g.fillStyle = c; g.beginPath(); g.moveTo(x-4,100-h); g.lineTo(x+17,84-h); g.lineTo(x+38,100-h); g.fill(); }
+        R_(g,140,28,6,72,"#6a6a70"); g.fillStyle = "#6a6a70"; g.beginPath(); g.moveTo(134,30); g.lineTo(143,8); g.lineTo(152,30); g.fill();
+        const sx = Math.max(60, 330 - t*110); R_(g,sx+30,76,4,50,"#3a2a1e"); R_(g,sx,60,70,30,"#4a3424"); gVT(g,"MILLBROOK",sx+6,62,"#e8d8b0",14); gVT(g,"GO BACK",sx+10,76,"#8a1020",13);
+      }},
+      {dur:4, hold:true, cap:"The Millbrook Arms. A room up a crooked stair. You have forty silver, a stolen life, and no name. Everyone here will want to know who you are.", enter(){ aliasPrompt(""); }, draw(g,t){
+        sky(g,"#2a2420","#3a3028"); R_(g,0,40,CW,90,"#c8b898"); for (let x=0;x<CW;x+=40){ R_(g,x,40,4,90,"#3a2a1e"); } R_(g,0,40,CW,4,"#3a2a1e"); R_(g,0,86,CW,4,"#3a2a1e");
+        for (let x=20;x<CW;x+=50){ R_(g,x,56,20,22,"#1a1410"); const fl = .7+Math.sin(t*9+x)*.2; g.fillStyle = `rgba(255,170,60,${fl})`; g.fillRect(x+2,58,16,18); R_(g,x+9,56,2,22,"#1a1410"); }
+        R_(g,130,90,40,40,"#2a1a10"); R_(g,134,94,32,36,"#5a3a20"); gVT(g,"THE MILLBROOK ARMS",96,44,"#2a1a10",14);
+        R_(g,0,130,CW,50,"#4a4440"); drawPerson(g, 148, 136, L, [0,-1], 0, {});
+      }}
+    ];
+  }});
+}
+
+
+// ===== town3d-src/16-music.js =====
+// Hallowmere's score: composed, not generated. A small synth rig (harpsichord, lute, recorder, fiddle, choir,
+// strings, brass, bells, music box, drums) played through reverb, delay and a compressor, so it sounds like
+// a big retro game intro rather than bare beeps. Only used in the Halloween edition.
+const HQ = {on:false, name:null, timer:null};
+const NOTE = (() => { const map = {C:0,"C#":1,Db:1,D:2,"D#":3,Eb:3,E:4,F:5,"F#":6,Gb:6,G:7,"G#":8,Ab:8,A:9,"A#":10,Bb:10,B:11}; return s => { const m = /^([A-G][#b]?)(-?\d)$/.exec(s); return m ? 12*(+m[2]+1) + map[m[1]] : null; }; })();
+const hz = m => 440*Math.pow(2,(m-69)/12);
+function hqInit(){
+  const ac = Snd.ac; if (!ac) return false;
+  if (HQ.out) return true;
+  const dest = Snd.nodes.mus;
+  HQ.out = ac.createGain(); HQ.out.gain.value = 1.15;
+  const comp = ac.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 3; comp.attack.value = .01; comp.release.value = .25;
+  const dry = ac.createGain(); dry.gain.value = .85;
+  const conv = ac.createConvolver(); conv.buffer = impulse(ac, 3.6, 2.4);
+  const wet = ac.createGain(); wet.gain.value = .42;
+  const del = ac.createDelay(1.5); del.delayTime.value = .42; const fb = ac.createGain(); fb.gain.value = .3; const dlp = ac.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 2400;
+  const delIn = ac.createGain(); delIn.gain.value = .22;
+  HQ.out.connect(dry); dry.connect(comp);
+  HQ.out.connect(conv); conv.connect(wet); wet.connect(comp);
+  HQ.out.connect(delIn); delIn.connect(del); del.connect(dlp); dlp.connect(fb); fb.connect(del); dlp.connect(wet);
+  comp.connect(dest);
+  HQ.ac = ac; HQ.del = del; HQ.comp = comp;
+  return true;
+}
+function impulse(ac, secs, decay){
+  const len = Math.floor(ac.sampleRate*secs), buf = ac.createBuffer(2, len, ac.sampleRate);
+  for (let ch=0; ch<2; ch++){ const d = buf.getChannelData(ch); for (let i=0;i<len;i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, decay) * (i < 200 ? i/200 : 1); }
+  return buf;
+}
+// ---------- instruments ----------
+function env(g, t, a, peak, d, sus, rel, end){ const p = g.gain; p.setValueAtTime(.0001, t); p.exponentialRampToValueAtTime(Math.max(.0002,peak), t+a); p.exponentialRampToValueAtTime(Math.max(.0002, peak*sus), t+a+d); p.setValueAtTime(Math.max(.0002, peak*sus), end); p.exponentialRampToValueAtTime(.0001, end+rel); }
+function osc(type, f, t, end, detune=0){ const o = HQ.ac.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, t); o.detune.value = detune; o.start(t); o.stop(end+.05); return o; }
+function filt(type, f, q=1){ const b = HQ.ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; }
+function vib(o, t, rate, depth, delay=.15){ const l = HQ.ac.createOscillator(), g = HQ.ac.createGain(); l.frequency.value = rate; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(depth, t+delay+.2); l.connect(g); g.connect(o.frequency); l.start(t); l.stop(t+8); }
+const INST = {
+  harpsi(t, m, dur, v){ const f = hz(m), end = t+.05, g = HQ.ac.createGain(), lp = filt("lowpass", 5200, .7); lp.frequency.setValueAtTime(5200, t); lp.frequency.exponentialRampToValueAtTime(900, t+.6);
+    for (const [ty, dt] of [["sawtooth", -4], ["square", 5]]) osc(ty, f, t, t+1.6, dt).connect(lp);
+    lp.connect(g); g.connect(HQ.out); const p = g.gain; p.setValueAtTime(.0001,t); p.exponentialRampToValueAtTime(.09*v, t+.004); p.exponentialRampToValueAtTime(.0001, t+1.5); },
+  lute(t, m, dur, v){ const f = hz(m), g = HQ.ac.createGain(), lp = filt("lowpass", 2600, 1.2); lp.frequency.setValueAtTime(2600, t); lp.frequency.exponentialRampToValueAtTime(700, t+.5);
+    osc("triangle", f, t, t+1.2).connect(lp); osc("sawtooth", f*2, t, t+.4, 3).connect(lp); lp.connect(g); g.connect(HQ.out);
+    const p = g.gain; p.setValueAtTime(.0001,t); p.exponentialRampToValueAtTime(.11*v, t+.005); p.exponentialRampToValueAtTime(.0001, t+1.1); },
+  flute(t, m, dur, v){ const f = hz(m), end = t+dur, g = HQ.ac.createGain(), lp = filt("lowpass", 3200); const o = osc("sine", f, t, end+.3); vib(o, t, 5.2, f*.012); o.connect(lp); const o2 = osc("triangle", f*2, t, end+.3); const g2 = HQ.ac.createGain(); g2.gain.value = .18; o2.connect(g2); g2.connect(lp);
+    lp.connect(g); g.connect(HQ.out); env(g, t, .04, .11*v, .1, .8, .18, end); },
+  lead(t, m, dur, v){ const f = hz(m), end = t+dur, g = HQ.ac.createGain(), lp = filt("lowpass", 3400); const o = osc("square", f, t, end+.3); vib(o, t, 5.6, f*.014, .2); const o2 = osc("square", f, t, end+.3, 9); const g2 = HQ.ac.createGain(); g2.gain.value = .5; o.connect(lp); o2.connect(g2); g2.connect(lp);
+    lp.connect(g); g.connect(HQ.out); env(g, t, .01, .06*v, .15, .75, .2, end); },
+  fiddle(t, m, dur, v){ const f = hz(m), end = t+dur, g = HQ.ac.createGain(), bp = filt("bandpass", 1800, .6), lp = filt("lowpass", 4200); const o = osc("sawtooth", f, t, end+.3); vib(o, t, 6, f*.01, .1); o.connect(bp); bp.connect(lp); osc("sawtooth", f, t, end+.3, 7).connect(lp);
+    lp.connect(g); g.connect(HQ.out); env(g, t, .03, .06*v, .08, .7, .12, end); },
+  choir(t, m, dur, v){ const f = hz(m), end = t+dur, g = HQ.ac.createGain(), sum = HQ.ac.createGain(); sum.gain.value = .5;
+    for (const dt of [-9, 0, 8]){ const o = osc("sawtooth", f, t, end+1, dt); vib(o, t, 4.6+Math.random(), f*.006, .3); o.connect(sum); }
+    for (const [ff, q, gg] of [[700, 6, 1], [1150, 7, .7], [2600, 9, .35]]){ const b = filt("bandpass", ff, q), bg = HQ.ac.createGain(); bg.gain.value = gg; sum.connect(b); b.connect(bg); bg.connect(g); }
+    g.connect(HQ.out); env(g, t, .5, .16*v, .3, .85, 1.2, end); },
+  oo(t, m, dur, v){ const f = hz(m), end = t+dur, g = HQ.ac.createGain(), sum = HQ.ac.createGain(); sum.gain.value = .6;
+    for (const dt of [-6, 6]){ const o = osc("triangle", f, t, end+1.5, dt); vib(o, t, 4.2, f*.008, .4); o.connect(sum); }
+    const b = filt("bandpass", 420, 3); sum.connect(b); b.connect(g); const lp = filt("lowpass", 900); sum.connect(lp); lp.connect(g);
+    g.connect(HQ.out); env(g, t, .9, .2*v, .4, .9, 1.6, end); },
+  strings(t, m, dur, v){ const f = hz(m), end = t+dur, g = HQ.ac.createGain(), lp = filt("lowpass", 1600, .8);
+    for (const dt of [-7, 7]){ const o = osc("sawtooth", f, t, end+.4, dt); vib(o, t, 5.5, f*.005, .25); o.connect(lp); }
+    lp.connect(g); g.connect(HQ.out); env(g, t, .08, .07*v, .1, .85, .25, end); },
+  stab(t, m, dur, v){ const f = hz(m), g = HQ.ac.createGain(), lp = filt("lowpass", 2000); for (const dt of [-10, 0, 10]) osc("sawtooth", f, t, t+.5, dt).connect(lp); lp.connect(g); g.connect(HQ.out); const p = g.gain; p.setValueAtTime(.0001,t); p.exponentialRampToValueAtTime(.08*v, t+.01); p.exponentialRampToValueAtTime(.0001, t+.45); },
+  brass(t, m, dur, v){ const f = hz(m), end = t+dur, g = HQ.ac.createGain(), lp = filt("lowpass", 600, 2); lp.frequency.setValueAtTime(600, t); lp.frequency.exponentialRampToValueAtTime(2600, t+.08); lp.frequency.exponentialRampToValueAtTime(1500, t+.4);
+    for (const dt of [-6, 6]) osc("sawtooth", f, t, end+.3, dt).connect(lp); lp.connect(g); g.connect(HQ.out); env(g, t, .03, .085*v, .15, .7, .15, end); },
+  bass(t, m, dur, v){ const f = hz(m), end = t+dur, g = HQ.ac.createGain(), lp = filt("lowpass", 700); osc("triangle", f, t, end+.2).connect(lp); osc("sine", f/2, t, end+.2).connect(lp); osc("sawtooth", f, t, end+.2, 4).connect(filt("lowpass", 400)).connect(lp);
+    lp.connect(g); g.connect(HQ.out); env(g, t, .01, .16*v, .2, .6, .12, end); },
+  drone(t, m, dur, v){ const f = hz(m), end = t+dur, g = HQ.ac.createGain(), lp = filt("lowpass", 300, 4); const l = HQ.ac.createOscillator(), lg = HQ.ac.createGain(); l.frequency.value = .09; lg.gain.value = 180; l.connect(lg); lg.connect(lp.frequency); l.start(t); l.stop(end+2);
+    for (const dt of [-5, 5]) osc("sawtooth", f, t, end+2, dt).connect(lp); lp.connect(g); g.connect(HQ.out); env(g, t, 1.5, .12*v, .5, .9, 2, end); },
+  bell(t, m, dur, v){ const f = hz(m); for (const [r, a, d] of [[1, .12, 4], [2.76, .05, 2], [5.4, .03, 1.2], [8.93, .015, .6], [.5, .05, 5]]){ const g = HQ.ac.createGain(); osc("sine", f*r, t, t+d).connect(g); g.connect(HQ.out); const p = g.gain; p.setValueAtTime(.0001,t); p.exponentialRampToValueAtTime(a*v, t+.005); p.exponentialRampToValueAtTime(.0001, t+d); } },
+  musicbox(t, m, dur, v){ const f = hz(m); for (const [r, a, d] of [[1, .09, 1.8], [4, .02, .4], [2, .025, .9]]){ const g = HQ.ac.createGain(); osc("sine", f*r, t, t+d).connect(g); g.connect(HQ.out); const p = g.gain; p.setValueAtTime(.0001,t); p.exponentialRampToValueAtTime(a*v, t+.002); p.exponentialRampToValueAtTime(.0001, t+d); } },
+  kick(t, m, dur, v){ const g = HQ.ac.createGain(), o = osc("sine", 120, t, t+.4); o.frequency.exponentialRampToValueAtTime(38, t+.16); o.connect(g); g.connect(HQ.out); const p = g.gain; p.setValueAtTime(.0001,t); p.exponentialRampToValueAtTime(.45*v, t+.004); p.exponentialRampToValueAtTime(.0001, t+.38); },
+  snare(t, m, dur, v){ noiseHit(t, "bandpass", 1800, .7, .2, .22*v); const g = HQ.ac.createGain(), o = osc("triangle", 190, t, t+.15); o.frequency.exponentialRampToValueAtTime(120, t+.1); o.connect(g); g.connect(HQ.out); const p = g.gain; p.setValueAtTime(.0001,t); p.exponentialRampToValueAtTime(.12*v, t+.003); p.exponentialRampToValueAtTime(.0001, t+.13); },
+  hat(t, m, dur, v){ noiseHit(t, "highpass", 7000, .7, .05, .05*v); },
+  shaker(t, m, dur, v){ noiseHit(t, "bandpass", 5000, 1.5, .08, .04*v); },
+  frame(t, m, dur, v){ const g = HQ.ac.createGain(), o = osc("sine", 95, t, t+.5); o.frequency.exponentialRampToValueAtTime(62, t+.3); o.connect(g); g.connect(HQ.out); const p = g.gain; p.setValueAtTime(.0001,t); p.exponentialRampToValueAtTime(.32*v, t+.005); p.exponentialRampToValueAtTime(.0001, t+.45); noiseHit(t, "bandpass", 400, 2, .12, .08*v); },
+  tom(t, m, dur, v){ const g = HQ.ac.createGain(), o = osc("sine", 140, t, t+.6); o.frequency.exponentialRampToValueAtTime(70, t+.4); o.connect(g); g.connect(HQ.out); const p = g.gain; p.setValueAtTime(.0001,t); p.exponentialRampToValueAtTime(.3*v, t+.005); p.exponentialRampToValueAtTime(.0001, t+.55); }
+};
+function noiseHit(t, type, f, q, dur, vol){ const s = HQ.ac.createBufferSource(); s.buffer = Snd.nodes.noiseBuf; const b = filt(type, f, q), g = HQ.ac.createGain(); s.connect(b); b.connect(g); g.connect(HQ.out); const p = g.gain; p.setValueAtTime(.0001,t); p.exponentialRampToValueAtTime(vol, t+.003); p.exponentialRampToValueAtTime(.0001, t+dur); s.start(t, Math.random()*1.5); s.stop(t+dur+.05); }
+
+// ---------- the compositions ----------
+const HCH = {Dm:["D3","F3","A3"], Bb:["Bb2","D3","F3"], Gm:["G2","Bb2","D3"], A:["A2","C#3","E3"], A7:["A2","C#3","G3"], F:["F2","A2","C3"], C:["C3","E3","G3"], Am:["A2","C3","E3"], G:["G2","B2","D3"], Bbmaj7:["Bb2","D3","F3","A3"], Gm9:["G2","Bb2","D3","A3"], A7b9:["A2","C#3","G3","Bb3"], Eb:["Eb3","G3","Bb3"]};
+const chordM = c => HCH[c].map(NOTE);
+// a melody line: one token per step; "-" holds, "." rests
+function line(str){ const toks = str.trim().split(/\s+/), out = []; for (let i=0;i<toks.length;i++){ const tk = toks[i]; if (tk==="." || tk==="-" || tk==="|") continue; let len = 1; while (toks[i+len]==="-") len++; out.push([i, NOTE(tk), len]); } return out; }
+const lineSteps = str => str.trim().split(/\s+/).filter(t=>t!=="|").length;
+function seqLine(str){ const toks = str.trim().split(/\s+/).filter(t=>t!=="|"); return line(toks.join(" ")); }
+const SONGS = {
+  title:{bpm:84, spb:2, bar:6, chords:"Dm Dm Bb Bb Gm Gm A A7 Dm Dm F C Bb Gm A A",
+    lead:{inst:"lead", v:1, notes:"D5 - - F5 E5 D5 | A4 - - - - . | Bb4 - C5 D5 - F5 | E5 - - D5 - . | G5 - F5 E5 - D5 | C#5 - - A4 - . | Bb4 - A4 G4 - E4 | A4 - - - - . | D5 - - F5 A5 D6 | C6 - - A5 - . | C6 - Bb5 A5 - G5 | G5 - - E5 - . | F5 - E5 D5 - F5 | E5 - D5 Bb4 - G4 | A4 - C#5 E5 - G5 | F5 - E5 C#5 - ."},
+    acc(bar, step, c, play){ const ch = chordM(c); if (step===0){ play("bass", ch[0]-12, 2, .9); play(bar%2 ? "oo" : "choir", ch[0]+12, 6, .7); play("choir", ch[2]+12, 6, .45); } if (step===2 || step===4) for (const m of ch.slice(1)) play("harpsi", m+12, 1, .55);
+      if (step===0 && (bar===0 || bar===8)){ play("bell", NOTE("D6"), 6, .8); play("bell", NOTE("A5"), 6, .5); } if (step===0) play("frame", 0, 1, .55); if (bar%8===7 && step===3) play("tom", 0, 1, .6); }},
+  town:{bpm:100, spb:3, bar:6, chords:"Dm C Dm Am Dm C G Am",
+    lead:{inst:"flute", v:1, notes:"D5 E5 F5 A5 G5 F5 | E5 D5 C5 E5 - C5 | D5 E5 F5 G5 A5 G5 | E5 - C5 A4 - . | F5 G5 A5 C6 A5 G5 | E5 G5 E5 C5 D5 E5 | D5 - B4 G4 A4 B4 | A4 - - - - ."},
+    acc(bar, step, c, play){ const ch = chordM(c); const arp = [ch[0], ch[2], ch[0]+12, ch[1]+12, ch[2], ch[1]+12]; play("lute", arp[step]+12, 1, .7); if (step===0 || step===3) play("bass", ch[0]-12, 2, .8); if (step===0) play("frame", 0, 1, .7); if (step===3) play("frame", 0, 1, .35); if (step===2 || step===5) play("shaker", 0, 1, .8); }},
+  townnight:{bpm:58, spb:2, bar:8, chords:"Dm Bbmaj7 Gm9 A7b9 Dm Bbmaj7 Gm9 A7b9",
+    lead:{inst:"musicbox", v:1, notes:"A5 . . F5 . . E5 . | D5 . . . . . . . | Bb5 . . A5 . . G5 . | C#6 . A5 . . Eb6 . . | D6 . . C6 . . A5 . | Bb5 . . A5 . . F5 . | G5 . . E5 . . Bb4 . | A4 . . . . . . ."},
+    acc(bar, step, c, play){ const ch = chordM(c); if (step===0){ play("oo", ch[0]+12, 8, .8); play("oo", ch[ch.length-1]+12, 8, .5); if (bar%4===0) play("drone", NOTE("D2"), 32, .9); if (bar===0) play("bell", NOTE("D4"), 8, .6); } if (step===6 && bar%2===1) play("harpsi", ch[1]+24, 1, .25); }},
+  tense:{bpm:112, spb:4, bar:16, chords:"Dm Dm Bb A Dm Dm Bb A7b9",
+    lead:{inst:"strings", v:.6, notes:"D5 - - - - - - - Eb5 - - - - - - - | D5 - - - - - - - C#5 - - - - - - - | D5 - - - F5 - - - Eb5 - - - D5 - - - | C#5 - - - - - - - . . . . . . . . | D5 - - - - - - - Eb5 - - - - - - - | F5 - - - - - Eb5 - D5 - - - - - - - | Bb4 - - - - - - - A4 - - - - - - - | C#5 - - - - - - - Bb4 - - - - - - -"},
+    acc(bar, step, c, play){ const ch = chordM(c); const pat = [0, 0, 1, 0]; play("strings", ch[0] + (pat[step%4] ? 1 : 0), 1, .55); if (step===0) play("kick", 0, 1, .9); if (step===3) play("kick", 0, 1, .6); if (step===0 && bar%2===0) play("choir", ch[0]+12, 16, .5); if (bar%4===3 && step>=12) play("tom", 0, 1, .4 + (step-12)*.12); }},
+  lockdown:{bpm:150, spb:4, bar:16, chords:"Dm Dm Bb C Dm Dm Gm A",
+    lead:{inst:"brass", v:1, notes:"D5 - - - - - F5 - E5 - D5 - C5 - A4 - | Bb4 - - - C5 - D5 - E5 - - - A4 - - - | D5 - - - - - F5 - G5 - A5 - G5 - F5 - | E5 - - - C5 - - - E5 - G5 - C6 - - - | A5 - - - - - G5 - F5 - E5 - D5 - C5 - | D5 - - - A4 - - - D5 - F5 - A5 - - - | Bb5 - - - A5 - G5 - F5 - - - D5 - - - | C#5 - - - E5 - - - A4 - - - - - - -"},
+    acc(bar, step, c, play){ const ch = chordM(c); if (step%2===0) play("bass", ch[0]-12 + ((step/2)%4===2 ? 12 : 0), 1, .85); if ([0,4,8,10,12].includes(step)) play("kick", 0, 1, .9); if (step===4 || step===12) play("snare", 0, 1, .9); if (step%2===1) play("hat", 0, 1, .7); if (step===0) play("stab", ch[0]+12, 1, .7); if (step===8) for (const m of ch) play("stab", m+12, 1, .45); }},
+  dance:{bpm:132, spb:3, bar:6, chords:"Dm C Dm C Bb C Dm Dm",
+    lead:{inst:"fiddle", v:1, notes:"D5 F5 A5 D6 A5 F5 | E5 G5 C6 E6 C6 G5 | F5 A5 D6 F6 D6 A5 | E5 G5 C6 G5 E5 C5 | D5 F5 Bb5 D6 Bb5 F5 | E5 G5 C6 E5 G5 C6 | A5 F5 D5 A4 D5 F5 | D5 - - - - ."},
+    acc(bar, step, c, play){ const ch = chordM(c); if (step===0 || step===3) play("bass", ch[0]-12, 2, .85); if (step===1 || step===4) for (const m of ch) play("lute", m+12, 1, .5); if ([0,2,3,5].includes(step)) play("frame", 0, 1, step%3===0 ? .8 : .45); }},
+  cutscene:{bpm:66, spb:2, bar:8, chords:"Dm Bb F A Dm Bb Gm A",
+    lead:{inst:"oo", v:.9, notes:"A4 - - - - - - - | F4 - - - - - - - | A4 - - - C5 - - - | C#5 - - - - - - - | D5 - - - - - - - | D5 - - - F5 - - - | D5 - - - Bb4 - - - | A4 - - - - - - -"},
+    acc(bar, step, c, play){ const ch = chordM(c); if (step===0){ play("strings", ch[0], 8, .7); play("strings", ch[2], 8, .5); play("bass", ch[0]-12, 8, .6); if (bar%4===0) play("bell", ch[0]+24, 8, .6); } if (step%2===1) play("harpsi", ch[(step>>1)%3]+12, 1, .25); }}
+};
+for (const k in SONGS){ const s = SONGS[k]; s.chordList = s.chords.split(/\s+/); s.leadNotes = seqLine(s.lead.notes); s.loop = s.chordList.length * s.bar; }
+function hqStop(){ if (HQ.timer){ clearInterval(HQ.timer); HQ.timer = null; } if (HQ.bus){ const b = HQ.bus; try { b.gain.setTargetAtTime(.0001, HQ.ac.currentTime, .4); setTimeout(()=>{ try { b.disconnect(); } catch {} }, 2500); } catch {} HQ.bus = null; } HQ.name = null; }
+function hqPlay(name){
+  if (HQ.name===name) return;
+  hqStop(); if (!name || !SONGS[name] || !hqInit()) return;
+  const S2 = SONGS[name], ac = HQ.ac, stepT = 60/S2.bpm/S2.spb;
+  const bus = ac.createGain(); bus.gain.setValueAtTime(.0001, ac.currentTime); bus.gain.exponentialRampToValueAtTime(1, ac.currentTime+1.2); bus.connect(HQ.out); HQ.bus = bus;
+  HQ.name = name; let n = 0, next = ac.currentTime + .15;
+  const leadAt = new Map(); for (const [i, m, len] of S2.leadNotes) leadAt.set(i, [m, len]);
+  HQ.timer = setInterval(() => {
+    if (!Snd.musicOn || Snd.muted){ next = ac.currentTime + .1; return; }
+    while (next < ac.currentTime + .25){
+      const i = n % S2.loop, bar = Math.floor(i / S2.bar), step = i % S2.bar, chord = S2.chordList[bar];
+      const out = HQ.out; HQ.out = bus;
+      const play = (inst, m, lenSteps, v) => { try { INST[inst](next, m, lenSteps*stepT, v); } catch {} };
+      const L = leadAt.get(i); if (L) play(S2.lead.inst, L[0], L[1], S2.lead.v);
+      S2.acc(bar, step, chord, play);
+      HQ.out = out;
+      next += stepT; n++;
+    }
+  }, 30);
+}
+// The Halloween edition routes every track through the composed score.
+if (HALLOW){
+  const orig = Snd.track;
+  Snd.track = name => { if (name && SONGS[name]){ orig(null); hqPlay(name); } else { hqStop(); orig(name); } };
+}
+
+// ---------- horror sound design ----------
+const HSFX = {
+  thunder(){ if (!hqInit()) return; const t = HQ.ac.currentTime; noiseHit(t, "lowpass", 300, .5, 3.5, .6); noiseHit(t+.05, "bandpass", 120, .8, 2.5, .5); INST.kick(t, 0, 1, .9); },
+  howl(){ if (!hqInit()) return; const t = HQ.ac.currentTime, f = 380 + Math.random()*80, g = HQ.ac.createGain(), bp = filt("bandpass", 900, 2); const o = osc("sawtooth", f, t, t+3.4); o.frequency.linearRampToValueAtTime(f*1.6, t+.8); o.frequency.linearRampToValueAtTime(f*1.5, t+2.2); o.frequency.exponentialRampToValueAtTime(f*.9, t+3.2); vib(o, t, 5, 6, .6); o.connect(bp); bp.connect(g); const pan = HQ.ac.createStereoPanner ? HQ.ac.createStereoPanner() : null; if (pan){ pan.pan.value = Math.random()*1.6-.8; g.connect(pan); pan.connect(HQ.comp); } else g.connect(HQ.comp); env(g, t, .6, .05, .4, .8, .8, t+2.4); },
+  crow(){ if (!hqInit()) return; const t = HQ.ac.currentTime; for (let i=0;i<2+Math.floor(Math.random()*2);i++){ const tt = t + i*.32, g = HQ.ac.createGain(), bp = filt("bandpass", 1200, 4); const o = osc("sawtooth", 520, tt, tt+.25); o.frequency.exponentialRampToValueAtTime(380, tt+.22); o.connect(bp); bp.connect(g); g.connect(HQ.comp); const p = g.gain; p.setValueAtTime(.0001,tt); p.exponentialRampToValueAtTime(.05, tt+.02); p.exponentialRampToValueAtTime(.0001, tt+.24); noiseHit(tt, "bandpass", 1600, 3, .2, .03); } },
+  toll(times=1){ if (!hqInit()) return; const t = HQ.ac.currentTime; for (let i=0;i<times;i++){ const out = HQ.out; HQ.out = HQ.comp; INST.bell(t + i*2.2, NOTE("D3"), 1, 1.4); HQ.out = out; } },
+  whisper(){ if (!hqInit()) return; const t = HQ.ac.currentTime; const pan = HQ.ac.createStereoPanner ? HQ.ac.createStereoPanner() : null; const g = HQ.ac.createGain(); g.gain.value = 1; if (pan){ pan.pan.value = Math.random() < .5 ? -.9 : .9; g.connect(pan); pan.connect(HQ.comp); } else g.connect(HQ.comp);
+    for (let i=0;i<9;i++){ const tt = t + i*.11 + Math.random()*.05, s = HQ.ac.createBufferSource(); s.buffer = Snd.nodes.noiseBuf; const b = filt("bandpass", 1800 + Math.random()*2400, 6), gg = HQ.ac.createGain(); s.connect(b); b.connect(gg); gg.connect(g); const p = gg.gain; p.setValueAtTime(.0001, tt); p.exponentialRampToValueAtTime(.05, tt+.03); p.exponentialRampToValueAtTime(.0001, tt+.12); s.start(tt, Math.random()); s.stop(tt+.15); } },
+  heartbeat(){ if (!hqInit()) return; const t = HQ.ac.currentTime, out = HQ.out; HQ.out = HQ.comp; INST.kick(t, 0, 1, .8); INST.kick(t+.22, 0, 1, .5); HQ.out = out; },
+  knock(){ if (!hqInit()) return; const t = HQ.ac.currentTime; for (let i=0;i<3;i++) noiseHit(t + i*.55, "lowpass", 500, 1, .12, .5); },
+  scream(){ if (!hqInit()) return; const t = HQ.ac.currentTime, g = HQ.ac.createGain(); for (const dt of [-30, 0, 25]){ const o = osc("sawtooth", 880, t, t+1.3, dt); o.frequency.linearRampToValueAtTime(1250, t+.3); o.frequency.exponentialRampToValueAtTime(600, t+1.2); vib(o, t, 9, 40, 0); const b = filt("bandpass", 1500, 2); o.connect(b); b.connect(g); } g.connect(HQ.comp); env(g, t, .02, .09, .2, .8, .3, t+.9); noiseHit(t, "highpass", 2000, 1, 1, .05); },
+  riser(){ if (!hqInit()) return; const t = HQ.ac.currentTime, g = HQ.ac.createGain(); for (const dt of [-20, 0, 15]){ const o = osc("sawtooth", 80, t, t+2.2, dt); o.frequency.exponentialRampToValueAtTime(420, t+2); o.connect(g); } const lp = filt("lowpass", 1400); g.connect(lp); lp.connect(HQ.comp); const p = g.gain; p.setValueAtTime(.0001, t); p.exponentialRampToValueAtTime(.07, t+1.9); p.exponentialRampToValueAtTime(.0001, t+2.1); }
+};
+if (HALLOW){
+  // the stingers and screams in the town code get the bigger versions
+  const fx = Snd.fx;
+  fx.stinger = () => { HSFX.riser(); setTimeout(()=>{ if (!hqInit()) return; const t = HQ.ac.currentTime, out = HQ.out; HQ.out = HQ.comp; for (const m of ["D3","Eb3","A3","Bb3"]) INST.stab(t, NOTE(m), 1, 1.2); INST.kick(t, 0, 1, 1); HQ.out = out; noiseHit(t, "highpass", 3000, .7, .8, .12); }, 1900); };
+  fx.scream = () => HSFX.scream();
+  fx.knock = () => HSFX.knock();
+  fx.bell = () => HSFX.toll(1);
+  fx.church = () => HSFX.toll(3);
+}
+
+
+// ===== town3d-src/18-tex.js =====
+// Hallowmere textures: everything is painted at load time on small canvases, kept crisp with nearest-neighbour
+// filtering so the medieval village still reads as pixel art up close.
+const HT = {cache:new Map(), redraw:[]};
+function hCanvas(w, h){ const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"); g.imageSmoothingEnabled = false; return [c, g]; }
+function hTex(c, repeat, smooth){
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = smooth ? THREE.LinearFilter : THREE.NearestFilter; t.minFilter = THREE.LinearMipMapLinearFilter;
+  t.encoding = THREE.sRGBEncoding; t.anisotropy = 4;
+  if (repeat){ t.wrapS = t.wrapT = THREE.RepeatWrapping; }
+  return t;
+}
+const hOnce = (key, make) => { let v = HT.cache.get(key); if (!v){ v = make(); HT.cache.set(key, v); } return v; };
+const hRng = seed => E.mulberry ? E.mulberry(seed) : (() => { let s = seed >>> 0 || 1; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); })();
+// colour helpers
+function hMix(a, b, t){ const A = new THREE.Color(a), B = new THREE.Color(b); return "#" + A.lerp(B, t).getHexString(); }
+function hJit(col, r, amt){ const c = new THREE.Color(col), k = 1 + (r - .5) * amt; c.r = Math.min(1, c.r*k); c.g = Math.min(1, c.g*k); c.b = Math.min(1, c.b*k); return "#" + c.getHexString(); }
+function hSpeck(g, x, y, w, h, base, cols, n, R){ g.fillStyle = base; g.fillRect(x, y, w, h); for (let i=0;i<n;i++){ g.fillStyle = cols[(R()*cols.length)|0]; g.fillRect(x + ((R()*w)|0), y + ((R()*h)|0), 1 + (R()<.3?1:0), 1); } }
+
+// ---------- walls ----------
+// a timber-framed panel the size of one wall tile (1 x 2.6): stone plinth, plaster, dark oak frame
+function texTimber(plaster, beam, variant, seed){
+  return hOnce(`timber:${plaster}:${beam}:${variant}:${seed%3}`, () => {
+    const [c, g] = hCanvas(64, 166), R = hRng(seed*97 + variant*13 + 5);
+    hSpeck(g, 0, 0, 64, 166, plaster, [hJit(plaster, .9, .14), hJit(plaster, .1, .18), hJit(plaster, .5, .3)], 900, R);
+    // damp and soot
+    const gr = g.createLinearGradient(0, 166, 0, 90); gr.addColorStop(0, "rgba(40,30,20,.45)"); gr.addColorStop(1, "rgba(40,30,20,0)"); g.fillStyle = gr; g.fillRect(0, 90, 64, 76);
+    const gt = g.createLinearGradient(0, 0, 0, 30); gt.addColorStop(0, "rgba(20,16,14,.4)"); gt.addColorStop(1, "rgba(20,16,14,0)"); g.fillStyle = gt; g.fillRect(0, 0, 64, 30);
+    // cracks
+    g.strokeStyle = "rgba(50,40,30,.55)"; g.lineWidth = 1;
+    for (let k=0;k<3;k++){ let x = 10 + R()*44, y = 50 + R()*80; g.beginPath(); g.moveTo(x, y); for (let s=0;s<5;s++){ x += (R()-.5)*8; y += 2 + R()*5; g.lineTo(x|0, y|0); } g.stroke(); }
+    // frame
+    const wood = (x, y, w, h) => { g.fillStyle = beam; g.fillRect(x, y, w, h); g.fillStyle = hJit(beam, .9, .5); for (let i=0;i<(w*h)/14;i++) g.fillRect(x + ((R()*w)|0), y + ((R()*h)|0), w > h ? 3 : 1, w > h ? 1 : 3); g.fillStyle = "rgba(0,0,0,.35)"; if (w > h) g.fillRect(x, y+h-1, w, 1); else g.fillRect(x+w-1, y, 1, h); };
+    wood(0, 0, 64, 7); wood(0, 84, 64, 6); wood(0, 0, 6, 166); wood(58, 0, 6, 166);
+    if (variant === 0){ g.save(); g.beginPath(); g.rect(6, 90, 52, 40); g.clip(); g.translate(6, 130); g.rotate(-.65); wood(0, -3, 72, 6); g.restore(); }
+    if (variant === 1){ g.save(); g.beginPath(); g.rect(6, 7, 52, 77); g.clip(); g.translate(6, 84); g.rotate(-.98); wood(0, -3, 100, 6); g.restore(); g.save(); g.beginPath(); g.rect(6, 7, 52, 77); g.clip(); g.translate(58, 84); g.rotate(-2.16); wood(0, -3, 100, 6); g.restore(); }
+    if (variant === 2){ wood(29, 7, 6, 77); }
+    // pegs
+    g.fillStyle = "#1a120c"; for (const [x,y] of [[2,3],[60,3],[2,87],[60,87]]) g.fillRect(x, y, 2, 2);
+    // stone plinth
+    texStonePaint(g, 0, 130, 64, 36, "#5a5650", R, 9);
+    g.fillStyle = beam; g.fillRect(0, 128, 64, 3);
+    return hTex(c);
+  });
+}
+function texStonePaint(g, X, Y, W, H, base, R, rowH=14, moss=true){
+  g.fillStyle = "#24221f"; g.fillRect(X, Y, W, H);
+  for (let y = Y, row = 0; y < Y+H; y += rowH, row++){
+    let x = X - (row % 2 ? (rowH*.8)|0 : 0);
+    while (x < X+W){
+      const w = (rowH*1.1 + R()*rowH*1.1)|0, col = hJit(base, R(), .35);
+      g.fillStyle = col; g.fillRect(Math.max(X, x+1), y+1, Math.min(w-1, X+W-Math.max(X, x+1)), Math.min(rowH-1, Y+H-y-1));
+      g.fillStyle = "rgba(255,255,240,.12)"; g.fillRect(Math.max(X, x+1), y+1, Math.max(0, Math.min(w-2, X+W-x-2)), 1);
+      g.fillStyle = "rgba(0,0,0,.22)"; g.fillRect(Math.max(X, x+1), y+rowH-2, Math.max(0, Math.min(w-1, X+W-x-1)), 1);
+      for (let i=0;i<6;i++){ g.fillStyle = R() < .5 ? "rgba(0,0,0,.15)" : "rgba(255,255,255,.07)"; g.fillRect(x + ((R()*w)|0), y + 1 + ((R()*(rowH-2))|0), 1, 1); }
+      x += w;
+    }
+  }
+  if (moss) for (let i=0;i<W*1.4;i++){ const yy = Y + H - ((R()*R()*H*.6)|0); g.fillStyle = R() < .5 ? "rgba(70,90,40,.6)" : "rgba(50,70,30,.5)"; g.fillRect(X + ((R()*W)|0), yy, 1 + (R()<.4?1:0), 1); }
+}
+function texStone(base, seed){
+  return hOnce(`stone:${base}:${seed%2}`, () => {
+    const [c, g] = hCanvas(64, 166), R = hRng(seed*31 + 7);
+    texStonePaint(g, 0, 0, 64, 166, base, R, 14);
+    // streaks of soot and water
+    for (let i=0;i<5;i++){ const x = (R()*60)|0, gr = g.createLinearGradient(0, 0, 0, 166); gr.addColorStop(0, "rgba(10,10,10,.35)"); gr.addColorStop(1, "rgba(10,10,10,0)"); g.fillStyle = gr; g.fillRect(x, 0, 2 + (R()*3|0), 60 + R()*100); }
+    return hTex(c);
+  });
+}
+function texPlanks(base, seed){
+  return hOnce(`planks:${base}:${seed%2}`, () => {
+    const [c, g] = hCanvas(64, 166), R = hRng(seed*11 + 3);
+    let x = 0; while (x < 64){ const w = 9 + (R()*4|0), col = hJit(base, R(), .3); g.fillStyle = col; g.fillRect(x, 0, w, 166); g.fillStyle = hJit(col, .2, .4); for (let i=0;i<40;i++) g.fillRect(x + 1 + ((R()*(w-2))|0), (R()*166)|0, 1, 4 + (R()*10|0)); g.fillStyle = "#120c08"; g.fillRect(x+w-1, 0, 1, 166); g.fillStyle = "#2a2a2a"; g.fillRect(x+2, 20, 1, 1); g.fillRect(x+2, 140, 1, 1); x += w; }
+    const gr = g.createLinearGradient(0, 166, 0, 110); gr.addColorStop(0, "rgba(20,16,10,.5)"); gr.addColorStop(1, "rgba(20,16,10,0)"); g.fillStyle = gr; g.fillRect(0, 110, 64, 56);
+    return hTex(c);
+  });
+}
+function texDoor(){
+  return hOnce("door", () => {
+    const [c, g] = hCanvas(48, 96), R = hRng(42);
+    let x = 0; while (x < 48){ const w = 8 + (R()*3|0); g.fillStyle = hJit("#4a3020", R(), .3); g.fillRect(x, 0, w, 96); g.fillStyle = "rgba(0,0,0,.25)"; for (let i=0;i<20;i++) g.fillRect(x + 1 + ((R()*(w-2))|0), (R()*96)|0, 1, 5); g.fillStyle = "#170e08"; g.fillRect(x+w-1, 0, 1, 96); x += w; }
+    for (const y of [16, 74]){ g.fillStyle = "#26262a"; g.fillRect(0, y, 40, 5); g.fillStyle = "#4a4a50"; g.fillRect(0, y, 40, 1); for (let sx=3; sx<40; sx+=7){ g.fillStyle = "#5a5a60"; g.fillRect(sx, y+1, 2, 2); } }
+    g.strokeStyle = "#3a3a40"; g.lineWidth = 2; g.beginPath(); g.arc(38, 50, 4, 0, Math.PI*2); g.stroke(); g.fillStyle = "#26262a"; g.fillRect(36, 44, 4, 3);
+    return hTex(c);
+  });
+}
+// leaded glass: lattice of diamonds; the glow map lights only the panes
+function texGlass(glow){
+  return hOnce("glass:"+glow, () => {
+    const [c, g] = hCanvas(32, 32), R = hRng(glow ? 9 : 8);
+    g.fillStyle = glow ? "#000" : "#283430"; g.fillRect(0, 0, 32, 32);
+    for (let j=-1;j<5;j++) for (let i=-1;i<5;i++){
+      const cx = i*8 + (j%2 ? 4 : 0), cy = j*8;
+      g.fillStyle = glow ? hMix("#ffb050", "#ffe0a0", R()) : hJit("#4a5a54", R(), .5);
+      g.beginPath(); g.moveTo(cx, cy-4); g.lineTo(cx+4, cy); g.lineTo(cx, cy+4); g.lineTo(cx-4, cy); g.fill();
+    }
+    g.strokeStyle = "#141414"; g.lineWidth = 1;
+    for (let k=-32;k<64;k+=8){ g.beginPath(); g.moveTo(k, 0); g.lineTo(k+32, 32); g.stroke(); g.beginPath(); g.moveTo(k, 32); g.lineTo(k+32, 0); g.stroke(); }
+    g.fillStyle = "#141414"; g.fillRect(0, 0, 32, 2); g.fillRect(0, 30, 32, 2); g.fillRect(0, 0, 2, 32); g.fillRect(30, 0, 2, 32); g.fillRect(15, 0, 2, 32);
+    return hTex(c);
+  });
+}
+
+// ---------- roofs ----------
+function texThatch(seed){
+  return hOnce("thatch:"+(seed%2), () => {
+    const [c, g] = hCanvas(128, 64), R = hRng(seed + 101);
+    g.fillStyle = "#5a4a2c"; g.fillRect(0, 0, 128, 64);
+    for (let row=0; row<4; row++){
+      const y0 = row*16;
+      for (let i=0;i<520;i++){ const x = (R()*128)|0, y = y0 + ((R()*16)|0), len = 3 + (R()*6|0); g.fillStyle = ["#7a6436","#8a7444","#4a3a20","#6a5630","#9a8450","#3a2e1a"][(R()*6)|0]; g.fillRect(x, y, 1, Math.min(len, y0+16-y)); }
+      g.fillStyle = "rgba(20,14,8,.55)"; g.fillRect(0, y0+14, 128, 2);
+      g.fillStyle = "rgba(255,230,160,.08)"; g.fillRect(0, y0, 128, 2);
+    }
+    for (let i=0;i<14;i++){ const x = R()*128, y = R()*64, r = 3 + R()*7; for (let k=0;k<r*r;k++){ g.fillStyle = R() < .5 ? "rgba(60,80,30,.45)" : "rgba(40,50,24,.4)"; g.fillRect((x + (R()-.5)*r*2)|0, (y + (R()-.5)*r)|0, 1, 1); } }
+    return hTex(c, true);
+  });
+}
+function texSlate(base){
+  return hOnce("slate:"+base, () => {
+    const [c, g] = hCanvas(64, 64), R = hRng(77);
+    g.fillStyle = "#16181c"; g.fillRect(0, 0, 64, 64);
+    for (let row=0; row<8; row++){
+      const y = row*8, off = row%2 ? 5 : 0;
+      for (let x=-off; x<64; x+=10){
+        if (R() < .03) continue;
+        const col = hJit(base, R(), .35);
+        g.fillStyle = col; g.fillRect(x+1, y, 9, 7);
+        g.fillStyle = "rgba(255,255,255,.12)"; g.fillRect(x+1, y, 9, 1);
+        g.fillStyle = "rgba(0,0,0,.3)"; g.fillRect(x+1, y+6, 9, 1);
+        if (R() < .15){ g.fillStyle = "rgba(150,160,90,.5)"; g.fillRect(x+2 + (R()*6|0), y+2 + (R()*3|0), 2, 1); }
+      }
+    }
+    return hTex(c, true);
+  });
+}
+// A gable roof with real UVs (in world units, so textures repeat at a steady scale) and wall-textured gable ends.
+// Ridge along x, length L; depth D; height h; eaves overhang `ov`.
+function gableGeo(L, D, h, ov){
+  const Lo = L/2 + ov, Do = D/2 + ov, ye = -ov * h / (D/2), slope = Math.hypot(Do, h - ye);
+  const P = [], U = [], idx = [];
+  const quad = (a, b, c2, d, ua, ub, uc, ud) => { const i = P.length/3; P.push(...a, ...b, ...c2, ...d); U.push(...ua, ...ub, ...uc, ...ud); idx.push(i, i+1, i+2, i, i+2, i+3); };
+  // north slope (z < 0) and south slope (z > 0)
+  quad([-Lo, ye, -Do], [-Lo, h, 0], [Lo, h, 0], [Lo, ye, -Do], [0, 0], [0, slope], [L+2*ov, slope], [L+2*ov, 0]);
+  quad([Lo, ye, Do], [Lo, h, 0], [-Lo, h, 0], [-Lo, ye, Do], [0, 0], [0, slope], [L+2*ov, slope], [L+2*ov, 0]);
+  const slopeCount = idx.length;
+  // gable ends
+  const tri = (a, b, c2, ua, ub, uc) => { const i = P.length/3; P.push(...a, ...b, ...c2); U.push(...ua, ...ub, ...uc); idx.push(i, i+1, i+2); };
+  tri([-L/2, 0, D/2], [-L/2, h, 0], [-L/2, 0, -D/2], [0, 0], [D/2, h/2.6], [D, 0]);
+  tri([L/2, 0, -D/2], [L/2, h, 0], [L/2, 0, D/2], [0, 0], [D/2, h/2.6], [D, 0]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(U, 2));
+  geo.setIndex(idx); geo.computeVertexNormals();
+  geo.addGroup(0, slopeCount, 0); geo.addGroup(slopeCount, idx.length - slopeCount, 1);
+  return geo;
+}
+
+// ---------- the ground ----------
+// A medieval repaint of the town map: mud and cobbles, dead grass and leaves, flagstones, black water.
+function hwPaintGround(){
+  const [c, g] = hCanvas(TW*TS, TH*TS);
+  const F = (x,y,w,h,col) => { g.fillStyle = col; g.fillRect(x,y,w,h); };
+  const LEAF = ["#7a3a14","#8e4a18","#5e2a10","#a0601c","#6a4a1a"];
+  const grass = (X, Y, x, y, dark) => {
+    F(X, Y, TS, TS, dark ? "#2e3120" : hJit("#4a4a2c", rnd(x,y,1), .12));
+    for (let i=0;i<10;i++){ const px = (rnd(x,y,i+3)*15)|0, py = (rnd(x,y,i+13)*14)|0; F(X+px, Y+py, 1, 2, rnd(x,y,i) > .5 ? (dark ? "#3e4228" : "#6a6438") : (dark ? "#22251a" : "#3a3a22")); }
+    for (let i=0;i<3;i++) if (rnd(x,y,i+40) > .55) F(X + ((rnd(x,y,i+41)*14)|0), Y + ((rnd(x,y,i+42)*14)|0), 2, 1, LEAF[(rnd(x,y,i+43)*5)|0]);
+  };
+  const cobble = (X, Y, x, y, base, size) => {
+    F(X, Y, TS, TS, "#1e1c1a");
+    const s = size || 4;
+    for (let j=0;j<TS;j+=s) for (let i=-(j/s%2 ? s/2 : 0); i<TS; i+=s){
+      const v = rnd(x*TS+i, y*TS+j, 5);
+      F(X + Math.max(0, i), Y + j, Math.min(s-1, TS - Math.max(0, i)) - (i < 0 ? s/2 : 0) + (i < 0 ? s/2 : 0), s-1, hJit(base, v, .4));
+      F(X + Math.max(0, i), Y + j, Math.max(1, s-2), 1, "rgba(255,250,230,.1)");
+    }
+    if (rnd(x,y,9) > .86){ F(X+3, Y+6, 7, 4, "rgba(14,18,22,.8)"); F(X+4, Y+6, 3, 1, "rgba(160,170,180,.25)"); }
+    if (rnd(x,y,10) > .7) F(X + ((rnd(x,y,11)*12)|0), Y + ((rnd(x,y,12)*12)|0), 2, 1, LEAF[(rnd(x,y,13)*5)|0]);
+  };
+  const mud = (X, Y, x, y, base) => { F(X, Y, TS, TS, hJit(base, rnd(x,y,2), .1)); for (let i=0;i<9;i++) F(X + ((rnd(x,y,i)*15)|0), Y + ((rnd(x,y,i+5)*15)|0), 2, 1, rnd(x,y,i+2) > .5 ? hJit(base, .9, .5) : hJit(base, .1, .5)); if (rnd(x,y,7) > .85){ F(X+4, Y+5, 6, 3, "rgba(14,14,12,.6)"); } };
+  const flag = (X, Y, x, y, base) => { F(X, Y, TS, TS, "#262420"); const a = (x+y)%2; F(X+1, Y+1, 14, a ? 6 : 9, hJit(base, rnd(x,y,1), .25)); F(X+1, Y + (a ? 8 : 11), 14, a ? 7 : 4, hJit(base, rnd(x,y,2), .25)); if (rnd(x,y,3) > .7){ F(X+5, Y+3, 1, 4, "#1e1c18"); F(X+6, Y+6, 1, 3, "#1e1c18"); } };
+  const planks = (X, Y, x, y, base) => { F(X, Y, TS, TS, hJit(base, rnd(0,y,1), .15)); for (let j=0;j<TS;j+=4){ F(X, Y+j+3, TS, 1, "rgba(0,0,0,.45)"); const cut = (x*7 + j*3 + y) % 16; F(X + cut, Y+j, 1, 3, "rgba(0,0,0,.4)"); } for (let i=0;i<5;i++) F(X + ((rnd(x,y,i)*15)|0), Y + ((rnd(x,y,i+5)*15)|0), 2, 1, "rgba(255,230,190,.08)"); if (rnd(x,y,4) > .85) F(X+3, Y+9, 4, 2, "rgba(80,0,0,.25)"); };
+  const rug = (X, Y, x, y) => { F(X, Y, TS, TS, "#4a1a1e"); F(X, Y, TS, 1, "#2a0e10"); if ((x+y)%2===0){ F(X+5, Y+5, 6, 6, "#6a2a24"); F(X+7, Y+7, 2, 2, "#a08040"); } for (let i=0;i<4;i++) F(X + ((rnd(x,y,i)*15)|0), Y + ((rnd(x,y,i+5)*15)|0), 1, 1, "#2a0e10"); };
+  const floorOf = (X, Y, x, y, ch, bid) => {
+    const bd = bid && bById(outerOf(bid));
+    if (ch === ":") return rug(X, Y, x, y);
+    if (ch === "y") return flag(X, Y, x, y, "#3a4248");
+    if (ch === ","){ if (bd && ["sheriff","clinic","church","library","station","arcade","garage"].includes(bd.id)) return flag(X, Y, x, y, "#6a645a"); return planks(X, Y, x, y, "#4a3424"); }
+    return planks(X, Y, x, y, "#3e2a1c");
+  };
+  const inCem = (x,y) => x>=80 && x<=100 && y>=34 && y<=50;
+  for (let y=0;y<TH;y++) for (let x=0;x<TW;x++){
+    const ch = tmap[y][x], X = x*TS, Y = y*TS, bid = buildingAt(x,y);
+    if (bid || ch === "D"){ const fl = bid ? (bById(outerOf(bid)) || {}).floor || "." : "."; floorOf(X, Y, x, y, ".,:y".includes(ch) ? ch : (bid==="roomA"||bid==="roomB"||bid==="roomC" ? ":" : fl), bid); if (bid && (tileT(x,y-1)==="#" || tileT(x,y-1)==="x")) F(X, Y, TS, 4, "rgba(5,4,8,.4)"); continue; }
+    switch (ch){
+      case "g": case "G": case "M": case "V": case "f": case "P": grass(X, Y, x, y, inCem(x,y)); break;
+      case "t": case "T": grass(X, Y, x, y, true); for (let i=0;i<4;i++) F(X + ((rnd(x,y,i+50)*14)|0), Y + ((rnd(x,y,i+51)*14)|0), 3, 1, LEAF[i%5]); break;
+      case "r": cobble(X, Y, x, y, "#4a443c", 4); { const ry = y % 5; if (ry===1 || ry===3) for (let i=0;i<TS;i+=2) F(X+i, Y+7, 2, 2, "rgba(20,16,12,.5)"); } break;
+      case "s": case "l": flag(X, Y, x, y, "#5a564c"); break;
+      case "q": case "N": case "n": case "X": case "Y": cobble(X, Y, x, y, "#5a544a", 4); break;
+      case "o": cobble(X, Y, x, y, "#4a4640", 4); break;
+      case "p": case "z": mud(X, Y, x, y, "#3a2c1e"); if (ch==="z"){ F(X, Y+3, TS, 2, "#20160e"); F(X, Y+11, TS, 2, "#20160e"); } break;
+      case "u": case "J": case "h": mud(X, Y, x, y, "#33261a"); break;
+      case "v": mud(X, Y, x, y, "#2a1e14"); F(X+3, Y+2, 10, 12, "#3a2a1a"); F(X+3, Y+2, 10, 1, "#4a3a26"); break;
+      case "U": F(X, Y, TS, TS, "#2a1e12"); for (let i=0;i<TS;i+=4) F(X, Y+i, TS, 2, "#3a2a18"); break;
+      case "b": mud(X, Y, x, y, "#2e2c22"); for (let i=0;i<4;i++) F(X + ((rnd(x,y,i)*14)|0), Y + ((rnd(x,y,i+5)*10)|0), 1, 5, "#4a4a2a"); break;
+      case "w": { F(X, Y, TS, TS, "#0a1214"); if (rnd(x,y,3) > .7) F(X + ((rnd(x,y,4)*10)|0), Y + ((rnd(x,y,5)*14)|0), 5, 1, "#1a2a2c"); break; }
+      case "d": F(X, Y, TS, TS, "#0a1214"); F(X+1, Y, 14, TS, "#3a2a1c"); for (let i=3;i<TS;i+=4) F(X+1, Y+i, 14, 1, "#1e140c"); break;
+      case "m": cobble(X, Y, x, y, "#4a443c"); break;
+      default: grass(X, Y, x, y, false);
+    }
+  }
+  return c;
+}
+
+// ---------- people ----------
+// The front of a head: eyes with whites, brows, a shadowed nose, a mouth, stubble or a beard painted in.
+function texFace(L, seed){
+  const key = `face:${L.skin}:${L.hair}:${L.beard||""}:${L.mustache||""}:${L.eye||""}:${seed%5}`;
+  return hOnce(key, () => {
+    const [c, g] = hCanvas(32, 32), R = hRng(seed + 3), sk = L.skin || "#d49a6a";
+    const F = (x,y,w,h,col) => { g.fillStyle = col; g.fillRect(x,y,w,h); };
+    F(0, 0, 32, 32, sk);
+    F(0, 0, 3, 32, hJit(sk, .1, .3)); F(29, 0, 3, 32, hJit(sk, .1, .3)); F(0, 27, 32, 5, hJit(sk, .2, .25));
+    const hair = L.hair || "#3f2616", brow = hMix(hair, "#000", .3);
+    const browY = 10 + (seed%3===0 ? 1 : 0), slant = seed % 4;
+    F(6, browY + (slant===1 ? 1 : 0), 7, 2, brow); F(19, browY + (slant===2 ? 1 : 0), 7, 2, brow);
+    if (slant===3){ F(11, browY+1, 2, 1, brow); F(19, browY+1, 2, 1, brow); }
+    const eye = L.eye || ["#3a2a1a","#2a4a6a","#3a5a3a","#5a4a2a","#2a2a2a"][seed % 5];
+    for (const ex of [7, 19]){ F(ex, 13, 6, 3, "#e8e0d0"); F(ex+2, 13, 3, 3, eye); F(ex+3, 14, 1, 1, "#000"); F(ex, 12, 6, 1, hMix(sk, "#000", .45)); F(ex, 16, 6, 1, hMix(sk, "#000", .2)); }
+    F(15, 14, 2, 7, hMix(sk, "#000", .15)); F(14, 20, 4, 2, hMix(sk, "#000", .3)); F(17, 15, 1, 5, hMix(sk, "#fff", .15));
+    F(5, 19, 4, 3, hMix(sk, "#c03030", .18)); F(23, 19, 4, 3, hMix(sk, "#c03030", .18));
+    const mouth = hMix(sk, "#401010", .55); F(11, 24, 10, 2, mouth); F(12, 26, 8, 1, hMix(sk, "#000", .15));
+    if (seed % 6 === 1){ F(10, 23, 1, 1, mouth); F(21, 23, 1, 1, mouth); }
+    if (seed % 7 === 2){ F(8, 22, 3, 1, hMix(sk, "#000", .2)); F(21, 22, 3, 1, hMix(sk, "#000", .2)); }
+    if (seed % 5 === 4){ g.strokeStyle = "rgba(120,40,40,.7)"; g.beginPath(); g.moveTo(22, 8); g.lineTo(26, 20); g.stroke(); }
+    if (L.mustache){ F(9, 21, 14, 3, L.mustache); F(8, 23, 2, 2, L.mustache); F(22, 23, 2, 2, L.mustache); }
+    if (L.beard){ F(4, 22, 24, 10, L.beard); F(10, 24, 12, 2, mouth); for (let i=0;i<30;i++) F(4 + ((R()*24)|0), 22 + ((R()*10)|0), 1, 1, hMix(L.beard, "#000", .3)); }
+    else if (seed % 3 === 1) for (let i=0;i<40;i++) F(5 + ((R()*22)|0), 22 + ((R()*9)|0), 1, 1, hMix(sk, hair, .4));
+    return hTex(c);
+  });
+}
+const MASK_ART = {
+  skull(g, F){ F(0,0,32,32,"#d8d0b8"); F(0,0,3,32,"#b0a890"); F(29,0,3,32,"#b0a890"); for (const ex of [5,18]){ F(ex,10,9,8,"#0a0808"); F(ex+1,9,7,1,"#0a0808"); F(ex+3,13,2,2,"#600"); } F(14,19,4,4,"#0a0808"); F(15,18,2,1,"#0a0808"); F(7,25,18,5,"#1a1410"); for (let x=8;x<25;x+=3) F(x,25,2,4,"#e8e0c8"); F(4,6,4,1,"#9a9078"); F(22,4,1,6,"#7a7060"); },
+  plague(g, F){ F(0,0,32,32,"#2a1e16"); for (let i=0;i<60;i++) F((Math.random()*32)|0,(Math.random()*32)|0,1,1,"#3a2a1e"); for (const ex of [6,18]){ F(ex,10,8,8,"#141010"); F(ex+1,11,6,6,"#6a7a70"); F(ex+2,12,2,2,"#b0c0b0"); } F(4,22,24,2,"#1a120c"); },
+  goat(g, F){ F(0,0,32,32,"#2a221c"); for (let i=0;i<90;i++) F((Math.random()*32)|0,(Math.random()*32)|0,1,2,"#3a3028"); for (const ex of [5,20]){ F(ex,12,7,4,"#c0a020"); F(ex+2,13,3,2,"#000"); } F(12,18,8,10,"#1a1410"); F(13,26,2,2,"#000"); F(17,26,2,2,"#000"); F(14,29,4,3,"#5a4a3a"); },
+  porcelain(g, F){ F(0,0,32,32,"#ece6dc"); F(0,0,2,32,"#cfc8bc"); F(30,0,2,32,"#cfc8bc"); for (const ex of [7,19]){ F(ex,12,6,4,"#000"); F(ex+1,11,4,1,"#000"); F(ex-1,10,8,1,"#8a8070"); } F(5,18,4,2,"#e0a0a0"); F(23,18,4,2,"#e0a0a0"); F(13,23,6,3,"#901018"); F(12,24,8,1,"#901018"); F(15,20,2,2,"#d0c8bc"); g.strokeStyle = "#5a5048"; g.lineWidth = 1; g.beginPath(); g.moveTo(20,0); g.lineTo(18,6); g.lineTo(21,10); g.lineTo(19,15); g.stroke(); F(19,16,1,6,"#600"); },
+  sack(g, F){ F(0,0,32,32,"#8a7650"); for (let i=0;i<220;i++) F((Math.random()*32)|0,(Math.random()*32)|0,1,1,Math.random()<.5?"#6a5838":"#a08a60"); for (let y=0;y<32;y+=2) F(0,y,32,1,"rgba(0,0,0,.08)"); for (const [ex,ey] of [[7,11],[20,11]]){ F(ex,ey,5,1,"#1a1008"); F(ex+2,ey-2,1,5,"#1a1008"); F(ex,ey-2,1,1,"#1a1008"); F(ex+4,ey+2,1,1,"#1a1008"); } for (let x=8;x<25;x+=2){ F(x,23,1,1,"#1a1008"); F(x,22 + (x%4===0?-1:1),1,3,"#3a2a18"); } F(8,23,16,1,"#2a1a0c"); },
+  crow(g, F){ F(0,0,32,32,"#121014"); for (let i=0;i<80;i++) F((Math.random()*32)|0,(Math.random()*32)|0,2,1,"#22202a"); for (const ex of [6,20]){ F(ex,12,6,5,"#000"); F(ex+2,13,2,2,"#c01010"); } }
+};
+function texMask(type){
+  return hOnce("mask:"+type, () => { const [c, g] = hCanvas(32, 32); const F = (x,y,w,h,col) => { g.fillStyle = col; g.fillRect(x,y,w,h); }; (MASK_ART[type] || MASK_ART.skull)(g, F); return hTex(c); });
+}
+function texBurlap(){ return hOnce("burlap", () => { const [c, g] = hCanvas(32, 32); const F = (x,y,w,h,col) => { g.fillStyle = col; g.fillRect(x,y,w,h); }; MASK_ART.sack(g, F); return hTex(c); }); }
+// fabric with weave or wear for tunics and cloaks
+function texCloth(base, kind){
+  return hOnce(`cloth:${base}:${kind}`, () => {
+    const [c, g] = hCanvas(16, 16), R = hRng(base.length*13 + (kind||"").length);
+    hSpeck(g, 0, 0, 16, 16, base, [hJit(base, .1, .35), hJit(base, .9, .25)], 50, R);
+    if (kind === "weave") for (let i=0;i<16;i+=2){ g.fillStyle = "rgba(0,0,0,.1)"; g.fillRect(0, i, 16, 1); }
+    if (kind === "worn"){ g.fillStyle = "rgba(0,0,0,.2)"; g.fillRect(0, 13, 16, 3); g.fillStyle = hJit(base, .95, .3); g.fillRect((R()*12)|0, (R()*10)|0, 3, 2); }
+    return hTex(c);
+  });
+}
+
+// ---------- sky ----------
+function texSun(){
+  return hOnce("sun", () => {
+    const [c, g] = hCanvas(128, 128);
+    const gr = g.createRadialGradient(64, 64, 4, 64, 64, 64); gr.addColorStop(0, "rgba(255,240,200,1)"); gr.addColorStop(.18, "rgba(255,220,150,1)"); gr.addColorStop(.24, "rgba(255,170,90,.6)"); gr.addColorStop(.5, "rgba(255,140,70,.18)"); gr.addColorStop(1, "rgba(255,120,60,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    return hTex(c, false, true);
+  });
+}
+function texGlow(col){
+  return hOnce("glow:"+col, () => {
+    const [c, g] = hCanvas(64, 64), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    const cc = new THREE.Color(col), rgb = `${(cc.r*255)|0},${(cc.g*255)|0},${(cc.b*255)|0}`;
+    gr.addColorStop(0, `rgba(${rgb},1)`); gr.addColorStop(.3, `rgba(${rgb},.45)`); gr.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return hTex(c, false, true);
+  });
+}
+// The moon: a cratered face that watches the player, blinks, and grins after a death.
+const MOON = {cv:null, g:null, tex:null};
+function moonTex(){
+  if (!MOON.tex){ const [c, g] = hCanvas(160, 160); MOON.cv = c; MOON.g = g; MOON.tex = hTex(c, false, false); MOON.base = moonBase(); }
+  return MOON.tex;
+}
+function moonBase(){
+  const [c, g] = hCanvas(160, 160), R = hRng(1313);
+  const gr = g.createRadialGradient(80, 80, 40, 80, 80, 80); gr.addColorStop(0, "rgba(240,236,210,.0)"); gr.addColorStop(.66, "rgba(240,236,210,0)"); gr.addColorStop(.72, "rgba(220,220,200,.35)"); gr.addColorStop(1, "rgba(200,210,200,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 160, 160);
+  g.fillStyle = "#e4dcc0"; g.beginPath(); g.arc(80, 80, 56, 0, Math.PI*2); g.fill();
+  for (let i=0;i<500;i++){ const a = R()*Math.PI*2, r = Math.sqrt(R())*54; g.fillStyle = R() < .5 ? "rgba(180,170,140,.5)" : "rgba(255,250,230,.35)"; g.fillRect((80 + Math.cos(a)*r)|0, (80 + Math.sin(a)*r)|0, 1, 1); }
+  for (const [x,y,r] of [[58,52,9],[104,64,6],[66,110,7],[110,104,10],[86,40,4],[42,86,5],[98,118,4]]){ g.fillStyle = "rgba(150,140,110,.55)"; g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill(); g.fillStyle = "rgba(255,250,230,.35)"; g.beginPath(); g.arc(x+1, y+1, r-1.5, 0, Math.PI); g.fill(); }
+  const sh = g.createRadialGradient(64, 64, 20, 80, 80, 58); sh.addColorStop(0, "rgba(0,0,0,0)"); sh.addColorStop(1, "rgba(60,50,40,.45)"); g.fillStyle = sh; g.beginPath(); g.arc(80, 80, 56, 0, Math.PI*2); g.fill();
+  return c;
+}
+// look: [-1..1, -1..1] where its pupils point; lid: 0 open .. 1 shut; grin: 0..1; blood: 0..1
+function drawMoon(look, lid, grin, blood, t){
+  moonTex(); const g = MOON.g, F = (x,y,w,h,col) => { g.fillStyle = col; g.fillRect(x|0,y|0,w|0,h|0); };
+  g.clearRect(0, 0, 160, 160); g.drawImage(MOON.base, 0, 0);
+  const dark = "#2a2018";
+  // brows: heavy and low
+  g.fillStyle = "rgba(90,76,56,.85)"; g.beginPath(); g.moveTo(44, 64); g.quadraticCurveTo(60, 52 - grin*4, 76, 62); g.lineTo(76, 66); g.quadraticCurveTo(60, 58, 44, 68); g.fill();
+  g.beginPath(); g.moveTo(116, 64); g.quadraticCurveTo(100, 52 - grin*4, 84, 62); g.lineTo(84, 66); g.quadraticCurveTo(100, 58, 116, 68); g.fill();
+  // sockets, eyes, pupils
+  for (const ex of [60, 100]){
+    g.fillStyle = "#1a1410"; g.beginPath(); g.ellipse(ex, 74, 12, 8, 0, 0, Math.PI*2); g.fill();
+    g.fillStyle = blood > .5 ? "#e8c8a8" : "#f0ead8"; g.beginPath(); g.ellipse(ex, 74, 10, 6.5, 0, 0, Math.PI*2); g.fill();
+    const px = ex + look[0]*5.5, py = 74 + look[1]*3;
+    g.fillStyle = blood > .5 ? "#7a0008" : "#2a3020"; g.beginPath(); g.arc(px, py, 4.2, 0, Math.PI*2); g.fill();
+    g.fillStyle = "#000"; g.beginPath(); g.arc(px, py, 2.2, 0, Math.PI*2); g.fill();
+    g.fillStyle = "rgba(255,255,255,.8)"; g.fillRect(px+1, py-2, 1.4, 1.4);
+    if (lid > 0){ g.fillStyle = "#cfc6a8"; g.beginPath(); g.ellipse(ex, 74 - 7 + lid*7, 12, lid*8, 0, 0, Math.PI*2); g.fill(); g.fillStyle = "rgba(60,50,40,.6)"; g.fillRect(ex-11, 73 + lid*1, 22, 1.2); }
+  }
+  // nose
+  g.fillStyle = "rgba(110,96,70,.7)"; g.beginPath(); g.moveTo(80, 78); g.lineTo(74, 98); g.lineTo(86, 98); g.fill();
+  // mouth: a thin line, or a grin full of teeth
+  if (grin < .1){ g.strokeStyle = dark; g.lineWidth = 2.2; g.beginPath(); g.moveTo(62, 112); g.quadraticCurveTo(80, 115, 98, 111); g.stroke(); }
+  else {
+    const w = 26 + grin*16, h = 4 + grin*12;
+    g.fillStyle = "#140c08"; g.beginPath(); g.moveTo(80-w, 106); g.quadraticCurveTo(80, 106 + h*2.2, 80+w, 106); g.quadraticCurveTo(80, 106 + h*.6, 80-w, 106); g.fill();
+    g.fillStyle = "#e8e0c0"; for (let i=-4;i<=4;i++){ const x = 80 + i*w/5, yTop = 106 + h*.3*(1 - (i*i)/25) + 2; g.fillRect(x-2, yTop, 3.5, 3 + grin*2); }
+    if (blood > .3){ g.fillStyle = "rgba(140,0,10,.9)"; g.fillRect(70, 112 + h, 2, 6 + Math.sin(t)*2); g.fillRect(90, 110 + h, 2, 9); }
+  }
+  if (blood > 0){ g.globalCompositeOperation = "source-atop"; g.fillStyle = `rgba(170,20,10,${.62*blood})`; g.fillRect(0, 0, 160, 160); g.globalCompositeOperation = "source-over"; }
+  MOON.tex.needsUpdate = true;
+}
+// a 4-frame flame, laid out in a strip
+function texFlame(){
+  return hOnce("flame", () => {
+    const [c, g] = hCanvas(64, 32), R = hRng(5);
+    for (let f=0; f<4; f++){
+      const ox = f*16;
+      for (let y=0; y<32; y++){
+        const k = y/32, w = Math.sin(k*Math.PI*.9 + .2) * (5.5 - k*2) * (1 - k*.6) * (k < .2 ? k*5 : 1), sway = Math.sin(k*6 + f*1.6) * k * 2.2;
+        for (let x=-8; x<8; x++){
+          const d = Math.abs(x + .5 - sway);
+          if (d < w*(.85 + R()*.25)){ const core = d < w*.45 && k > .25; g.fillStyle = core ? (k > .55 ? "#fff6c0" : "#ffd060") : k > .7 ? "#ff8a20" : k > .4 ? "#ff6018" : "#c8300c"; g.fillRect(ox + 8 + x, 31 - y, 1, 1); }
+        }
+      }
+    }
+    // the strip is drawn bottom-up as y grows, so the base is at the bottom of each frame
+    const t = hTex(c, false, false); t.repeat.set(.25, 1); return t;
+  });
+}
+function texMist(){
+  return hOnce("mist", () => {
+    const [c, g] = hCanvas(128, 128), R = hRng(66);
+    for (let i=0;i<60;i++){ const x = R()*128, y = R()*128, r = 10 + R()*30, gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, "rgba(255,255,255,.18)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+    const vg = g.createRadialGradient(64, 64, 30, 64, 64, 64); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,1)");
+    g.globalCompositeOperation = "destination-out"; g.fillStyle = vg; g.fillRect(0, 0, 128, 128); g.globalCompositeOperation = "source-over";
+    return hTex(c, false, true);
+  });
+}
+function texBlood(seed){
+  return hOnce("blood:"+(seed%4), () => {
+    const [c, g] = hCanvas(48, 48), R = hRng(seed*7 + 1);
+    g.fillStyle = "#4a0608"; g.beginPath(); g.arc(24, 24, 11 + R()*4, 0, Math.PI*2); g.fill();
+    for (let i=0;i<9;i++){ const a = R()*Math.PI*2, d = 10 + R()*12, r = 1.5 + R()*3.5; g.fillStyle = R() < .5 ? "#5a0a0c" : "#3a0406"; g.beginPath(); g.arc(24 + Math.cos(a)*d, 24 + Math.sin(a)*d, r, 0, Math.PI*2); g.fill(); g.fillRect(24 + Math.cos(a)*d*.6, 24 + Math.sin(a)*d*.6, 2, 2); }
+    g.fillStyle = "rgba(160,30,30,.4)"; g.beginPath(); g.arc(21, 21, 4, 0, Math.PI*2); g.fill();
+    return hTex(c);
+  });
+}
+// a carved pumpkin: orange skin, the face cut through (glow map shows only the cuts)
+function texJack(glow, seed){
+  return hOnce(`jack:${glow}:${seed%3}`, () => {
+    const [c, g] = hCanvas(64, 32), F = (x,y,w,h,col) => { g.fillStyle = col; g.fillRect(x,y,w,h); };
+    if (glow) F(0, 0, 64, 32, "#000"); else { F(0, 0, 64, 32, "#c8601a"); for (let x=0;x<64;x+=5) F(x, 0, 1, 32, "#9a4410"); F(0, 0, 64, 3, "#7a3a10"); F(0, 29, 64, 3, "#7a3a10"); }
+    // the face sits around u = .25 (the +z side)
+    const cut = glow ? "#ffb040" : "#2a0e04", cx = 16, v = seed % 3;
+    g.fillStyle = cut;
+    const triEye = (x) => { g.beginPath(); g.moveTo(x-3, 15); g.lineTo(x, 9 + (v===1?2:0)); g.lineTo(x+3, 15); g.fill(); };
+    triEye(cx-5); triEye(cx+5);
+    g.beginPath(); g.moveTo(cx-1, 18); g.lineTo(cx, 16); g.lineTo(cx+1, 18); g.fill();
+    if (v === 0){ F(cx-7, 21, 14, 3, cut); F(cx-5, 20, 2, 1, cut); F(cx+3, 24, 2, 1, cut); }
+    else if (v === 1){ g.beginPath(); g.moveTo(cx-8, 20); g.quadraticCurveTo(cx, 28, cx+8, 20); g.quadraticCurveTo(cx, 24, cx-8, 20); g.fill(); }
+    else { for (let i=-3;i<=3;i++) F(cx + i*2, 21 + (i%2?1:0), 1, 2, cut); F(cx-7, 22, 14, 2, cut); }
+    return hTex(c);
+  });
+}
+// a carved wooden sign board. Text is drawn again once the gothic font arrives.
+function hwSignMesh(text){
+  const [c, g] = hCanvas(256, 64);
+  const paint = () => {
+    const R = hRng(text.length*7);
+    g.fillStyle = "#2a1c12"; g.fillRect(0, 0, 256, 64);
+    for (let y=4; y<60; y+=8){ g.fillStyle = hJit("#5a3e26", R(), .25); g.fillRect(4, y, 248, 7); g.fillStyle = "rgba(0,0,0,.3)"; g.fillRect(4, y+7, 248, 1); }
+    g.fillStyle = "#1a120c"; for (const [x,y] of [[8,8],[244,8],[8,52],[244,52]]) g.fillRect(x, y, 4, 4);
+    const f = document.fonts && document.fonts.check && document.fonts.check('30px "Pirata One"') ? '"Pirata One"' : '"IM Fell English", Georgia, serif';
+    g.font = `34px ${f}`; g.textAlign = "center"; g.textBaseline = "middle";
+    const label = text.length > 16 ? text.slice(0, 16) : text, title = label.toLowerCase().replace(/(^|\s)\S/g, s => s.toUpperCase());
+    g.fillStyle = "#120a06"; g.fillText(title, 129, 35, 236);
+    g.fillStyle = "#d8b060"; g.fillText(title, 128, 33, 236);
+  };
+  paint();
+  const t = hTex(c); t.magFilter = THREE.LinearFilter;
+  HT.redraw.push(() => { paint(); t.needsUpdate = true; });
+  const w = Math.min(4.2, text.length*.32 + 1.1);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, .75), new THREE.MeshLambertMaterial({map:t}));
+  return m;
+}
+if (HALLOW && document.fonts && document.fonts.load){
+  Promise.all([document.fonts.load('30px "Pirata One"'), document.fonts.load('20px "IM Fell English"')]).then(() => { for (const f of HT.redraw) f(); }).catch(()=>{});
+}
+// the face that comes for you
+function drawScareFace(g, w, h, t){
+  g.fillStyle = "#000"; g.fillRect(0, 0, w, h);
+  const s = Math.min(w, h) / 64, cx = w/2, cy = h/2 + Math.sin(t*40)*s;
+  const F = (x,y,ww,hh,col) => { g.fillStyle = col; g.fillRect(cx + x*s, cy + y*s, ww*s, hh*s); };
+  F(-20,-28,40,56,"#c8c0b0"); F(-22,-20,44,40,"#b8b0a0"); F(-18,-30,36,4,"#a8a090");
+  F(-16,-12,12,14,"#000"); F(4,-12,12,14,"#000"); F(-12,-8,3,3,"#fff"); F(8,-8,3,3,"#fff");
+  F(-2,4,4,6,"#3a3028"); F(-14,14,28,14,"#000");
+  for (let i=-12;i<12;i+=4){ F(i,14,3,4,"#d8d0b8"); F(i+1,24,3,4,"#d8d0b8"); }
+  F(-20,-20,2,30,"#8a8070"); F(18,-24,2,26,"#8a8070");
+  g.fillStyle = "rgba(120,0,0,.5)"; g.fillRect(cx - 16*s, cy + 2*s, 2*s, 18*s); g.fillRect(cx + 12*s, cy + 2*s, 2*s, 24*s);
+}
+
+
 // ===== town3d-src/20-world3d.js =====
 // Millbrook in 3D: the same town, people and rules, drawn with Three.js instead of on a 2D canvas.
 // Tiles are 1 unit; tile (x,y) sits at world (x+.5, 0, y+.5). North is -z.
@@ -5045,6 +5722,8 @@ function init3D(){
   T3.chars = new Map(); T3.mats = new Map();
   T3.ov = $("ov3d"); T3.ovEls = new Map();
   T3.pixel = (()=>{ try { return localStorage.getItem("mb3d-pixel")!=="0"; } catch { return true; } })();
+  T3.sens = (()=>{ try { const v = parseFloat(localStorage.getItem("mb3d-sens")); return v > 0 ? v : 1; } catch { return 1; } })();
+  T3.invY = (()=>{ try { return localStorage.getItem("mb3d-invy")==="1"; } catch { return false; } })();
   resize3D(); addEventListener("resize", resize3D);
   wireCamera3D();
   T3.ready = true;
@@ -5184,6 +5863,7 @@ function buildWorld3D(){
   if (!T3.rain){ const pts = []; for (let i=0;i<1400;i++) pts.push((Math.random()-.5)*40, Math.random()*18, (Math.random()-.5)*40); const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pts,3)); T3.rain = new THREE.Points(g, new THREE.PointsMaterial({color:0xa0c0ff, size:.08, transparent:true, opacity:.7})); T3.rain.visible = false; T3.scene.add(T3.rain); }
   // dynamic layers
   T3.dyn = new THREE.Group(); W.add(T3.dyn);
+  T3.chars.clear(); T3.dynObj = null;
   T3.builtFor = tmap;
 }
 function signMesh(text, col){
@@ -5285,7 +5965,7 @@ function bubbleHtml(text){ return esc(text).replace(/\*([^*]*)\*?/g, "<em>$1</em
 function wireCamera3D(){
   const cvs = E.cv; let drag = null;
   cvs.addEventListener("pointerdown", e => { if (!TOWN.active) return; drag = {x:e.clientX, y:e.clientY, id:e.pointerId}; try { cvs.setPointerCapture(e.pointerId); } catch {} });
-  cvs.addEventListener("pointermove", e => { if (!drag || drag.id!==e.pointerId) return; const dx = e.clientX-drag.x, dy = e.clientY-drag.y; drag.x = e.clientX; drag.y = e.clientY; T3.cam.yaw -= dx*.006; if (T3.cam.fp) T3.cam.fpPitch = clamp(T3.cam.fpPitch - dy*.004, -1.1, .9); else T3.cam.pitch = clamp(T3.cam.pitch + dy*.004, .25, 1.45); });
+  cvs.addEventListener("pointermove", e => { if (!drag || drag.id!==e.pointerId) return; const dx = e.clientX-drag.x, dy = e.clientY-drag.y; drag.x = e.clientX; drag.y = e.clientY; const sn = T3.sens || 1, iy = T3.invY ? -1 : 1; T3.cam.yaw -= dx*.006*sn; if (T3.cam.fp) T3.cam.fpPitch = clamp(T3.cam.fpPitch - dy*.004*sn*iy, -1.1, .9); else T3.cam.pitch = clamp(T3.cam.pitch + dy*.004*sn*iy, .25, 1.45); });
   const end = () => { drag = null; }; cvs.addEventListener("pointerup", end); cvs.addEventListener("pointercancel", end);
   cvs.addEventListener("wheel", e => { if (!TOWN.active || T3.cam.fp) return; e.preventDefault(); T3.cam.dist = clamp(T3.cam.dist * (e.deltaY > 0 ? 1.1 : .9), 3.5, 22); }, {passive:false});
   document.addEventListener("keydown", e => {
@@ -5406,7 +6086,7 @@ function renderTown(dt){
     const inB = insideOf(n); if (inB && outerOf(inB)!==outer) continue;
     const [nx, ny] = rposT(n), near = Math.hypot(nx-ppx, ny-ppy), top = n.asleep ? .9 : 1.95;
     if (n.bubble){ if (now > n.bubble.until) n.bubble = null; else if (near < 14) ovAt("b:"+n.id, "ov-bubble"+(n.scene?" scene":""), nx+.5, top+.15, ny+.5, bubbleHtml(n.bubble.text), 26); }
-    if (!n.bubble && near < 5.5) ovAt("l:"+n.id, "ov-name"+(n.sheriff?" sheriff":n.partner?" partner":""), nx+.5, top, ny+.5, esc(n.met ? n.first : n.job) + (T.tasks.some(t=>t.giver===n.id && t.status==="ready") ? " ✓" : ""), 12);
+    if (!n.bubble && near < 5.5) ovAt("l:"+n.id, "ov-name"+(n.sheriff?" sheriff":n.partner?" partner":""), nx+.5, top, ny+.5, esc(T3.nameOf ? T3.nameOf(n, near) : n.met ? n.first : n.job) + (T.tasks.some(t=>t.giver===n.id && t.status==="ready") ? " ✓" : ""), 12);
     if (n.emote){ if (now > n.emote.until) n.emote = null; else ovAt("e:"+n.id, "ov-emote", nx+.5, top+.55, ny+.5, esc(n.emote.ch==="#" ? "✶" : n.emote.ch), 26); }
     if (n.asleep && near < 10) ovAt("z:"+n.id, "ov-z", nx+.5, 1.1, ny+.5, "z<small>z</small>", 14);
   }
@@ -5431,17 +6111,18 @@ function renderTown(dt){
   const wo = T.fx.find(f=>f.kind==="whiteout"); $("ovWhite").style.opacity = wo ? Math.min(1, wo.life*2) : 0;
   const vg = $("ovVignette"); vg.className = T.mode==="slasher" ? "slasher" : pl.carrying ? "carry" : (T.lock && (T.lock.kind==="chase" || T.lock.kind==="brawl")) ? "chase" : "";
   if (T.shake > 0) T.shake = Math.max(0, T.shake - dt);
+  if (T3.pre) T3.pre(dt, now, false);
   T3.renderer.render(T3.scene, T3.camera);
 }
 function dynLayer3D(dt, now){
   const D = T3.dyn, keep = new Set();
   const get = (key, make) => { let o = T3.dynObj && T3.dynObj.get(key); if (!o){ o = make(); D.add(o); (T3.dynObj || (T3.dynObj = new Map())).set(key, o); } keep.add(key); return o; };
   const bg = boxGeoC();
-  for (const s of T.stains){ if (s.cleaned) continue; const o = get(`st:${s.x},${s.y}`, () => { const m = new THREE.Mesh(new THREE.CircleGeometry(.38, 7), new THREE.MeshLambertMaterial({color:0x6e0e1c, transparent:true, opacity:.85})); m.rotation.x = -Math.PI/2; return m; }); o.position.set(s.x+.5, .015, s.y+.5); }
+  for (const s of T.stains){ if (s.cleaned) continue; const o = get(`st:${s.x},${s.y}`, () => { const m = T3.stainMake ? T3.stainMake(s) : new THREE.Mesh(new THREE.CircleGeometry(.38, 7), new THREE.MeshLambertMaterial({color:0x6e0e1c, transparent:true, opacity:.85})); m.rotation.x = -Math.PI/2; return m; }); o.position.set(s.x+.5, .015, s.y+.5); }
   for (const g of T.graves){ const o = get(`gr:${g.x},${g.y}:${g.open}`, () => { const m = new THREE.Mesh(bg, mat3(g.open ? "#1a1210" : "#6e4e30")); m.scale.set(.85, g.open ? .02 : .3, .9); m.castShadow = true; return m; }); o.position.set(g.x+.5, g.open ? .01 : 0, g.y+.5); }
   const dep = trainHere();
   if (dep !== undefined){
-    const o = get("train", () => { const gp = new THREE.Group(); for (let car=0;car<4;car++){ const m = new THREE.Mesh(bg, mat3(car===0 ? "#b13e53" : "#29366f")); m.scale.set(4, 1.8, 1.6); m.position.set(car*4.3, .2, 0); m.castShadow = true; gp.add(m); for (let w=0;w<3;w++){ const win = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({color:0xffd27a})); win.scale.set(.7,.5,1.62); win.position.set(car*4.3-1.2+w*1.2, 1.1, 0); gp.add(win); } } const st = new THREE.Mesh(bg, mat3("#566c86")); st.scale.set(.6,.9,.6); st.position.set(-1.2, 2, 0); gp.add(st); return gp; });
+    const o = get("train", T3.trainMake || (() => { const gp = new THREE.Group(); for (let car=0;car<4;car++){ const m = new THREE.Mesh(bg, mat3(car===0 ? "#b13e53" : "#29366f")); m.scale.set(4, 1.8, 1.6); m.position.set(car*4.3, .2, 0); m.castShadow = true; gp.add(m); for (let w=0;w<3;w++){ const win = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({color:0xffd27a})); win.scale.set(.7,.5,1.62); win.position.set(car*4.3-1.2+w*1.2, 1.1, 0); gp.add(win); } } const st = new THREE.Mesh(bg, mat3("#566c86")); st.scale.set(.6,.9,.6); st.position.set(-1.2, 2, 0); gp.add(st); return gp; }));
     const p = (T.t - (dep-12)) / 15, xx = p < .4 ? TW + 20 - (p/.4)*(TW+20-84) : p < .8 ? 84 : 84 - (p-.8)/.2*120;
     o.position.set(xx, 0, 16);
   }
@@ -5469,8 +6150,1012 @@ function renderAttract3D(dt){
   T3.camera.position.set(52 + Math.cos(t*.05)*38, 26, 42 + Math.sin(t*.05)*30); T3.camera.lookAt(52, 0, 42);
   for (const c of T3.chars.values()) c.g.visible = false;
   for (const [k, el] of T3.ovEls){ el.remove(); T3.ovEls.delete(k); }
+  if (T3.pre) T3.pre(dt, performance.now(), true);
   T3.renderer.render(T3.scene, T3.camera);
 }
+
+
+// ===== town3d-src/21-hallow-world.js =====
+// Hallowmere in 3D: the same tile map built as a medieval village. Timber-framed and stone buildings under thatch
+// and slate, torches instead of street lamps, a gallows and a bonfire in the square, a well, a graveyard behind iron.
+// People are rebuilt with tunics, belts, boots, cloaks and hoods, painted faces, and masks after dark.
+const HWS = {lampAt:-1, gutter:1, blink:0, nextBlink:0, grinUntil:0, bodies:0, moonAt:0, blood:0, grin:0};
+// ---------- merged geometry: many coloured boxes, one draw call ----------
+const HG = {};
+function hGeo(){
+  if (!HG.box){
+    HG.box = new THREE.BoxGeometry(1,1,1);
+    HG.cyl = new THREE.CylinderGeometry(.5,.5,1,10);
+    HG.cone = new THREE.ConeGeometry(.5,1,8);
+    HG.ball = new THREE.SphereGeometry(.5,10,7);
+    HG.disc = new THREE.CylinderGeometry(.5,.5,1,12).rotateX(Math.PI/2);
+    HG.wedge = prismGeo();
+  }
+  return HG;
+}
+function mergeParts(parts){
+  hGeo();
+  const pos = [], nor = [], colr = [], idx = [];
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), nm = new THREE.Matrix3(), v = new THREE.Vector3(), s = new THREE.Vector3(), c = new THREE.Color();
+  let off = 0;
+  for (const p of parts){
+    const g = HG[p.geo || "box"];
+    e.set(p.rx||0, p.ry||0, p.rz||0, "YXZ"); q.setFromEuler(e); m.compose(new THREE.Vector3(p.x, p.y, p.z), q, s.set(p.w, p.h, p.d)); nm.getNormalMatrix(m);
+    const P = g.attributes.position, N = g.attributes.normal; c.set(p.col);
+    for (let i=0;i<P.count;i++){ v.fromBufferAttribute(P, i).applyMatrix4(m); pos.push(v.x, v.y, v.z); v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize(); nor.push(v.x, v.y, v.z); colr.push(c.r, c.g, c.b); }
+    const I = g.index; if (I) for (let i=0;i<I.count;i++) idx.push(I.getX(i) + off); else for (let i=0;i<P.count;i++) idx.push(i + off);
+    off += P.count;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colr, 3));
+  geo.setIndex(idx);
+  return geo;
+}
+const hMat = (key, make) => { let m = T3.mats.get("h:"+key); if (!m){ m = make(); T3.mats.set("h:"+key, m); } return m; };
+const vcMat = () => hMat("vc", () => new THREE.MeshLambertMaterial({vertexColors:true}));
+const texMat = (key, tex, opt={}) => hMat(key, () => new THREE.MeshLambertMaterial(Object.assign({map:tex}, opt)));
+
+// ---------- building styles ----------
+const PLASTERS = ["#c8b898","#b8a888","#a89a80","#c0a888","#9a9080","#b4a48e","#c2b090"];
+function hwStyle(b){
+  if (!b) return {wall:"stone", base:"#5a5650", roof:"slate", slate:"#3a3e46"};
+  if (b.kind==="home"){ const i = parseInt(b.id.slice(4))||0; return {wall:"timber", plaster:PLASTERS[i%PLASTERS.length], beam:i%3===1 ? "#3a2618" : "#24180f", roof:i%4===3 ? "slate" : "thatch", slate:"#3a3c44", chimney:true}; }
+  const S = {
+    diner:{wall:"timber", plaster:"#bfae8e", beam:"#2a1a10", roof:"thatch", chimney:true},
+    store:{wall:"timber", plaster:"#b8aa90", beam:"#2e2014", roof:"slate", slate:"#3e4450"},
+    barber:{wall:"timber", plaster:"#c4b49a", beam:"#3a1a14", roof:"slate", slate:"#40383a"},
+    clinic:{wall:"stone", base:"#6a6458", roof:"slate", slate:"#3a4046", chimney:true},
+    sheriff:{wall:"stone", base:"#4e4a44", roof:"slate", slate:"#2e3036"},
+    post:{wall:"timber", plaster:"#a89a80", beam:"#24180f", roof:"thatch"},
+    hotel:{wall:"timber", plaster:"#b8a684", beam:"#1e140c", roof:"slate", slate:"#34363e", chimney:true},
+    station:{wall:"stone", base:"#5e5850", roof:"slate", slate:"#3a3c44"},
+    bar:{wall:"timber", plaster:"#8e8068", beam:"#1a100a", roof:"thatch", chimney:true},
+    library:{wall:"stone", base:"#6e6858", roof:"slate", slate:"#383c44"},
+    arcade:{wall:"stone", base:"#3e3a36", roof:"slate", slate:"#2a2c30"},
+    church:{wall:"stone", base:"#6a6660", roof:"slate", slate:"#363a42"},
+    garage:{wall:"stone", base:"#4a4640", roof:"slate", slate:"#2e2e30", chimney:true, forge:true},
+    barn:{wall:"planks", base:"#4a2e22", roof:"thatch"}
+  };
+  return S[b.id] || {wall:"timber", plaster:"#b0a088", beam:"#2a1a10", roof:"thatch"};
+}
+function hwWallMat(b, variant){
+  const st = hwStyle(b), seed = b ? [...b.id].reduce((s,c)=>s+c.charCodeAt(0),0) : 1;
+  if (st.wall==="timber") return texMat(`wall:${b.id}:${variant}`, texTimber(st.plaster, st.beam, variant, seed));
+  if (st.wall==="planks") return texMat(`wall:planks:${st.base}`, texPlanks(st.base, seed));
+  return texMat(`wall:stone:${st.base}:${seed%2}`, texStone(st.base, seed));
+}
+
+// ---------- the world ----------
+function hwBuildWorld3D(){
+  if (tmapDirty) rebuildTownMap();
+  hGeo();
+  if (T3.world){ T3.scene.remove(T3.world); T3.world.traverse(o=>{ if (o.geometry && !Object.values(HG).includes(o.geometry)) o.geometry.dispose(); }); }
+  const W = new THREE.Group(); T3.world = W; T3.scene.add(W);
+  T3.hw = {fires:[], jacks:[], smokes:[], scarecrows:[], noose:null, graves:[], perches:[], cem:[80,34,100,50]};
+  // ground
+  const gcv = hwPaintGround(), tex = hTex(gcv); tex.anisotropy = 8;
+  T3.groundTex = tex;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(TW, TH), new THREE.MeshLambertMaterial({map:tex}));
+  ground.rotation.x = -Math.PI/2; ground.position.set(TW/2, 0, TH/2); ground.receiveShadow = true; W.add(ground);
+  const outer = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), mat3("#22241a")); outer.rotation.x = -Math.PI/2; outer.position.set(TW/2, -.02, TH/2); outer.receiveShadow = true; W.add(outer);
+  // collectors: [x,y,z, sx,sy,sz, col, rx,ry,rz]
+  const L = {box:[], glow:[], cyl:[], cone:[], ball:[], ico:[], disc:[], water:[], jack0:[], jack1:[], jack2:[], pine:[], wedge:[]};
+  const put = (list, x,y,z, sx,sy,sz, col, rx=0,ry=0,rz=0) => L[list].push([x,y,z,sx,sy,sz,col,rx,ry,rz]);
+  const bx = (...a) => put("box", ...a);
+  const tilt = (dx, dz, th) => [th, Math.atan2(dx, dz)];
+  const walls = new Map(), glass = new Map(), doors = [];
+  const wallBox = (b, x,z, y0,h, v) => { const k = (b ? b.id : "_") + "|" + v; if (!walls.has(k)) walls.set(k, []); walls.get(k).push([x,y0,z,1,h,1]); };
+  const glassBox = (b, x,z, y0,h, alongX) => { const k = b ? b.id : "_"; if (!glass.has(k)) glass.set(k, []); glass.get(k).push([x,y0,z, alongX?1:.14, h, alongX?.14:1]); };
+  const fire = (x,y,z,s,when,kind) => T3.hw.fires.push({x,y,z,s,when,kind});
+  const jack = (x,z,s,yaw,y=0) => { const v = ((x*7+z*13)|0) % 3; put("jack"+v, x, y + .2*s, z, .5*s, .4*s, .5*s, null, 0, yaw, 0); T3.hw.jacks.push([x, y + .25*s, z]); };
+  const candle = (x,y,z,when="night") => { bx(x, y, z, .05, .14, .05, "#d8ccaa"); fire(x, y + .2, z, .16, when, "candle"); };
+  T3.lampPos = [];
+  const inRect = (x,y,r) => x>=r[0] && x<=r[2] && y>=r[1] && y<=r[3];
+  const outward = (b, x, y) => !b ? null : y===b.y0 ? [0,-1] : y===b.y1 ? [0,1] : x===b.x0 ? [-1,0] : x===b.x1 ? [1,0] : null;
+  const woodC = ["#3a2616","#2e1e12","#4a3020","#34241a"];
+  for (let y=0;y<TH;y++) for (let x=0;x<TW;x++){
+    const c = tmap[y][x], cx = x+.5, cz = y+.5, b = bldgOf(x,y), bid = buildingAt(x,y);
+    const rr = s => rnd(x,y,s), wv = (x*3 + y*5) % 3;
+    switch (c){
+      case "#": wallBox(b, cx, cz, 0, WALL_H, wv); break;
+      case "x": {
+        const alongX = "#xD".includes(tileT(x-1,y)) || "#xD".includes(tileT(x+1,y));
+        wallBox(b, cx, cz, 0, .95, wv); wallBox(b, cx, cz, 1.85, WALL_H-1.85, wv); glassBox(b, cx, cz, .95, .9, alongX);
+        const o = outward(b, x, y);
+        if (o){
+          const ox = o[0]*.56, oz = o[1]*.56, ax = alongX ? 1 : 0, az = alongX ? 0 : 1;
+          bx(cx + ox*1.05, .9, cz + oz*1.05, alongX ? 1.04 : .14, .07, alongX ? .14 : 1.04, "#3a2a1c");
+          for (const sd of [-1, 1]){ const sx = cx + ax*sd*.66 + ox, sz = cz + az*sd*.66 + oz; bx(sx, .92, sz, alongX ? .3 : .05, .96, alongX ? .05 : .3, rr(7) > .5 ? "#2e3a2c" : "#3a2a1e", 0, 0, rr(8) > .8 ? sd*.06 : 0); }
+          if (rr(9) > .62) candle(cx + ox*.7, .97, cz + oz*.7);
+          else if (rr(9) < .16) jack(cx + ox*.9, cz + oz*.9, .55, Math.atan2(o[0], o[1]), .94);
+        }
+        break;
+      }
+      case "D": {
+        wallBox(b, cx, cz, 2.15, WALL_H-2.15, wv);
+        const alongX = "#x".includes(tileT(x-1,y)) || "#x".includes(tileT(x+1,y));
+        doors.push({x, y, cx, cz, alongX, b});
+        bx(cx, 0, cz, alongX?1:.14, .03, alongX?.14:1, "#2a1c12");
+        const o = outward(b, x, y);
+        if (o && b){
+          // door frame and lintel
+          bx(cx + o[0]*.52, 2.1, cz + o[1]*.52, alongX ? 1.1 : .1, .14, alongX ? .1 : 1.1, "#24180f");
+          if (b.kind!=="home"){
+            for (const sd of [-1, 1]){
+              const tx = cx + (alongX ? sd*.95 : 0) + o[0]*.62, tz = cz + (alongX ? 0 : sd*.95) + o[1]*.62;
+              bx(tx - o[0]*.08, 1.75, tz - o[1]*.08, .06, .06, .06, "#18181a"); bx(tx, 1.62, tz, .07, .34, .07, "#2a1a10", ...tilt(o[0], o[1], .35));
+              bx(tx + o[0]*.08, 1.95, tz + o[1]*.08, .12, .1, .12, "#ff9a40", 0, 0, 0); L.glow.push(L.box.pop());
+              fire(tx + o[0]*.08, 2.15, tz + o[1]*.08, .42, "dusk", "torch"); T3.lampPos.push([tx + o[0]*.3, 2.2, tz + o[1]*.3]);
+            }
+          } else {
+            const sx = cx + (alongX ? 1.2 : 0) + o[0]*.95, sz = cz + (alongX ? 0 : 1.2) + o[1]*.95;
+            if (rr(3) > .3) jack(sx, sz, .75, Math.atan2(o[0], o[1]));
+            if (rr(4) > .55) jack(sx + (alongX ? .45 : o[0]*.3), sz + (alongX ? o[1]*.3 : .45), .5, Math.atan2(o[0], o[1]) + .4);
+            // a bundle of rowan and a nailed horseshoe against what walks at night
+            bx(cx + o[0]*.53, 2.22, cz + o[1]*.53, .2, .12, .05, "#5a5a5e");
+          }
+        }
+        break;
+      }
+      case "|": for (let i=0;i<4;i++) bx(x+.15+i*.23, 0, cz, .05, WALL_H*.9, .05, i%2 ? "#2a2a2e" : "#3a302a"); bx(cx, WALL_H*.85, cz, 1, .08, .08, "#26262a"); bx(cx, .1, cz, 1, .08, .08, "#26262a"); break;
+      case "t": case "T": {
+        const s = .85 + rr(3)*.5, tx = cx + (rr(4)-.5)*.3, tz = cz + (rr(5)-.5)*.3;
+        if (c==="T"){
+          put("cyl", tx, .5*s, tz, .2, 1.0*s, .2, "#2a1e16");
+          for (let k=0;k<3;k++) put("pine", tx, (.7 + k*.75)*s, tz, (1.7 - k*.42)*s, (1.5 - k*.2)*s, (1.7 - k*.42)*s, ["#18241a","#1c2a1e","#141e16"][(k + x)%3]);
+        } else if (rr(6) < .58 || inRect(x,y,[31,33,47,47])){
+          // dead tree: a crooked trunk and grasping branches
+          const h = (2.1 + rr(7)*1.2)*s, lean = (rr(8)-.5)*.22;
+          bx(tx, 0, tz, .2*s, h, .2*s, "#2a221c", lean, rr(9)*3, 0);
+          bx(tx, 0, tz, .3*s, .3, .3*s, "#221a14");
+          const nb = 4 + ((rr(10)*3)|0);
+          for (let k=0;k<nb;k++){
+            const a = k/nb*Math.PI*2 + rr(11+k), by = h*(.45 + rr(20+k)*.45), len = (.7 + rr(30+k)*.8)*s, th = .7 + rr(40+k)*.5;
+            const [rx, ry] = tilt(Math.cos(a), Math.sin(a), th);
+            bx(tx + Math.sin(lean)*by*.0, by, tz, .07*s, len, .07*s, "#241c16", rx, ry, 0);
+            const ex = tx + Math.cos(a)*Math.sin(th)*len, ez = tz + Math.sin(a)*Math.sin(th)*len, ey = by + Math.cos(th)*len;
+            const [rx2, ry2] = tilt(Math.cos(a+.6), Math.sin(a+.6), th*.6);
+            bx(ex, ey - .05, ez, .04*s, len*.55, .04*s, "#241c16", rx2, ry2, 0);
+            if (k===0 && rr(50) > .7) T3.hw.perches.push([ex, ey + .02, ez]);
+          }
+        } else {
+          put("cyl", tx, .7*s, tz, .2*s, 1.4*s, .2*s, "#3a2a1e");
+          for (let k=0;k<2+((rr(12)*2)|0);k++) put("ico", tx + (rr(13+k)-.5)*.7, (1.3 + rr(15+k)*.6)*s, tz + (rr(17+k)-.5)*.7, (1.1 + rr(19+k)*.5)*s, (.9 + rr(21+k)*.4)*s, (1.1 + rr(23+k)*.5)*s, ["#6a3012","#7a4a16","#5a2a10","#4e3214"][(k + x + y)%4]);
+        }
+        break;
+      }
+      case "l": {
+        // a torch post: oak post, iron basket, pitch-soaked rags
+        const lean = (rr(2)-.5)*.06;
+        bx(cx, 0, cz, .14, 2.25, .14, "#2e1e12", lean, 0, 0); bx(cx, 0, cz, .26, .2, .26, "#3a3a3a");
+        for (const [a, b2] of [[-1,-1],[1,-1],[-1,1],[1,1]]) bx(cx + a*.1, 2.2, cz + b2*.1, .025, .32, .025, "#1a1a1c");
+        bx(cx, 2.2, cz, .26, .03, .26, "#1a1a1c"); bx(cx, 2.48, cz, .28, .025, .28, "#1a1a1c");
+        bx(cx, 2.24, cz, .16, .14, .16, "#ff7a20"); L.glow.push(L.box.pop());
+        fire(cx, 2.42, cz, .65, "dusk", "torch"); T3.lampPos.push([cx, 2.6, cz]);
+        if (rr(3) > .6) T3.hw.perches.push([cx, 2.52, cz]);
+        break;
+      }
+      case "f": {
+        const h = "fp".includes(tileT(x-1,y)) || "fp".includes(tileT(x+1,y));
+        if (inRect(x,y,T3.hw.cem)){
+          // wrought iron with spear points
+          for (let i=0;i<3;i++){ const ox = h ? -.33 + i*.33 : 0, oz = h ? 0 : -.33 + i*.33; bx(cx+ox, 0, cz+oz, .04, 1.45, .04, "#16161a"); put("cone", cx+ox, 1.52, cz+oz, .07, .16, .07, "#26262a"); }
+          for (const yy of [.25, 1.2]) bx(cx, yy, cz, h ? 1 : .05, .05, h ? .05 : 1, "#1e1e22");
+          if (tileT(x-1,y)==="p" || tileT(x+1,y)==="p" || tileT(x,y-1)==="p" || tileT(x,y+1)==="p"){ bx(cx, 0, cz, .5, 2.1, .5, "#5a5850"); bx(cx, 2.1, cz, .6, .12, .6, "#4a4840"); put("ball", cx, 2.34, cz, .32, .34, .3, "#d8d0b8"); bx(cx-.06, 2.34, cz+.15, .06, .06, .02, "#000"); bx(cx+.06, 2.34, cz+.15, .06, .06, .02, "#000"); }
+        } else {
+          bx(cx, 0, cz, .13, .95, .13, "#3a2a1c", (rr(1)-.5)*.12, 0, (rr(2)-.5)*.12);
+          if (h){ bx(cx, .35, cz, 1, .07, .06, "#4a3424", 0, 0, (rr(3)-.5)*.1); bx(cx, .72, cz, 1, .07, .06, "#4a3424", 0, 0, (rr(4)-.5)*.1); }
+          else { bx(cx, .35, cz, .06, .07, 1, "#4a3424", (rr(3)-.5)*.1); bx(cx, .72, cz, .06, .07, 1, "#4a3424", (rr(4)-.5)*.1); }
+        }
+        break;
+      }
+      case "V": {
+        const v = rr(1), col = ["#6a6a62","#5a5c54","#7a766a","#4e5048"][(rr(2)*4)|0], rz = (rr(3)-.5)*.24, rx = (rr(4)-.5)*.18;
+        if (v < .4){ bx(cx, 0, cz, .55, .62, .12, col, rx, 0, rz); put("disc", cx + Math.sin(-rz)*.62, .62, cz + Math.sin(rx)*.62, .55, .55, .12, col, rx, 0, rz); }
+        else if (v < .7){ bx(cx, 0, cz, .12, 1.05, .1, col, rx, 0, rz); bx(cx, .62, cz, .5, .11, .1, col, rx, 0, rz); }
+        else { bx(cx, 0, cz, .48, .95, .16, col, rx, 0, rz); bx(cx, .95, cz, .54, .08, .2, hJit(col, .2, .3), rx, 0, rz); }
+        bx(cx, 0, cz+.38, .6, .08, .5, "#2a2018");
+        if (rr(5) > .7) candle(cx + .2, .08, cz + .3, "night");
+        if (rr(6) > .8) for (let k=0;k<3;k++) bx(cx - .2 + k*.08, .08, cz + .25, .02, .18, .02, "#3a2a20", .3, 0, (k-1)*.3);
+        T3.hw.graves.push([cx, cz]);
+        if (rr(7) > .85) T3.hw.perches.push([cx, v < .4 ? .92 : v < .7 ? 1.08 : 1.06, cz]);
+        break;
+      }
+      case "v": bx(cx, 0, cz, .8, .2, .9, "#2a1e14"); bx(cx, .2, cz, .6, .08, .7, "#33261a"); break;
+      case "U": {
+        for (let i=0;i<3;i++) bx(x+.2+i*.3, 0, cz + (rr(i)-.5)*.3, .05, .6 + rr(i)*.5, .05, rr(i+3)>.4 ? "#8a7a4a" : "#6a5a34", (rr(i+5)-.5)*.5, 0, (rr(i+6)-.5)*.5);
+        if (rr(9) > .6){ put("ball", cx + (rr(10)-.5)*.4, .14, cz + (rr(11)-.5)*.4, .42, .28, .42, rr(12) > .3 ? "#b8581a" : "#6a5a2a"); bx(cx, .26, cz, .03, .1, .03, "#3a4a20"); }
+        break;
+      }
+      case "G": {
+        if (inRect(x,y,[31,33,47,47])){ jack(cx - .2, cz, .8, (rr(1)-.5)*.6); if (rr(2) > .4) jack(cx + .25, cz + .1, .55, (rr(3)-.5)); candle(cx + .3, 0, cz - .25, "night"); }
+        else for (let i=0;i<3;i++) bx(x+.2+rr(i)*.6, 0, y+.2+rr(i+5)*.6, .04, .3, .04, "#3a3020", (rr(i+7)-.5)*.6, 0, (rr(i+8)-.5)*.6);
+        break;
+      }
+      case "n": { bx(cx, .32, cz, .95, .1, .4, "#4a3424"); bx(cx, .38, cz, .9, .04, .34, "#5a3e28"); for (const sx of [-.36, .36]) put("cyl", cx + sx, .16, cz, .2, .32, .2, "#3a2a1c"); if (rr(2) > .7) candle(cx + .3, .42, cz, "night"); break; }
+      case "N": {
+        bx(cx-.42, 0, cz, .12, 1.7, .12, "#2a1c12"); bx(cx+.42, 0, cz, .12, 1.7, .12, "#2a1c12"); bx(cx, .75, cz, .98, .8, .08, "#3e2a1a"); put("wedge", cx, 1.7, cz, 1.2, .3, .5, "#24180f");
+        for (const [px, py, w, h] of [[-.25, 1.0, .3, .38], [.15, .95, .32, .42], [-.05, .82, .2, .22], [.32, 1.2, .2, .2]]) bx(cx + px, py, cz + .05, w, h, .02, hJit("#d8c8a0", rnd(x, py*10, 3), .15));
+        bx(cx - .25, 1.15, cz + .062, .16, .13, .01, "#4a3020"); bx(cx + .15, 1.18, cz + .062, .2, .03, .01, "#6a0a0a");
+        break;
+      }
+      case "M": { bx(cx, 0, cz, .1, 1.05, .1, "#2e1e12"); bx(cx, 1.0, cz, .32, .32, .26, "#3a2818"); bx(cx, 1.04, cz + .12, .22, .22, .03, "#0a0806"); put("cone", cx, 1.42, cz, .5, .26, .42, "#24180f", 0, Math.PI/4, 0); candle(cx, 1.04, cz + .02, "night"); break; }
+      case "Y": { for (const [ox, oz] of [[-.22, 0], [.22, .05]]) { put("cyl", cx + ox, .32, cz + oz, .42, .64, .42, "#4a3020"); put("cyl", cx + ox, .5, cz + oz, .44, .04, .44, "#2a2a2c"); put("cyl", cx + ox, .14, cz + oz, .44, .04, .44, "#2a2a2c"); } bx(cx, 0, cz - .32, .4, .32, .28, "#5a3e26", 0, .3, 0); break; }
+      case "J": {
+        put("disc", cx - .1, .1, cz, .8, .8, .08, "#3a2a1a", Math.PI/2 - .1, rr(1)*3, 0);
+        put("cyl", cx + .25, .3, cz + .2, .4, .6, .4, "#4a3020", 0, 0, rr(2) > .5 ? Math.PI/2 : 0);
+        for (let i=0;i<3;i++) bx(x + .2 + rr(i+3)*.6, .05, y + .2 + rr(i+4)*.6, .5, .05, .1, "#5a4a3a", 0, rr(i+5)*3, 0);
+        for (let i=0;i<3;i++) bx(x + .3 + rr(i+8)*.4, .02, y + .3 + rr(i+9)*.4, .2, .04, .04, "#d8d0b8", 0, rr(i+10)*3, 0);
+        if (rr(12) > .5) put("ball", cx - .2, .1, cz + .3, .2, .2, .2, "#d8d0b8");
+        break;
+      }
+      case "h": bx(cx, 0, cz, .92, .55, .72, "#8a7038"); bx(cx, .55, cz, .88, .04, .68, "#a08848"); bx(cx, .25, cz, .94, .03, .74, "#5a4a24"); break;
+      case "o": if (x===39 && y===40){
+        // the village well
+        const wx = 39.5, wz = 40.5;
+        for (let k=0;k<14;k++){ const a = k/14*Math.PI*2; bx(wx + Math.cos(a)*1.15, 0, wz + Math.sin(a)*1.15, .55, .78 + (k%2)*.06, .42, hJit("#5e5a52", k/14, .3), 0, -a + Math.PI/2, 0); }
+        put("water", wx, .2, wz, 2.0, .02, 2.0);
+        for (const s of [-1, 1]) bx(wx + s*1.05, 0, wz, .16, 2.5, .16, "#2e1e12");
+        bx(wx, 2.0, wz, 2.3, .1, .1, "#3a2616"); bx(wx + 1.25, 1.95, wz + .15, .06, .3, .06, "#3a2616");
+        put("wedge", wx, 2.5, wz, 2.7, .7, 1.5, "#24180f");
+        bx(wx, .9, wz, .02, 1.1, .02, "#8a7a5a"); put("cyl", wx, .8, wz, .26, .26, .26, "#3a2a1a");
+      } break;
+      case "w": put("water", cx, -.02, cz, 1, .05, 1); break;
+      case "d": bx(cx, .05, cz, 1, .1, 1, "#3a2a1c"); if (x%2) put("cyl", cx, -.2, cz-.45, .14, .6, .14, "#2a1c12"); break;
+      // furniture, reworked for a village with no electricity
+      case "B": { bx(cx, 0, cz, .92, .36, .96, "#3a2818"); bx(cx, 0, cz - .47, .92, .9, .08, "#2e1e12"); bx(cx, .36, cz, .86, .12, .88, "#a8925a"); bx(cx, .44, cz + .12, .86, .1, .62, ["#5a2a24","#3a4a34","#4a3a2a","#2e3440"][(x*7+y)%4]); bx(cx, .5, cz - .3, .52, .1, .22, "#cfc4a4"); break; }
+      case "O": { bx(cx, 0, cz, .85, 1.9, .55, "#3a2616"); bx(cx, .05, cz + .28, .02, 1.8, .01, "#1a100a"); for (const yy of [.4, 1.4]) for (const s of [-.3, .3]) bx(cx + s, yy, cz + .28, .12, .04, .01, "#1a1a1c"); bx(cx, 1.9, cz, .9, .08, .6, "#2a1a10"); break; }
+      case "F": { bx(cx, 0, cz, .85, 1.75, .5, "#3e2a1a"); for (let r=0;r<3;r++){ bx(cx, .45 + r*.5, cz, .82, .04, .48, "#2a1a10"); for (let i=0;i<3;i++) put("cyl", cx - .25 + i*.25, .58 + r*.5, cz + .05, .14, .22, .14, ["#7a5a3a","#5a6a4a","#8a7a6a","#4a3a2a"][(x+i+r)%4]); } break; }
+      case "Z": { bx(cx, 0, cz, .9, .55, .6, "#4a3020"); bx(cx, .55, cz, .92, .06, .62, "#3a2616"); for (const s of [-.3, 0, .3]) bx(cx + s, 0, cz, .05, .62, .64, "#26262a"); break; }
+      case "C": { bx(cx, 0, cz, 1, 1, .9, "#3e2a1a"); bx(cx, 1, cz, 1.02, .07, .94, "#5a3e26"); if ((x+y)%3===0) candle(cx + .25, 1.07, cz, "night"); if (bid==="diner" && x%2) put("ball", cx - .2, 1.12, cz, .3, .16, .22, "#a8783a"); if (bid==="store" && x===21){ bx(cx, 1.07, cz, .5, .04, .14, "#8a7040"); put("cone", cx - .2, 1.11, cz, .14, .06, .14, "#8a7040"); put("cone", cx + .2, 1.11, cz, .14, .06, .14, "#8a7040"); } break; }
+      case "e": { bx(cx, 0, cz, 1, 1.05, .9, "#2e1e12"); bx(cx, 1.05, cz, 1.04, .07, .96, "#4a3020"); if (x%2) put("cyl", cx, 1.2, cz, .12, .18, .12, "#7a7468"); else candle(cx, 1.12, cz, "always"); break; }
+      case "k": {
+        bx(cx, 0, cz, .95, 1.05, .8, "#5a5650"); bx(cx, 1.05, cz, 1.0, .1, .85, "#4a4640"); bx(cx, 0, cz, .55, .55, .82, "#0a0806");
+        bx(cx, 1.15, cz - .2, .45, 1.4, .4, "#4e4a44"); put("ball", cx, .32, cz + .05, .3, .26, .3, "#1a1a1c");
+        fire(cx, .18, cz + .25, .45, "always", "hearth");
+        break;
+      }
+      case "K": { bx(cx, .7, cz, .95, .08, .9, "#5a3e26"); for (const s of [-.38, .38]){ bx(cx + s, 0, cz, .08, .7, .7, "#3a2616"); } bx(cx, .2, cz, .76, .06, .08, "#3a2616"); candle(cx, .78, cz, "night"); if ((x+y)%2) put("cyl", cx + .25, .82, cz + .15, .14, .08, .14, "#6a5a48"); break; }
+      case "c": { bx(cx, .42, cz, .42, .07, .42, "#4a3020"); bx(cx, .42, cz - .19, .42, .55, .06, "#3a2616"); for (const [a,b2] of [[-.17,-.17],[.17,-.17],[-.17,.17],[.17,.17]]) bx(cx+a, 0, cz+b2, .05, .42, .05, "#2a1a10"); break; }
+      case "S": { bx(cx, 0, cz, .95, .45, .7, "#3a2818"); bx(cx, .45, cz - .3, .95, .55, .12, "#2e1e12"); bx(cx, .45, cz + .02, .8, .06, .6, "#6a5a48"); break; }
+      case "P": { put("cyl", cx, .17, cz, .32, .34, .32, "#7a3a20"); for (let i=0;i<4;i++) bx(cx + (rr(i)-.5)*.15, .3, cz + (rr(i+4)-.5)*.15, .03, .45, .03, "#5a5a3a", (rr(i+1)-.5)*.6, 0, (rr(i+2)-.5)*.6); if (rr(9) > .75) put("ball", cx, .45, cz, .2, .2, .2, "#d8d0b8"); break; }
+      case "W": { bx(cx, 0, cz, .95, .78, .6, "#4a3020"); bx(cx, .78, cz, .98, .05, .62, "#3a2616"); bx(cx - .15, .83, cz, .36, .02, .26, "#d8ccaa"); bx(cx - .15, .84, cz, .01, .02, .26, "#6a5a3a"); bx(cx + .22, .83, cz - .1, .02, .22, .02, "#e8e0d0", .4); candle(cx + .3, .83, cz + .12, "night"); break; }
+      case "H": case "I": { bx(cx, 0, cz, .95, 1.9, .45, "#2e1e12"); const cols = ["#5a2a24","#3a4a34","#6a5a3a","#2e3440","#7a6a4a","#4a2a3a"]; for (let r2=0;r2<3;r2++){ bx(cx, .18 + r2*.58, cz, .92, .03, .44, "#1e140c"); for (let i=0;i<5;i++) bx(x+.14+i*.18, .21+r2*.58, cz+.04, .12, .28 + ((x+i+r2)%3)*.04, .3, cols[(x+i+r2*2)%6]); } break; }
+      case "A": { put("cyl", cx, .7, cz, .8, .08, .8, "#2a3a2a"); put("cyl", cx, .35, cz, .2, .7, .2, "#3a2616"); bx(cx - .1, .74, cz, .06, .06, .06, "#e8e0d0"); bx(cx + .08, .74, cz + .1, .06, .06, .06, "#e8e0d0"); put("cyl", cx + .2, .8, cz - .15, .1, .12, .1, "#4a3020"); candle(cx - .25, .74, cz - .2, "always"); break; }
+      case "j": { put("cyl", cx, .5, cz, .8, .9, .8, "#4a3020", 0, 0, Math.PI/2); for (const s of [-.3, .3]) put("cyl", cx + s, .5, cz, .82, .05, .82, "#26262a", 0, 0, Math.PI/2); bx(cx, 0, cz, .8, .14, .6, "#2a1a10"); break; }
+      case "Q": { bx(cx, .7, cz, .95, .06, .95, "#3a1a1a"); bx(cx, 0, cz, .2, .7, .2, "#2a1a10"); bx(cx - .2, .76, cz - .1, .12, .01, .18, "#e8e0d0"); bx(cx + .2, .76, cz + .1, .12, .01, .18, "#e8e0d0"); candle(cx, .76, cz, "always"); break; }
+      case "%": { const zz = y + .5; bx(cx, 1.2, zz + .02, .5, .5, .06, "#3a2616"); put("ball", cx, 1.45, zz + .14, .22, .26, .28, "#d8d0b8"); for (const s of [-1, 1]){ bx(cx + s*.1, 1.55, zz + .14, .04, .4, .04, "#c8c0a8", 0, 0, -s*.7); bx(cx + s*.28, 1.75, zz + .14, .03, .2, .03, "#c8c0a8", 0, 0, -s*.2); } break; }
+      case "=": bx(cx, 0, cz, 1, .45, .45, "#3a2616"); bx(cx, .45, cz - .18, 1, .5, .08, "#2e1e12"); break;
+      case "+": { bx(cx, 0, cz, .95, 1, .6, "#7a766a"); bx(cx, .98, cz, .97, .04, .62, "#5a1018"); bx(cx, .3, cz + .31, .5, .7, .01, "#5a1018"); for (const s of [-.35, .35]){ bx(cx + s, 1, cz, .08, .38, .08, "#d8ccaa"); fire(cx + s, 1.45, cz, .22, "always", "candle"); } bx(cx, 1, cz - .1, .06, .7, .06, "#2a2a2e"); bx(cx, 1.5, cz - .1, .34, .06, .06, "#2a2a2e"); break; }
+      case "&": { bx(cx, 0, cz, 1, 1.4, .6, "#2a1a10"); for (let i=0;i<7;i++) put("cyl", x + .1 + i*.13, 1.4 + (.3 + Math.abs(3-i)*.18)/2, cz - .1, .08, .3 + Math.abs(3-i)*.18 + .3, .08, "#8a8478"); break; }
+      case "m": { const left = tileT(x-1,y)!=="m", top = tileT(x,y-1)!=="m"; if (left && top){
+        bx(x + 1.5, .5, y + 1, 2.6, .12, 1.5, "#4a3020"); for (const s of [-.72, .72]) bx(x + 1.5, .6, y + 1 + s, 2.6, .4, .06, "#3a2616"); bx(x + .22, .6, y + 1, .06, .4, 1.5, "#3a2616");
+        for (const [wx2, wz2] of [[.7, .15], [.7, 1.85], [2.3, .15], [2.3, 1.85]]) put("disc", x + wx2, .42, y + wz2, .84, .84, .08, "#2a1c12");
+        bx(x + 2.8, .5, y + .7, 1.4, .06, .06, "#3a2616", 0, 0, -.1); bx(x + 2.8, .5, y + 1.3, 1.4, .06, .06, "#3a2616", 0, 0, -.1);
+        for (let i=0;i<3;i++) bx(x + 1 + i*.5, .62, y + 1, .4, .3, .5, ["#5a4a3a","#4a3020","#6a5a3a"][i]);
+      } break; }
+    }
+  }
+  // the square: gallows, bonfire, a gibbet, skulls on pikes at the edges of town
+  const gw = HW.gallows || [36,43];
+  if (gw){
+    const gx = gw[0] + .5, gz = gw[1] + .5;
+    for (const s of [-1, 1]){ bx(gx + s, 0, gz, .22, 3.5, .22, "#2a1c12"); bx(gx + s, 0, gz, .5, .14, .5, "#3a2a1c"); bx(gx + s*.85, 2.85, gz, .1, .75, .1, "#2a1c12", 0, 0, -s*.75); }
+    bx(gx, 3.45, gz, 2.5, .22, .24, "#2e1e12");
+    const noose = new THREE.Group(); noose.position.set(gx, 3.45, gz);
+    const rope = new THREE.Mesh(hGeo().box, mat3("#8a7a5a")); rope.scale.set(.035, 1.0, .035); rope.position.y = -.5; noose.add(rope);
+    const loop = new THREE.Mesh(new THREE.TorusGeometry(.12, .025, 5, 10), mat3("#8a7a5a")); loop.position.y = -1.12; noose.add(loop);
+    const knot = new THREE.Mesh(hGeo().cyl, mat3("#7a6a4a")); knot.scale.set(.07, .16, .07); knot.position.y = -.95; noose.add(knot);
+    noose.traverse(o=>{ o.castShadow = true; }); W.add(noose); T3.hw.noose = noose;
+    T3.hw.perches.push([gx - .9, 3.58, gz], [gx + .7, 3.58, gz]);
+  }
+  const bf = HW.bonfire || [42,44];
+  if (bf){
+    const fx0 = bf[0] + .5, fz0 = bf[1] + .5;
+    for (let k=0;k<11;k++){ const a = k/11*Math.PI*2; put("ball", fx0 + Math.cos(a)*.55, .08, fz0 + Math.sin(a)*.55, .26, .2, .24, hJit("#5a5650", k/11, .4)); }
+    for (let k=0;k<7;k++){ const a = k/7*Math.PI*2, [rx, ry] = tilt(-Math.cos(a), -Math.sin(a), .42); bx(fx0 + Math.cos(a)*.45, 0, fz0 + Math.sin(a)*.45, .1, 1.25, .1, "#2a1a10", rx, ry, 0); }
+    bx(fx0, 0, fz0, .5, .12, .5, "#ff6a18"); L.glow.push(L.box.pop());
+    fire(fx0, .4, fz0, 1.5, "bonfire", "bonfire"); fire(fx0 + .15, .35, fz0 - .1, 1.1, "bonfire", "bonfire"); fire(fx0 - .15, .3, fz0 + .12, 1.0, "bonfire", "bonfire");
+    T3.lampPos.push([fx0, 1.4, fz0]); T3.hw.bonfirePos = [fx0, 1.4, fz0];
+  }
+  const gib = [46, 38];
+  if (tileT(gib[0], gib[1])==="q"){
+    const gx = gib[0] + .5, gz = gib[1] + .5;
+    bx(gx, 0, gz, .2, 3.4, .2, "#2a1c12"); bx(gx - .5, 3.3, gz, 1.2, .14, .14, "#2a1c12");
+    const cage = new THREE.Group(); cage.position.set(gx - .9, 3.25, gz);
+    const parts = [];
+    for (let k=0;k<8;k++){ const a = k/8*Math.PI*2; parts.push({geo:"box", w:.03, h:1.2, d:.03, col:"#1a1a1c", x:Math.cos(a)*.28, y:-1.0, z:Math.sin(a)*.28}); }
+    for (const yy of [-.42, -1.0, -1.58]) parts.push({geo:"cyl", w:.6, h:.03, d:.6, col:"#1a1a1c", x:0, y:yy, z:0});
+    parts.push({geo:"box", w:.02, h:.36, d:.02, col:"#1a1a1c", x:0, y:-.22, z:0});
+    parts.push({geo:"ball", w:.2, h:.24, d:.22, col:"#c8c0a8", x:.04, y:-.66, z:0});
+    for (let k=0;k<5;k++) parts.push({geo:"box", w:.24, h:.03, d:.03, col:"#c8c0a8", x:0, y:-.85 - k*.07, z:0, ry:k*.2});
+    parts.push({geo:"box", w:.04, h:.5, d:.04, col:"#c8c0a8", x:.06, y:-1.2, z:.03, rz:.15}); parts.push({geo:"box", w:.04, h:.5, d:.04, col:"#c8c0a8", x:-.06, y:-1.25, z:-.03, rz:-.2});
+    const cm = new THREE.Mesh(mergeParts(parts), vcMat()); cm.castShadow = true; cage.add(cm); W.add(cage); T3.hw.cage = cage;
+  }
+  for (const [px, pz] of [[1.5, 29.2], [1.5, 32.8], [102.5, 29.2], [102.5, 32.8]]){
+    bx(px, 0, pz, .07, 2.3, .07, "#2a1c12", (rnd(px, pz, 1)-.5)*.15); put("ball", px, 2.35, pz, .26, .3, .3, "#d8d0b8");
+    bx(px - .06, 2.36, pz + (pz < 31 ? .15 : -.15), .07, .07, .02, "#000"); bx(px + .06, 2.36, pz + (pz < 31 ? .15 : -.15), .07, .07, .02, "#000");
+  }
+  // scarecrows in the fields
+  for (const [sx, sy] of [[8,74],[14,77],[11,72],[5,79]]){
+    if (!"Up".includes(tileT(sx, sy))) continue;
+    const g = new THREE.Group(); g.position.set(sx + .5, 0, sy + .5); g.rotation.y = rnd(sx, sy, 2)*6;
+    const body = [
+      {w:.1, h:2.2, d:.1, col:"#3a2a1c", x:0, y:1.1, z:0}, {w:1.5, h:.08, d:.08, col:"#3a2a1c", x:0, y:1.6, z:0},
+      {w:.5, h:.7, d:.28, col:"#3a3a2a", x:0, y:1.35, z:0}, {w:.56, h:.2, d:.3, col:"#2e2e22", x:0, y:1.0, z:0},
+      {w:.62, h:.14, d:.16, col:"#3a3a2a", x:-.42, y:1.6, z:0, rz:.1}, {w:.62, h:.14, d:.16, col:"#3a3a2a", x:.42, y:1.6, z:0, rz:-.1},
+      {w:.08, h:.18, d:.04, col:"#a08848", x:-.74, y:1.52, z:0, rz:.3}, {w:.08, h:.18, d:.04, col:"#a08848", x:.74, y:1.52, z:0, rz:-.3},
+      {w:.1, h:.2, d:.04, col:"#a08848", x:.1, y:.94, z:.05, rz:.2}, {w:.08, h:.22, d:.04, col:"#a08848", x:-.12, y:.92, z:-.05, rz:-.3}
+    ];
+    const bm = new THREE.Mesh(mergeParts(body), vcMat()); bm.castShadow = true; g.add(bm);
+    const head = new THREE.Group(); head.position.y = 1.88; g.add(head);
+    const hb = new THREE.Mesh(hGeo().box, [mat3("#8a7650"), mat3("#8a7650"), mat3("#8a7650"), mat3("#8a7650"), texMat("burlap", texBurlap()), mat3("#8a7650")]); hb.scale.set(.36, .4, .34); hb.castShadow = true; head.add(hb);
+    const hat = new THREE.Mesh(mergeParts([{geo:"cyl", w:.7, h:.03, d:.7, col:"#2a2018", x:0, y:.22, z:0, rz:.08}, {geo:"cone", w:.36, h:.36, d:.36, col:"#2a2018", x:0, y:.4, z:0, rz:.25}]), vcMat()); hat.castShadow = true; head.add(hat);
+    W.add(g); T3.hw.scarecrows.push({g, head, x:sx + .5, z:sy + .5, yaw:0});
+    T3.hw.perches.push([sx + .5 + Math.cos(g.rotation.y)*.7, 1.68, sy + .5 - Math.sin(g.rotation.y)*.7]);
+  }
+  // instanced meshes
+  const addInst = (list, geo, material, shadow=true) => {
+    if (!list.length) return null;
+    const m = new THREE.InstancedMesh(geo, material, list.length), o = new THREE.Object3D(), col = new THREE.Color();
+    list.forEach((p,i)=>{ o.position.set(p[0],p[1],p[2]); o.scale.set(p[3],p[4],p[5]); o.rotation.set(p[7]||0, p[8]||0, p[9]||0, "YXZ"); o.updateMatrix(); m.setMatrixAt(i, o.matrix); if (p[6]){ col.set(p[6]); m.setColorAt(i, col); } });
+    m.castShadow = shadow; m.receiveShadow = true; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    W.add(m); return m;
+  };
+  const bg = boxGeo();
+  addInst(L.box, bg, new THREE.MeshLambertMaterial({color:0xffffff}));
+  T3.glowMesh = addInst(L.glow, bg, new THREE.MeshBasicMaterial({color:0xffffff}), false);
+  const base = g => g.clone().translate(0, .5, 0);
+  addInst(L.cyl, HG.cyl, new THREE.MeshLambertMaterial({color:0xffffff}));
+  addInst(L.cone, HG.cone, new THREE.MeshLambertMaterial({color:0xffffff}));
+  addInst(L.ball, HG.ball, new THREE.MeshLambertMaterial({color:0xffffff}));
+  addInst(L.disc, HG.disc, new THREE.MeshLambertMaterial({color:0xffffff}));
+  addInst(L.ico, new THREE.IcosahedronGeometry(.5, 0), new THREE.MeshLambertMaterial({color:0xffffff, flatShading:true}));
+  addInst(L.pine, base(new THREE.ConeGeometry(.5, 1, 7)), new THREE.MeshLambertMaterial({color:0xffffff, flatShading:true}));
+  addInst(L.wedge, HG.wedge, new THREE.MeshLambertMaterial({color:0xffffff, side:THREE.DoubleSide}));
+  T3.water = addInst(L.water, bg, new THREE.MeshLambertMaterial({color:0x0a1416, transparent:true, opacity:.88}), false);
+  T3.hw.jackMats = [];
+  for (let v=0; v<3; v++){ const mt = new THREE.MeshLambertMaterial({map:texJack(false, v), emissiveMap:texJack(true, v), emissive:0x000000}); T3.hw.jackMats.push(mt); addInst(L["jack"+v], new THREE.SphereGeometry(.5, 12, 8), mt); }
+  // walls, windows and roofs by building
+  T3.bld = new Map();
+  const byB = new Map();
+  for (const [k, list] of walls){ const [id, v] = k.split("|"); if (!byB.has(id)) byB.set(id, []); byB.get(id).push([+v, list]); }
+  for (const [id, sets] of byB){
+    const b = BUILDINGS.find(q=>q.id===id) || null, st = hwStyle(b);
+    const group = new THREE.Group(); W.add(group);
+    const wmeshes = [];
+    for (const [v, list] of sets){ const wm = addInst(list.map(p=>p.concat([null])), bg, hwWallMat(b, v)); W.remove(wm); group.add(wm); wmeshes.push(wm); }
+    const tops = [].concat(...sets.map(s=>s[1])).filter(p=>p[1]+p[4] >= WALL_H-.01).map(p=>[p[0], WALL_H, p[2], 1.06, .14, 1.06, null]);
+    const trim = addInst(tops, bg, mat3(st.wall==="timber" ? st.beam : "#3a3632"));
+    const gl = glass.get(id) ? addInst(glass.get(id).map(p=>p.concat([null])), bg, new THREE.MeshLambertMaterial({map:texGlass(false), emissiveMap:texGlass(true), emissive:0x000000, color:0xc0c8c0})) : null;
+    T3.bld.set(id, {b, walls:group, trim, glass:gl, roof:null});
+  }
+  for (const b of BUILDINGS){
+    const rec = T3.bld.get(b.id); if (!rec) continue;
+    const st = hwStyle(b), seed = [...b.id].reduce((s,c)=>s+c.charCodeAt(0),0);
+    const Wd = b.x1-b.x0+1, Dp = b.y1-b.y0+1, g = new THREE.Group();
+    const along = Wd >= Dp, Lr = along ? Wd : Dp, Dr = along ? Dp : Wd, h = Math.min(Wd, Dp) * (st.roof==="thatch" ? .5 : .42);
+    const roofTex = st.roof==="thatch" ? texThatch(seed) : texSlate(st.slate || "#3a3e46");
+    const roofMat = hMat(`roof:${st.roof}:${st.slate||""}:${seed%2}`, () => { const t = roofTex.clone(); t.needsUpdate = true; t.repeat.set(st.roof==="thatch" ? .5 : .6, st.roof==="thatch" ? .9 : 1.2); return new THREE.MeshLambertMaterial({map:t, side:THREE.DoubleSide}); });
+    const gableMat = hwWallMat(b, 2);
+    const roof = new THREE.Mesh(gableGeo(Lr, Dr, h, st.roof==="thatch" ? .55 : .4), [roofMat, gableMat]);
+    if (!along) roof.rotation.y = Math.PI/2;
+    roof.castShadow = true; roof.receiveShadow = true; g.add(roof);
+    // ridge
+    const ridge = new THREE.Mesh(st.roof==="thatch" ? hGeo().cyl : hGeo().box, mat3(st.roof==="thatch" ? "#4a3a20" : "#24262a"));
+    if (st.roof==="thatch"){ ridge.scale.set(.32, Lr + 1.1, .32); ridge.rotation.z = Math.PI/2; } else ridge.scale.set(Lr + .8, .1, .16);
+    ridge.position.y = h + .02; if (!along) ridge.rotation.y = Math.PI/2; if (!along && st.roof==="thatch"){ ridge.rotation.set(Math.PI/2, 0, 0); }
+    ridge.castShadow = true; g.add(ridge);
+    const slab = new THREE.Mesh(bg, mat3("#1e1610")); slab.scale.set(Wd+.1, .12, Dp+.1); slab.position.y = -.06; g.add(slab);
+    if (st.chimney){
+      const chx = (along ? Wd*.28 : Wd*.15), chz = (along ? -Dp*.12 : Dp*.28);
+      const chm = new THREE.Mesh(bg, texMat(`chim:${seed%2}`, texStone("#4e4a44", seed))); chm.scale.set(.62, h + .9, .62); chm.position.set(chx, 0, chz); chm.castShadow = true; g.add(chm);
+      const cap = new THREE.Mesh(bg, mat3("#2e2c28")); cap.scale.set(.74, .12, .74); cap.position.set(chx, h + .9, chz); g.add(cap);
+      T3.hw.smokes.push({x:b.x0 + Wd/2 + chx, y:WALL_H + h + 1.05, z:b.y0 + Dp/2 + chz, heavy:!!st.forge});
+    }
+    if (b.id==="church"){
+      const tw = new THREE.Mesh(bg, texMat("tower", texStone("#5e5a54", 9))); tw.scale.set(2.4, h + 4.6, 2.4); tw.castShadow = true; g.add(tw);
+      for (const [ox, oz] of [[-.9,-.9],[.9,-.9],[-.9,.9],[.9,.9],[0,-.9],[0,.9],[-.9,0],[.9,0]]){ const cr = new THREE.Mesh(bg, mat3("#56524c")); cr.scale.set(.5, .45, .5); cr.position.set(ox, h + 4.6, oz); cr.castShadow = true; g.add(cr); }
+      for (const [ox, oz, ry] of [[0, 1.21, 0], [0, -1.21, 0], [1.21, 0, Math.PI/2], [-1.21, 0, Math.PI/2]]){ const ar = new THREE.Mesh(bg, mat3("#0a0808")); ar.scale.set(.6, 1.1, .04); ar.position.set(ox, h + 3.1, oz); ar.rotation.y = ry; g.add(ar); }
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(1.3, 4.2, 4).translate(0, 2.1, 0), texMat("spire", (() => { const t = texSlate("#30343c").clone(); t.needsUpdate = true; t.repeat.set(2, 3); return t; })())); sp.rotation.y = Math.PI/4; sp.position.y = h + 4.6; sp.castShadow = true; g.add(sp);
+      const cr1 = new THREE.Mesh(bg, mat3("#1e1e22")); cr1.scale.set(.12, 1.1, .12); cr1.position.y = h + 8.7; g.add(cr1);
+      const cr2 = new THREE.Mesh(bg, mat3("#1e1e22")); cr2.scale.set(.6, .12, .12); cr2.position.y = h + 9.35; g.add(cr2);
+      T3.hw.perches.push([b.x0 + Wd/2 + .9, WALL_H + h + 5.1, b.y0 + Dp/2 + .9], [b.x0 + Wd/2 - .9, WALL_H + h + 5.1, b.y0 + Dp/2 - .9]);
+      T3.hw.belfry = [b.x0 + Wd/2, WALL_H + h + 3.2, b.y0 + Dp/2];
+    }
+    g.position.set(b.x0 + Wd/2, WALL_H, b.y0 + Dp/2);
+    W.add(g); rec.roof = g;
+    if (b.sign){
+      const sg = hwSignMesh(b.name && b.name.length <= 18 ? b.name.replace(/^The /, "") : b.sign); const [dx,dy] = b.door; const front = dy===b.y1 ? 1 : dy===b.y0 ? -1 : 0;
+      sg.position.set(dx+.5, WALL_H-.25, front ? (front>0 ? b.y1+1.07 : b.y0-.07) : dy+.5);
+      if (!front){ sg.rotation.y = b.door[0]===b.x0 ? -Math.PI/2 : Math.PI/2; sg.position.x = b.door[0]===b.x0 ? b.x0-.07 : b.x1+1.07; } else if (front<0) sg.rotation.y = Math.PI;
+      W.add(sg);
+    }
+    // ridge perches for crows
+    if (b.kind!=="home" || seed % 2) T3.hw.perches.push([b.x0 + Wd/2 + (along ? (seed%5-2)*.6 : 0), WALL_H + h + .14, b.y0 + Dp/2 + (along ? 0 : (seed%5-2)*.6)]);
+  }
+  // doors that open and close
+  const doorMat = texMat("door", texDoor());
+  T3.doors = doors.map(d => { const m = new THREE.Mesh(bg, doorMat); m.scale.set(d.alongX ? .96 : .1, 2.12, d.alongX ? .1 : .96); m.position.set(d.cx, 0, d.cz); m.castShadow = true; W.add(m); const kb = new THREE.Mesh(new THREE.TorusGeometry(.06, .015, 4, 8), mat3("#3a3a40")); kb.position.set(d.cx + (d.alongX ? .3 : .07), 1.0, d.cz + (d.alongX ? .07 : .3)); if (!d.alongX) kb.rotation.y = Math.PI/2; W.add(kb); return Object.assign(d, {mesh:m, knob:kb}); });
+  // stars and rain (shared with the plain 3D build)
+  if (!T3.stars){ const pts = []; for (let i=0;i<500;i++){ const th = Math.random()*Math.PI*2, ph = Math.random()*Math.PI*.45; pts.push(Math.cos(th)*Math.cos(ph)*180, Math.sin(ph)*180+10, Math.sin(th)*Math.cos(ph)*180); } const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pts,3)); T3.stars = new THREE.Points(g, new THREE.PointsMaterial({color:0xd8e0ff, size:1.1, sizeAttenuation:false, transparent:true, opacity:0, fog:false})); T3.scene.add(T3.stars); }
+  if (!T3.rain){ const pts = []; for (let i=0;i<1600;i++) pts.push((Math.random()-.5)*40, Math.random()*18, (Math.random()-.5)*40); const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pts,3)); T3.rain = new THREE.Points(g, new THREE.PointsMaterial({color:0x8a9aa8, size:.07, transparent:true, opacity:.6})); T3.rain.visible = false; T3.scene.add(T3.rain); }
+  T3.dyn = new THREE.Group(); W.add(T3.dyn);
+  T3.chars.clear(); T3.dynObj = null;
+  T3.builtFor = tmap;
+  if (typeof HWFX !== "undefined") HWFX.onBuild(W);
+}
+
+// ---------- people ----------
+const HW_TUNIC = c => hMix(c, "#3e3226", .5);
+function hwMakeChar3D(L){
+  hGeo();
+  const g = new THREE.Group(), [suitC, suitD] = suitCols(L), big = L.big ? 1.12 : 1;
+  const seed = [...JSON.stringify(L)].reduce((s,ch)=>(s*31 + ch.charCodeAt(0)) >>> 0, 7);
+  const tunic = L.suit==="o" ? "#7a4424" : HW_TUNIC(suitC), tunicD = hMix(tunic, "#000", .25);
+  const hose = hMix(L.pants || suitD, "#2a241e", .55), boot = ["#2a1e16","#1e1812","#3a2618"][seed%3], skin = L.skin || "#d49a6a";
+  const linen = "#cfc4a8", leather = "#3a2616", brass = "#a08848";
+  const cloakCol = ["#22201e","#2e2420","#24302a","#2a2632","#3a2a22"][seed%5], hasCloak = seed % 3 !== 0 || L.style==="hat" || L.style==="beanie";
+  const hoodUp = L.style==="beanie" || (L.style==="hat" && seed%2===0);
+  const B = [], LL = [], LR = [], AL = [], AR = [], H = [];
+  const p = (list, w,h,d, col, x,y,z, extra={}) => list.push(Object.assign({w,h,d,col,x,y,z}, extra));
+  // legs (pivot at hip, .62 up)
+  for (const list of [LL, LR]){
+    p(list, .16,.36,.19, hose, 0,-.18,0); p(list, .19,.3,.23, boot, 0,-.47,.01); p(list, .21,.07,.25, hMix(boot, "#fff", .12), 0,-.33,.01); p(list, .2,.04,.29, "#120c08", 0,-.6,.03);
+  }
+  // body
+  const tw = .46*big;
+  p(B, tw,.56,.27*big, tunic, 0,.9,0);
+  p(B, tw+.06,.2,.31*big, tunicD, 0,.58,0);
+  p(B, tw+.02,.06,.29*big, leather, 0,.7,0); p(B, .07,.06,.03, brass, 0,.7,.15*big);
+  p(B, .1,.12,.06, leather, .2*big,.62,.12); p(B, .03,.24,.04, "#2a2a2a", -.2*big,.56,.1, {rz:.15});
+  p(B, .16,.07,.02, linen, 0,1.13,.137*big);
+  if (L.tie || seed%4===1) for (let i=0;i<3;i++) p(B, .08,.012,.01, "#1a120c", 0,1.06 - i*.06,.14*big, {rz:i%2 ? .5 : -.5});
+  if (L.collar) p(B, .34,.06,.3, linen, 0,1.16,0);
+  if (L.apron) p(B, .38,.62,.02, L.apron==="#f4f4f4" ? "#bfb49a" : "#4a3424", 0,.62,.15*big);
+  if (L.badge){ for (let i=-2;i<=2;i++) p(B, .05,.04,.02, brass, i*.06,1.12 - Math.abs(i)*.04 - .08,.14*big); p(B, .09,.09,.02, "#d8b860", 0,.95,.145*big); p(B, tw+.12,.18,.34, "#1e2a3a", 0,1.12,0); }
+  if (hasCloak){ p(B, tw+.06,1.05,.05, cloakCol, 0,.64,-.165*big); p(B, tw+.12,.12,.34*big, cloakCol, 0,1.14,0); if (!hoodUp) p(B, .32,.14,.12, cloakCol, 0,1.2,-.15); }
+  p(B, .14,.08,.14, skin, 0,1.2,0);
+  // arms (pivot at shoulder)
+  for (const list of [AL, AR]){
+    p(list, .15,.28,.17, tunic, 0,-.12,0); p(list, .125,.22,.145, L.suit==="o" ? tunicD : linen, 0,-.36,0); p(list, .14,.05,.16, tunicD, 0,-.46,0); p(list, .1,.1,.11, skin, 0,-.53,0); p(list, .03,.06,.08, skin, .05,-.55,.02);
+  }
+  // head (pivot at the neck, 1.18 up)
+  p(H, .34,.36,.32, skin, 0,.18,0);
+  p(H, .05,.09,.07, hMix(skin, "#000", .1), -.18,.17,0); p(H, .05,.09,.07, hMix(skin, "#000", .1), .18,.17,0);
+  p(H, .06,.08,.05, hMix(skin, "#000", .06), 0,.14,.18);
+  const HC = L.hair || "#3f2616", st = L.style;
+  if (L.glasses || L.shades){ const lens = L.shades ? "#0a0a0a" : "#8a9a9a"; p(H, .09,.07,.015, lens, -.08,.22,.168); p(H, .09,.07,.015, lens, .08,.22,.168); p(H, .06,.012,.01, "#2a2a2a", 0,.23,.17); }
+  if (L.beard) p(H, .3,.12,.06, L.beard, 0,.03,.16);
+  if (hoodUp){
+    const hc = L.hatColor ? hMix(L.hatColor, "#2a2420", .5) : cloakCol;
+    p(H, .42,.08,.38, hc, 0,.4,-.01); p(H, .06,.36,.36, hc, -.2,.2,-.01); p(H, .06,.36,.36, hc, .2,.2,-.01); p(H, .42,.4,.06, hc, 0,.2,-.18); p(H, .3,.2,.12, hc, 0,.12,-.24, {rx:.5}); p(H, .42,.05,.04, hMix(hc, "#000", .3), 0,.38,.17);
+  } else if (st==="hat"){
+    const hc = L.hatColor ? hMix(L.hatColor, "#2a2420", .4) : "#2a2018";
+    p(H, .62,.03,.62, hc, 0,.37,0, {geo:"cyl", rz:.06}); p(H, .34,.26,.34, hc, 0,.5,0, {geo:"cyl"}); p(H, .35,.04,.35, "#1a120c", 0,.41,0, {geo:"cyl"});
+    p(H, .38,.1,.36, HC, 0,.33,0); p(H, .38,.26,.06, HC, 0,.22,-.17);
+  } else if (st==="cap"){
+    // the reeve's men wear iron
+    p(H, .44,.04,.44, "#4a4a50", 0,.36,0, {geo:"cyl"}); p(H, .38,.22,.38, "#5a5a62", 0,.42,0, {geo:"ball"}); p(H, .04,.18,.04, "#3a3a40", 0,.2,.18);
+    p(H, .38,.28,.06, HC, 0,.22,-.17);
+  } else if (st==="bald"){ p(H, .37,.1,.2, HC, 0,.2,-.1); }
+  else if (st==="afro"){ p(H, .5,.3,.48, HC, 0,.4,-.02, {geo:"ball"}); }
+  else if (st==="mohawk"){ p(H, .08,.18,.38, HC, 0,.42,0); }
+  else if (st==="buzz"){ p(H, .37,.04,.35, HC, 0,.37,0); }
+  else {
+    p(H, .38,.1,.36, HC, 0,.39,0); p(H, .38,.3,.06, HC, 0,.24,-.17); p(H, .04,.14,.1, HC, -.18,.26,.1); p(H, .04,.14,.1, HC, .18,.26,.1);
+    if (st==="long"){ p(H, .4,.55,.1, HC, 0,.04,-.18); p(H, .06,.36,.3, HC, -.19,.16,0); p(H, .06,.36,.3, HC, .19,.16,0); }
+    if (st==="bob"){ p(H, .07,.26,.34, HC, -.19,.22,0); p(H, .07,.26,.34, HC, .19,.22,0); }
+    if (st==="ponytail" || L.bun){ p(H, .12,.25,.1, HC, 0,.15,-.25); p(H, .06,.06,.06, "#3a2616", 0,.27,-.22); }
+    if (st==="curly"){ p(H, .42,.14,.4, HC, 0,.42,0); for (let i=0;i<5;i++) p(H, .1,.1,.1, hMix(HC, "#000", .15), -.16 + i*.08,.46,.12 - (i%2)*.24, {geo:"ball"}); }
+    if (st==="slick" || st==="neat"){ p(H, .38,.04,.1, hMix(HC, "#fff", .1), 0,.44,.12); }
+  }
+  const mk = (list, parent, px, py, pz) => { const m = new THREE.Mesh(mergeParts(list), vcMat()); m.castShadow = true; m.receiveShadow = false; const pv = new THREE.Group(); pv.position.set(px, py, pz); pv.add(m); parent.add(pv); return [pv, m]; };
+  const [legL] = mk(LL, g, -.11, .62, 0), [legR] = mk(LR, g, .11, .62, 0);
+  const torsoMesh = new THREE.Mesh(mergeParts(B), vcMat()); torsoMesh.castShadow = true; g.add(torsoMesh);
+  const [armL] = mk(AL, g, -.29*big, 1.12, 0), [armR] = mk(AR, g, .29*big, 1.12, 0);
+  const [head, headMesh] = mk(H, g, 0, 1.18, 0);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(.34, .36), texMat(`face:${seed}`, texFace(L, seed % 997)));
+  face.position.set(0, .18, .1615); head.add(face);
+  const tag = new THREE.Object3D(); tag.position.y = 1.9; g.add(tag);
+  const c = {g, legL, legR, armL, armR, head, torso:torsoMesh, tag, face, masks:{}, mask:null, key:JSON.stringify(L)};
+  c.setMask = type => {
+    if (c.mask === type) return;
+    if (c.mask && c.masks[c.mask]) c.masks[c.mask].visible = false;
+    c.mask = type; face.visible = !type;
+    if (type){ if (!c.masks[type]){ c.masks[type] = hwMask(type); head.add(c.masks[type]); } c.masks[type].visible = true; }
+  };
+  return c;
+}
+// masks, built from a few boxes and a painted front
+function hwMask(type){
+  const g = new THREE.Group(), parts = [];
+  const front = (w, h, z, y=.18) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), texMat("mask:"+type, texMask(type))); m.position.set(0, y, z); g.add(m); };
+  const p = (w,h,d,col,x,y,z,extra={}) => parts.push(Object.assign({w,h,d,col,x,y,z}, extra));
+  if (type==="skull"){ p(.36,.36,.04,"#c8c0a8",0,.18,.165); p(.3,.08,.06,"#b8b0a0",0,-.01,.15); front(.36, .36, .188); }
+  if (type==="porcelain"){ p(.32,.34,.03,"#ddd6cc",0,.19,.17); front(.32, .34, .187, .19); p(.44,.5,.4,"#0e0c0e",0,.22,-.03); }
+  if (type==="plague"){ p(.36,.32,.05,"#2a1e16",0,.2,.165); p(.11,.36,.11,"#2a1e16",0,.1,.33,{geo:"cone", rx:Math.PI/2}); p(.66,.03,.66,"#141012",0,.38,0,{geo:"cyl"}); p(.36,.24,.36,"#141012",0,.52,0,{geo:"cyl"}); p(.42,.32,.08,"#1a1414",0,.08,-.16); front(.36, .32, .192, .2); }
+  if (type==="goat"){ p(.36,.36,.05,"#2a221c",0,.18,.165); for (const s of [-1,1]){ p(.07,.42,.07,"#3a3228",s*.13,.42,-.02,{geo:"cone", rx:-.6, rz:-s*.5}); p(.14,.05,.06,"#2a221c",s*.24,.24,.04,{rz:s*.4}); } p(.14,.16,.08,"#2a221c",0,-.02,.2); front(.36, .36, .193); }
+  if (type==="sack"){ p(.42,.46,.4,"#8a7650",0,.2,0); p(.4,.05,.36,"#4a3a20",0,-.02,0); front(.42, .46, .201, .2); }
+  if (type==="crow"){ p(.37,.36,.05,"#121014",0,.18,.165); p(.1,.44,.12,"#0a0a0c",0,.12,.36,{geo:"cone", rx:Math.PI/2+.15}); p(.46,.12,.44,"#121014",0,-.02,0); for (let i=0;i<5;i++) p(.08,.22,.04,"#18161c",-.16+i*.08,.42,-.08,{rx:-.4}); front(.37, .36, .192); }
+  if (parts.length){ const m = new THREE.Mesh(mergeParts(parts), vcMat()); m.castShadow = true; g.add(m); }
+  return g;
+}
+
+// ---------- sky, light and the moon ----------
+function hwSky(dt, now, attract){
+  const t = attract ? 1350 : T.t, dk = darknessT(t), night = dk > .25;
+  const rain = !attract && T && T.weather==="rain";
+  const hallows = !attract && T && T.event && T.event.kind==="hallows" && (T.event.day===T.day || (T.event.day===T.day-1 && t < 360));
+  const susp = !attract && T && T.det ? T.det.suspicion : 0;
+  const wantBlood = attract ? 0 : (T.mode==="slasher" || hallows || susp >= 80) ? 1 : 0;
+  HWS.blood += (wantBlood - HWS.blood) * Math.min(1, dt*.5);
+  const dawn = t > 300 && t < 450, dusk = t > 1080 && t < 1260;
+  const day = new THREE.Color(rain ? "#5a5e60" : "#8a8476"), nightC = new THREE.Color(HWS.blood > .5 ? "#140608" : "#06070b"), warm = new THREE.Color("#8a3420");
+  const col = day.clone().lerp(nightC, Math.min(1, dk/.7));
+  if (dawn || dusk) col.lerp(warm, .45 * Math.max(0, 1 - Math.abs(dawn ? (t-375)/75 : (t-1170)/90)));
+  const fogC = col.clone().lerp(new THREE.Color(HWS.blood > .5 ? "#2a1012" : "#1a2224"), night ? .55 : .15);
+  T3.scene.background = col; T3.scene.fog.color.copy(fogC);
+  const insideB = !attract && T && insideOf(T.player);
+  T3.scene.fog.near = night ? (insideB ? 9 : 5) : 14; T3.scene.fog.far = night ? (insideB ? 34 : 28) : (rain ? 46 : 66);
+  if (attract){ T3.scene.fog.near = 12; T3.scene.fog.far = 70; }
+  const cam = T3.camera.position;
+  // the sun crosses the south, low and weak
+  const sunA = (t - 360) / 720 * Math.PI, sunDir = new THREE.Vector3(Math.cos(sunA)*.9, Math.sin(sunA)*.55 + .04, .45).normalize();
+  const moonA = (((t - 1080) + 1440) % 1440) / 720 * Math.PI, moonDir = new THREE.Vector3(Math.cos(moonA)*.6, .1 + Math.max(0, Math.sin(moonA))*.22, -1).normalize();
+  if (attract){ const f = new THREE.Vector3(); T3.camera.getWorldDirection(f); f.y = 0; f.normalize(); const r = new THREE.Vector3(-f.z, 0, f.x); moonDir.copy(f).addScaledVector(r, .32); moonDir.y = .2; moonDir.normalize(); }
+  if (!T3.sunSpr){
+    T3.sunSpr = new THREE.Sprite(new THREE.SpriteMaterial({map:texSun(), fog:false, depthWrite:false, transparent:true, blending:THREE.AdditiveBlending})); T3.sunSpr.scale.set(46, 46, 1); T3.scene.add(T3.sunSpr);
+    T3.moonSpr = new THREE.Sprite(new THREE.SpriteMaterial({map:moonTex(), fog:false, depthWrite:false, transparent:true})); T3.moonSpr.scale.set(60, 60, 1); T3.scene.add(T3.moonSpr);
+    T3.moonHalo = new THREE.Sprite(new THREE.SpriteMaterial({map:texGlow("#c8d0d8"), fog:false, depthWrite:false, transparent:true, blending:THREE.AdditiveBlending, opacity:.5})); T3.moonHalo.scale.set(130, 130, 1); T3.scene.add(T3.moonHalo);
+    T3.sunSpr.renderOrder = T3.moonSpr.renderOrder = T3.moonHalo.renderOrder = -1;
+  }
+  const sunUp = Math.max(0, Math.sin(sunA)), inside = !attract && insideOf(T.player);
+  T3.sunSpr.visible = sunUp > 0 && dk < .6 && !inside; T3.sunSpr.position.copy(cam).addScaledVector(sunDir, 160); T3.sunSpr.material.opacity = rain ? .25 : .85;
+  const moonVis = Math.min(1, Math.max(0, (dk - .15) * 2.2));
+  T3.moonSpr.visible = T3.moonHalo.visible = moonVis > 0;
+  T3.moonSpr.position.copy(cam).addScaledVector(moonDir, 160); T3.moonHalo.position.copy(T3.moonSpr.position);
+  T3.moonSpr.material.opacity = moonVis * (rain ? .55 : 1); T3.moonHalo.material.opacity = moonVis * .45; T3.moonHalo.material.color.set(HWS.blood > .5 ? "#ff3020" : "#c8d0d8");
+  // the face
+  if (T3.moonSpr.visible && now > HWS.moonAt){
+    HWS.moonAt = now + 70;
+    if (now > HWS.nextBlink){ HWS.blink = now; HWS.nextBlink = now + 2500 + Math.random()*5000; }
+    const bt = (now - HWS.blink) / 180, lid = bt < 1 ? Math.sin(bt*Math.PI) : 0;
+    let look = [0, .6];
+    if (!attract && T){
+      const [px, py] = rposT(T.player);
+      const a = new THREE.Vector3(px+.5, 1.2, py+.5).project(T3.camera), bm = T3.moonSpr.position.clone().project(T3.camera);
+      const dx = a.x - bm.x, dy = -(a.y - bm.y), d = Math.hypot(dx, dy) || 1;
+      look = T3.cam.fp ? [0, 0] : [dx/d * Math.min(1, d*1.4), dy/d * Math.min(1, d*1.4)];
+      if (T.bodies.length > HWS.bodies) HWS.grinUntil = now + 30000;
+      HWS.bodies = T.bodies.length;
+    } else { look = [Math.sin(now/1900)*.6, .5]; }
+    const wantGrin = attract ? .25 : now < HWS.grinUntil ? 1 : (T && T.mode==="slasher") ? 1 : HWS.blood > .5 ? .5 : 0;
+    HWS.grin += (wantGrin - HWS.grin) * .08;
+    drawMoon(look, lid, HWS.grin, HWS.blood, now/400);
+  }
+  // light: a cold sun by day; by night, the moon throws the shadows
+  if (night){
+    T3.sun.position.copy(new THREE.Vector3(T3.cam.x || 52, 0, T3.cam.z || 42)).addScaledVector(moonDir, 40);
+    T3.sun.target.position.set(T3.cam.x || 52, 0, T3.cam.z || 42);
+    T3.sun.intensity = (attract ? .5 : .28 + HWS.blood*.08) * moonVis * (rain ? .4 : 1); T3.sun.color.set(HWS.blood > .5 ? "#d06050" : "#9fb4cc");
+    T3.hemi.intensity = attract ? .3 : .14; T3.hemi.color.set(HWS.blood > .5 ? "#402028" : "#28344a"); T3.hemi.groundColor.set("#0a0806");
+  } else {
+    T3.sun.intensity = (.3 + sunUp*.55) * (rain ? .5 : 1); T3.sun.color.set(sunUp < .3 ? "#ffb070" : "#ffdcb0");
+    T3.hemi.intensity = .42 + sunUp*.12; T3.hemi.color.set("#b0a890"); T3.hemi.groundColor.set("#3a3020");
+  }
+  T3.stars.material.opacity = Math.max(0, (dk-.35)*1.1) * (rain ? 0 : 1);
+  // torches flicker; candles gutter when something passes
+  if (T3.lampAt !== HWS.lampAt){ HWS.lampAt = T3.lampAt; for (const l of T3.lamps){ l.userData.base = l.intensity * (l.distance < 8 ? 1 : 1.25); l.color.set(l.distance < 8 ? "#ffb060" : "#ff8a34"); if (l.distance >= 8) l.distance = 10; } }
+  T3.lamps.forEach((l, i) => { const b = l.userData.base || 0; l.intensity = b * HWS.gutter * (.82 + Math.sin(now/90 + i*2.1)*.08 + Math.sin(now/37 + i*5.3)*.06 + (Math.random()-.5)*.05); });
+  for (const [k, r] of T3.bld) if (r.glass) r.glass.material.color.set(r.lit && night ? "#ffe0b0" : night ? "#3a4044" : "#b0b8b0");
+  const jackOn = dk > .15 || hallows;
+  if (T3.hw && T3.hw.jackMats) for (const m of T3.hw.jackMats) m.emissive.setRGB(jackOn ? 1 * HWS.gutter * (.85 + Math.sin(now/120)*.1) : 0, jackOn ? .55 * HWS.gutter : 0, jackOn ? .15 : 0);
+  if (T3.glowMesh) T3.glowMesh.material.color.set(dk > .15 ? "#ffffff" : "#5a4a3a");
+  T3.pLight.color.set("#ffb070");
+  return {dk, night, hallows};
+}
+// attract mode: a slow, low drift over the torches at night
+function hwAttract(now){
+  const t = now/1000;
+  T3.camera.position.set(52 + Math.cos(t*.04)*30, 13 + Math.sin(t*.07)*2, 44 + Math.sin(t*.04)*24); T3.camera.lookAt(46, 2, 40);
+  if (!HWS.attractLit){
+    HWS.attractLit = true;
+    const near = T3.lampPos.map(p=>({p, d:Math.hypot(p[0]-44, p[2]-40)})).sort((a,b)=>a.d-b.d);
+    T3.lamps.forEach((l,i)=>{ const L2 = near[i]; if (L2){ l.position.set(...L2.p); l.intensity = 1.6; l.distance = 10; l.userData.base = 1.6; } });
+    HWS.lampAt = T3.lampAt;
+  }
+}
+
+if (HALLOW){
+  buildWorld3D = hwBuildWorld3D;
+  makeChar3D = hwMakeChar3D;
+  T3.stainMake = s => new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.15), new THREE.MeshLambertMaterial({map:texBlood((s.x*7 + s.y*3)|0), transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-2}));
+  T3.nameOf = (n, near) => (HW.masked && HW.masked(n) && near > 2.2) ? "?" : n.met ? n.first : n.job;
+  T3.pre = (dt, now, attract) => {
+    if (attract) hwAttract(now); else HWS.attractLit = false;
+    const sky = hwSky(dt, now, attract);
+    if (!attract && T){
+      for (const n of folk){ const c = T3.chars.get(n.id); if (c && c.setMask) c.setMask(!n.dead && HW.masked(n) ? HW.maskType(n) : null); }
+    }
+    if (typeof HWFX !== "undefined") HWFX.update(dt, now, attract, sky);
+  };
+}
+
+
+// ===== town3d-src/22-fx.js =====
+// Hallowmere effects and scares: fire and embers, chimney smoke, ground mist, graveyard wisps, falling leaves,
+// bats and crows, lightning, blood, and the things that happen at night: the Watcher at the edge of the fog,
+// whispers, the midnight bell, three knocks at the hour of the wolf.
+const HWFX = {sys:{}, ready:false, fires:null};
+const HWO = {jump:true, grain:true};
+try { HWO.jump = localStorage.getItem("hw-jump")!=="0"; HWO.grain = localStorage.getItem("hw-grain")!=="0"; } catch {}
+const PVS = `
+attribute float size; attribute float alpha; attribute vec3 tint; attribute float seed;
+uniform float uScale; uniform float uTime; uniform float uFlick;
+varying float vA; varying vec3 vC; varying float vF;
+void main(){
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  float fl = 1.0 + uFlick * (sin(uTime*11.0 + seed*17.0)*.09 + sin(uTime*23.0 + seed*5.0)*.06);
+  gl_PointSize = min(900.0, size * fl * uScale / max(.1, -mv.z));
+  gl_Position = projectionMatrix * mv;
+  vA = alpha; vC = tint; vF = floor(mod(uTime*9.0 + seed*4.0, 4.0));
+}`;
+const PFS = `
+uniform sampler2D map; uniform float uFrames; uniform float uNear; uniform float uFar; uniform float uFog;
+varying float vA; varying vec3 vC; varying float vF;
+void main(){
+  vec2 uv = vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y);
+  if (uFrames > 1.0){ if (uv.x < .25 || uv.x > .75) discard; uv.x = (vF + (uv.x - .25) * 2.0) / uFrames; }
+  vec4 c = texture2D(map, uv);
+  float depth = gl_FragCoord.z / gl_FragCoord.w;
+  float f = uFog > .5 ? 1.0 - smoothstep(uNear, uFar, depth) : 1.0 - smoothstep(uFar*1.6, uFar*2.4, depth);
+  gl_FragColor = vec4(c.rgb * vC, c.a * vA * f);
+  if (gl_FragColor.a < .01) discard;
+}`;
+function pSys(n, tex, opt={}){
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(n*3), size = new Float32Array(n), alpha = new Float32Array(n), tint = new Float32Array(n*3).fill(1), seed = new Float32Array(n);
+  for (let i=0;i<n;i++) seed[i] = Math.random();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3)); geo.setAttribute("size", new THREE.BufferAttribute(size, 1));
+  geo.setAttribute("alpha", new THREE.BufferAttribute(alpha, 1)); geo.setAttribute("tint", new THREE.BufferAttribute(tint, 3)); geo.setAttribute("seed", new THREE.BufferAttribute(seed, 1));
+  const mat = new THREE.ShaderMaterial({uniforms:{map:{value:tex}, uScale:{value:500}, uTime:{value:0}, uFlick:{value:opt.flick||0}, uFrames:{value:opt.frames||1}, uNear:{value:10}, uFar:{value:40}, uFog:{value:opt.fog?1:0}},
+    vertexShader:PVS, fragmentShader:PFS, transparent:true, depthWrite:false, blending:opt.add ? THREE.AdditiveBlending : THREE.NormalBlending});
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.renderOrder = opt.order || 2;
+  const S = {pts, pos, size, alpha, tint, seed, n, geo, mat, life:new Float32Array(n), vel:new Float32Array(n*3),
+    dirty(){ geo.attributes.position.needsUpdate = true; geo.attributes.size.needsUpdate = true; geo.attributes.alpha.needsUpdate = true; geo.attributes.tint.needsUpdate = true; }};
+  return S;
+}
+function texLeaf(){ return hOnce("leaf", () => { const [c, g] = hCanvas(8, 8); g.fillStyle = "#fff"; g.fillRect(2,1,4,6); g.fillRect(1,2,6,4); g.fillRect(3,0,1,8); return hTex(c); }); }
+function texDot(){ return hOnce("dot", () => { const [c, g] = hCanvas(4, 4); g.fillStyle = "#fff"; g.fillRect(1,0,2,4); g.fillRect(0,1,4,2); return hTex(c); }); }
+
+HWFX.onBuild = (W) => {
+  // fires belong to the world (rebuilt with it)
+  const F = T3.hw.fires, n = F.length;
+  const fire = pSys(Math.max(1, n), texFlame(), {add:true, frames:4, flick:1, order:3});
+  const glow = pSys(Math.max(1, n), texGlow("#ff8a30"), {add:true, flick:.6, order:2});
+  F.forEach((f, i) => { fire.pos.set([f.x, f.y + f.s*.3, f.z], i*3); glow.pos.set([f.x, f.y + f.s*.2, f.z], i*3); fire.size[i] = f.s*1.25; glow.size[i] = f.s*(f.kind==="candle" ? 3 : 4.2); glow.tint.set(f.kind==="candle" ? [1, .8, .55] : [1, .7, .45], i*3); });
+  fire.dirty(); glow.dirty(); W.add(glow.pts, fire.pts);
+  HWFX.fire = fire; HWFX.glow = glow; HWFX.fireAt = 0;
+  if (HWFX.ready) return;
+  HWFX.ready = true;
+  const S = HWFX.sys, sc = T3.scene;
+  S.ember = pSys(160, texDot(), {add:true, order:4});
+  S.smoke = pSys(150, texGlow("#ffffff"), {fog:true, order:1});
+  S.mist = pSys(40, texMist(), {fog:true, order:1});
+  S.wisp = pSys(12, texGlow("#a0ffd0"), {add:true, flick:.8, order:4});
+  S.leaf = pSys(80, texLeaf(), {fog:true, order:2});
+  S.blood = pSys(90, texDot(), {fog:true, order:4});
+  for (const k in S) sc.add(S[k].pts);
+  for (let i=0;i<S.mist.n;i++){ S.mist.life[i] = -1; }
+  // bats
+  HWFX.bats = [];
+  for (let i=0;i<9;i++){
+    const g = new THREE.Group(), body = new THREE.Mesh(hGeo().box, mat3("#0c0a0c")); body.scale.set(.1, .08, .2); g.add(body);
+    const wings = [];
+    for (const s of [-1, 1]){ const pv = new THREE.Group(); const w = new THREE.Mesh(new THREE.PlaneGeometry(.34, .2).translate(s*.17, 0, 0), new THREE.MeshBasicMaterial({color:0x0a080a, side:THREE.DoubleSide})); w.rotation.x = -Math.PI/2; pv.add(w); g.add(pv); wings.push([pv, s]); }
+    g.visible = false; sc.add(g); HWFX.bats.push({g, wings, a:Math.random()*6, r:5 + Math.random()*9, h:6 + Math.random()*6, sp:.6 + Math.random()*.6, ph:Math.random()*6});
+  }
+  // crows
+  HWFX.crows = [];
+  const crowGeo = mergeParts([{w:.13,h:.13,d:.26,col:"#0e0c10",x:0,y:.1,z:0}, {w:.1,h:.1,d:.1,col:"#121016",x:0,y:.2,z:.13}, {w:.03,h:.03,d:.1,col:"#2a2a2a",x:0,y:.19,z:.22}, {w:.1,h:.03,d:.14,col:"#0a080c",x:0,y:.1,z:-.18,rx:-.3}, {w:.02,h:.08,d:.02,col:"#2a2a2a",x:-.03,y:.02,z:0}, {w:.02,h:.08,d:.02,col:"#2a2a2a",x:.03,y:.02,z:0}]);
+  for (let i=0;i<12;i++){
+    const g = new THREE.Group(), m = new THREE.Mesh(crowGeo, vcMat()); g.add(m);
+    const wings = []; for (const s of [-1, 1]){ const pv = new THREE.Group(); pv.position.set(s*.06, .14, 0); const w = new THREE.Mesh(hGeo().box, mat3("#0a080c")); w.scale.set(.28, .02, .16); w.position.x = s*.14; pv.add(w); g.add(pv); wings.push([pv, s]); }
+    g.visible = false; sc.add(g); HWFX.crows.push({g, wings, state:"off", t:0, perch:null, vx:0, vy:0, vz:0});
+  }
+  // the Watcher
+  const wp = [
+    {w:.34,h:1.5,d:.2,col:"#0a0a0c",x:0,y:1.55,z:0}, {w:.24,h:1.0,d:.16,col:"#08080a",x:-.1,y:.5,z:0}, {w:.24,h:1.0,d:.16,col:"#08080a",x:.1,y:.5,z:0},
+    {w:.1,h:1.45,d:.1,col:"#0a0a0c",x:-.28,y:1.48,z:.02,rz:-.06}, {w:.1,h:1.45,d:.1,col:"#0a0a0c",x:.28,y:1.48,z:.02,rz:.06},
+    {w:.06,h:.26,d:.04,col:"#b8b0a0",x:-.31,y:.68,z:.03}, {w:.06,h:.26,d:.04,col:"#b8b0a0",x:.31,y:.68,z:.03},
+    {w:.1,h:.14,d:.1,col:"#0a0a0c",x:0,y:2.36,z:.02}, {w:.26,h:.34,d:.24,col:"#c8c0b0",x:0,y:2.58,z:.06,rx:.2},
+    {w:.07,h:.08,d:.02,col:"#000000",x:-.06,y:2.62,z:.19}, {w:.07,h:.08,d:.02,col:"#000000",x:.06,y:2.62,z:.19}, {w:.12,h:.03,d:.02,col:"#000000",x:0,y:2.48,z:.18},
+    {w:.5,h:.6,d:.3,col:"#060608",x:0,y:2.1,z:-.04}
+  ];
+  HWFX.watcher = new THREE.Mesh(mergeParts(wp), new THREE.MeshBasicMaterial({vertexColors:true, fog:false, transparent:true, opacity:.92}));
+  HWFX.watcher.visible = false; sc.add(HWFX.watcher);
+  // overlays: grain and the face
+  const gr = document.createElement("canvas"); gr.id = "hwGrain"; gr.width = 160; gr.height = 100; HWFX.grain = gr; HWFX.grainG = gr.getContext("2d");
+  const vg = document.createElement("div"); vg.id = "hwVignette";
+  $("ovVignette").after(vg, gr);
+  const sf = document.createElement("canvas"); sf.id = "hwScare"; sf.width = 96; sf.height = 64; sf.hidden = true; document.getElementById("game").append(sf); HWFX.scare = sf;
+  HWS.wNext = performance.now() + 50000 + Math.random()*40000; HWS.wCount = 0;
+  HWS.amb = {howl:performance.now() + 30000, crow:performance.now() + 15000, whisper:performance.now() + 60000};
+};
+
+// ---------- per frame ----------
+const _fv = new THREE.Vector3();
+HWFX.update = (dt, now, attract, sky) => {
+  if (!HWFX.ready || !HWFX.fire) return;
+  const t = now/1000, S = HWFX.sys, fog = T3.scene.fog, cam = T3.camera.position, dk = sky.dk;
+  const scale = T3.renderer.domElement.height / (2*Math.tan(T3.camera.fov*Math.PI/360));
+  for (const s of [HWFX.fire, HWFX.glow, ...Object.values(S)]){ const u = s.mat.uniforms; u.uScale.value = scale; u.uTime.value = t; u.uNear.value = fog.near; u.uFar.value = fog.far; }
+  const inside = !attract && T && insideOf(T.player);
+  const rain = !attract && T && T.weather==="rain";
+  const P = attract ? new THREE.Vector3(46, 0, 40) : (() => { const [px, py] = rposT(T.player); return new THREE.Vector3(px+.5, 0, py+.5); })();
+  // fires: which are lit
+  if (now > HWFX.fireAt){
+    HWFX.fireAt = now + 400;
+    const F = T3.hw.fires, A = HWFX.fire.alpha, G = HWFX.glow.alpha;
+    F.forEach((f, i) => {
+      const on = f.when==="always" ? true : f.when==="dusk" ? (dk > .06 || rain) : f.when==="bonfire" ? (dk > .1 || sky.hallows) : dk > .2;
+      const near = Math.hypot(f.x - cam.x, f.z - cam.z) < (f.kind==="candle" ? 26 : 60);
+      A[i] = on && near ? 1 : 0; G[i] = on && near ? (f.kind==="bonfire" ? .55 : f.kind==="candle" ? .35 : .42) : 0;
+    });
+    HWFX.fire.geo.attributes.alpha.needsUpdate = true; HWFX.glow.geo.attributes.alpha.needsUpdate = true;
+  }
+  HWFX.glow.mat.uniforms.uFlick.value = .6 * HWS.gutter;
+  // embers rise from the nearest fires
+  {
+    const E2 = S.ember, F = T3.hw.fires, lit = [];
+    for (let i=0;i<F.length;i++) if (HWFX.fire.alpha[i] > 0 && (F[i].kind==="torch" || F[i].kind==="bonfire") && Math.abs(F[i].x - P.x) < 18 && Math.abs(F[i].z - P.z) < 18) lit.push(F[i]);
+    for (let i=0;i<E2.n;i++){
+      if (E2.life[i] <= 0){
+        if (!lit.length || Math.random() < .6){ E2.alpha[i] = 0; continue; }
+        const f = Math.random() < .5 && T3.hw.bonfirePos && lit.find(q=>q.kind==="bonfire") || lit[(Math.random()*lit.length)|0];
+        E2.pos.set([f.x + (Math.random()-.5)*f.s*.3, f.y + f.s*.4, f.z + (Math.random()-.5)*f.s*.3], i*3);
+        E2.vel.set([(Math.random()-.5)*.3, .5 + Math.random()*(f.kind==="bonfire" ? 1.6 : .7), (Math.random()-.5)*.3], i*3);
+        E2.life[i] = 1 + Math.random()*(f.kind==="bonfire" ? 2.5 : 1.2); E2.size[i] = .05 + Math.random()*.05; E2.tint.set([1, .5 + Math.random()*.3, .15], i*3);
+      }
+      E2.life[i] -= dt;
+      E2.pos[i*3] += (E2.vel[i*3] + Math.sin(t*3 + i)*.25) * dt; E2.pos[i*3+1] += E2.vel[i*3+1] * dt; E2.pos[i*3+2] += (E2.vel[i*3+2] + Math.cos(t*2.6 + i)*.25) * dt;
+      E2.alpha[i] = Math.max(0, Math.min(1, E2.life[i])) * (Math.sin(t*20 + i) > -.6 ? 1 : .3);
+    }
+    E2.dirty();
+  }
+  // chimney smoke
+  {
+    const Sm = S.smoke, srcs = T3.hw.smokes.filter(s=>Math.hypot(s.x - P.x, s.z - P.z) < 40);
+    for (let i=0;i<Sm.n;i++){
+      if (Sm.life[i] <= 0){
+        if (!srcs.length || Math.random() < .97){ Sm.alpha[i] = 0; if (Sm.life[i] > -9) Sm.life[i] = -1; continue; }
+        const s = srcs[(Math.random()*srcs.length)|0];
+        Sm.pos.set([s.x, s.y, s.z], i*3); Sm.vel.set([.25 + Math.random()*.2, .45 + Math.random()*.3, (Math.random()-.5)*.15], i*3);
+        Sm.life[i] = 5 + Math.random()*3; Sm.seed[i] = s.heavy ? 1 : 0;
+      }
+      Sm.life[i] -= dt; const age = 1 - Sm.life[i]/7;
+      for (let k=0;k<3;k++) Sm.pos[i*3+k] += Sm.vel[i*3+k]*dt;
+      Sm.size[i] = .5 + age*2.4; Sm.alpha[i] = Math.max(0, Math.min(.38, Sm.life[i]*.12)) * (Sm.seed[i] > .5 ? 1.4 : 1);
+      const c = dk > .3 ? .16 : .42; Sm.tint.set([c, c*.97, c*.95], i*3);
+    }
+    Sm.dirty();
+  }
+  // ground mist drifting around you
+  {
+    const M = S.mist, a = inside ? 0 : (dk > .3 ? .2 : rain ? .12 : .09) * (sky.hallows ? 1.4 : 1);
+    for (let i=0;i<M.n;i++){
+      let x = M.pos[i*3], z = M.pos[i*3+2];
+      if (M.life[i] < 0 || Math.abs(x - P.x) > 20 || Math.abs(z - P.z) > 20){ x = P.x + (Math.random()-.5)*38; z = P.z + (Math.random()-.5)*38; M.life[i] = 1; M.size[i] = 5 + Math.random()*5; M.pos[i*3+1] = .25 + Math.random()*.7; }
+      x += (.35 + Math.sin(i)*.15) * dt; z += Math.cos(t*.1 + i) * .1 * dt;
+      M.pos[i*3] = x; M.pos[i*3+2] = z; M.alpha[i] = a * (.6 + .4*Math.sin(t*.3 + i*1.7));
+      M.tint.set(HWS.blood > .5 && dk > .3 ? [.9, .6, .6] : [.75, .8, .82], i*3);
+    }
+    M.dirty();
+  }
+  // wisps in the graveyard after dark
+  {
+    const Wp = S.wisp, cem = T3.hw.cem, on = dk > .45 && !inside;
+    for (let i=0;i<Wp.n;i++){
+      if (!on){ Wp.alpha[i] = 0; continue; }
+      if (Wp.life[i] <= 0){ Wp.pos.set([cem[0] + 1 + Math.random()*(cem[2]-cem[0]-2), .6 + Math.random()*.8, cem[1] + 1 + Math.random()*(cem[3]-cem[1]-2)], i*3); Wp.life[i] = 6 + Math.random()*8; Wp.size[i] = .5 + Math.random()*.4; }
+      Wp.life[i] -= dt;
+      const dx = P.x - Wp.pos[i*3], dz = P.z - Wp.pos[i*3+2], d = Math.hypot(dx, dz);
+      if (d < 2.5) Wp.life[i] = Math.min(Wp.life[i], .4);
+      const drawn = d < 9 ? .25 : 0;
+      Wp.pos[i*3] += (Math.sin(t*.7 + i*3)*.3 + dx/d*drawn) * dt; Wp.pos[i*3+1] = .7 + Math.sin(t*1.3 + i)*.25; Wp.pos[i*3+2] += (Math.cos(t*.6 + i*2)*.3 + dz/d*drawn) * dt;
+      Wp.alpha[i] = Math.max(0, Math.min(1, Wp.life[i]*.6, (6 + 8 - Wp.life[i])*.5)) * .8;
+      Wp.tint.set(HWS.blood > .5 ? [1, .4, .3] : [.6, 1, .85], i*3);
+    }
+    Wp.dirty();
+  }
+  // leaves
+  {
+    const Lf = S.leaf, on = !inside, LC = [[.36,.16,.06],[.42,.22,.08],[.28,.12,.05],[.46,.28,.1],[.3,.22,.08]];
+    for (let i=0;i<Lf.n;i++){
+      if (!on){ Lf.alpha[i] = 0; continue; }
+      if (Lf.life[i] <= 0 || Lf.pos[i*3+1] < .02){ Lf.pos.set([P.x + (Math.random()-.5)*28, 3 + Math.random()*6, P.z + (Math.random()-.5)*28], i*3); Lf.life[i] = 20; Lf.size[i] = .16 + Math.random()*.1; Lf.tint.set(LC[i%5], i*3); }
+      Lf.life[i] -= dt;
+      Lf.pos[i*3] += (.6 + Math.sin(t*1.7 + i)*.5) * dt; Lf.pos[i*3+1] -= (.35 + Math.sin(t*3 + i)*.2) * dt; Lf.pos[i*3+2] += Math.cos(t*1.3 + i*2)*.4*dt;
+      Lf.alpha[i] = dk > .4 ? .5 : .95;
+    }
+    Lf.dirty();
+  }
+  // blood: when someone is hit, it shows
+  if (!attract && T){
+    const B = S.blood;
+    for (const n of folk){
+      if (n.hitT && n.hitT !== n._hwHit){ n._hwHit = n.hitT; const [nx, ny] = rposT(n); let k = 0; for (let i=0;i<B.n && k<14;i++) if (B.life[i] <= 0){ B.pos.set([nx+.5, 1.1 + Math.random()*.4, ny+.5], i*3); B.vel.set([(Math.random()-.5)*2.4, 1 + Math.random()*1.6, (Math.random()-.5)*2.4], i*3); B.life[i] = 1.6; B.size[i] = .05 + Math.random()*.06; B.tint.set([.45 + Math.random()*.2, .02, .03], i*3); k++; } }
+    }
+    for (let i=0;i<B.n;i++){
+      if (B.life[i] <= 0){ B.alpha[i] = 0; continue; }
+      B.life[i] -= dt;
+      if (B.pos[i*3+1] > .02){ B.vel[i*3+1] -= 9 * dt; for (let k=0;k<3;k++) B.pos[i*3+k] += B.vel[i*3+k]*dt; } else B.pos[i*3+1] = .02;
+      B.alpha[i] = Math.min(1, B.life[i]);
+    }
+    B.dirty();
+  }
+  // bats
+  const batsOn = dk > .4 && !inside;
+  const centre = T3.hw.belfry && Math.hypot(T3.hw.belfry[0] - P.x, T3.hw.belfry[2] - P.z) < 30 ? T3.hw.belfry : [P.x, 6, P.z];
+  for (const b of HWFX.bats){
+    b.g.visible = batsOn; if (!batsOn) continue;
+    b.a += dt * b.sp; const x = centre[0] + Math.cos(b.a)*b.r + Math.sin(b.a*2.3 + b.ph)*1.5, z = centre[2] + Math.sin(b.a)*b.r*.8 + Math.cos(b.a*1.7)*1.2, y = (centre[1] > 6 ? centre[1] : 0) + b.h*.5 + Math.sin(b.a*3 + b.ph)*1.2;
+    b.g.position.set(x, y, z); b.g.rotation.y = -b.a - Math.PI/2*Math.sign(b.sp);
+    const f = Math.sin(t*28 + b.ph) * .9; for (const [pv, s] of b.wings) pv.rotation.z = s*f;
+  }
+  // crows: they perch where you are not, and leave when you come close
+  if (!attract && T){
+    if (!HWFX.crowAt || now > HWFX.crowAt){
+      HWFX.crowAt = now + 600;
+      const want = inside ? 0 : dk > .4 ? 3 : 9, active = HWFX.crows.filter(c=>c.state==="perch").length;
+      if (active < want){
+        const taken = new Set(HWFX.crows.filter(c=>c.perch).map(c=>c.perch));
+        const free = T3.hw.perches.filter(pp => !taken.has(pp) && Math.hypot(pp[0]-P.x, pp[2]-P.z) > 5 && Math.hypot(pp[0]-P.x, pp[2]-P.z) < 24);
+        const c = HWFX.crows.find(q=>q.state==="off");
+        if (c && free.length){ const pp = free[(Math.random()*free.length)|0]; c.perch = pp; c.state = "perch"; c.g.position.set(pp[0], pp[1], pp[2]); c.g.rotation.y = Math.random()*6; c.g.visible = true; for (const [pv] of c.wings) pv.rotation.z = 0; }
+      }
+    }
+    for (const c of HWFX.crows){
+      if (c.state==="perch"){
+        const d = Math.hypot(c.g.position.x - P.x, c.g.position.z - P.z);
+        c.g.rotation.y += Math.sin(t*1.3 + c.g.position.x) * dt * .6;
+        if (d < 3.4 || d > 30){ if (d > 30){ c.state = "off"; c.g.visible = false; c.perch = null; continue; } c.state = "fly"; c.t = 0; const ax = c.g.position.x - P.x, az = c.g.position.z - P.z, l = Math.hypot(ax, az) || 1; c.vx = ax/l*4; c.vz = az/l*4; c.vy = 2.5; c.g.rotation.y = Math.atan2(c.vx, c.vz); if (!HWFX.cawAt || now > HWFX.cawAt){ HWFX.cawAt = now + 3500; HSFX.crow(); } }
+      } else if (c.state==="fly"){
+        c.t += dt; c.g.position.x += c.vx*dt; c.g.position.y += c.vy*dt; c.g.position.z += c.vz*dt; c.vy = Math.max(.6, c.vy - dt);
+        const f = Math.sin(t*30 + c.g.position.x) * .9; for (const [pv, s] of c.wings) pv.rotation.z = s*f;
+        if (c.t > 6){ c.state = "off"; c.g.visible = false; c.perch = null; }
+      }
+    }
+  }
+  // the noose sways, the cage creaks, scarecrows look at you when you look away
+  if (T3.hw.noose){ T3.hw.noose.rotation.z = Math.sin(t*.9)*.05; T3.hw.noose.rotation.x = Math.sin(t*.7 + 1)*.04; }
+  if (T3.hw.cage){ T3.hw.cage.rotation.z = Math.sin(t*.6)*.06; T3.hw.cage.rotation.y = Math.sin(t*.25)*.3; }
+  if (!attract && T){
+    const fwd = new THREE.Vector3(); T3.camera.getWorldDirection(fwd);
+    for (const s of T3.hw.scarecrows){
+      _fv.set(s.x - cam.x, 1.8 - cam.y, s.z - cam.z); const d = _fv.length(); _fv.normalize();
+      const seen = fwd.dot(_fv) > .55 && d < 30;
+      if (!seen && d < 22){ const want = Math.atan2(P.x - s.x, P.z - s.z) - s.g.rotation.y; let dd = want - s.yaw; while (dd > Math.PI) dd -= Math.PI*2; while (dd < -Math.PI) dd += Math.PI*2; s.yaw += dd * Math.min(1, dt*2); s.head.rotation.y = s.yaw; s.head.rotation.z = Math.sin(t*.5)*.08 + .12; }
+    }
+  }
+  // lightning in the rain
+  if (!attract && rain && !inside){
+    if (!HWS.boltAt) HWS.boltAt = now + 6000 + Math.random()*14000;
+    if (now > HWS.boltAt){ HWS.boltAt = now + 7000 + Math.random()*18000; HWS.bolt = now; setTimeout(() => HSFX.thunder(), 400 + Math.random()*1800); }
+  }
+  if (HWS.bolt && now - HWS.bolt < 500){
+    const k = now - HWS.bolt, f = (k < 70 || (k > 150 && k < 230)) ? 1 : 0;
+    T3.hemi.intensity += f * 2.2; T3.hemi.color.set(f ? "#c8d8ff" : T3.hemi.color); $("ovWhite").style.opacity = f * .35;
+  }
+  // grain
+  if (HWFX.grain){
+    HWFX.grain.hidden = !HWO.grain;
+    if (HWO.grain && (!HWFX.grainAt || now > HWFX.grainAt)){
+      HWFX.grainAt = now + 70;
+      const g = HWFX.grainG, img = g.createImageData(160, 100), d = img.data;
+      for (let i=0;i<d.length;i+=4){ const v = Math.random()*255; d[i] = d[i+1] = d[i+2] = v; d[i+3] = 26 + Math.random()*20; }
+      g.putImageData(img, 0, 0);
+    }
+  }
+  document.body.classList.toggle("hw-night", dk > .4);
+  if (!attract && T) hwScares(dt, now, sky, P, inside);
+  else { HWFX.watcher.visible = false; HWS.gutter = 1; }
+};
+
+// ---------- scares ----------
+function hwCanScare(){ return T && !T.ending && !CUT && !GAME && !T.talkId && !T.cutscene && !anyTWindow() && T.mode!=="slasher" && !(T.lock && (T.lock.kind==="chase" || T.lock.kind==="brawl")); }
+function hwScares(dt, now, sky, P, inside){
+  const W = HWFX.watcher, dk = sky.dk, h = hourNow();
+  // the bell and the knocking
+  if (HWS.hour !== h){
+    if (HWS.hour !== undefined){
+      if (h === 0) HSFX.toll(4);
+      if (h === 3){
+        HSFX.toll(1);
+        if (HWS.knockDay !== T.day && inside && (inside==="roomC" || (bById(outerOf(inside)) || {}).kind==="home")){
+          HWS.knockDay = T.day;
+          setTimeout(() => { if (!T || T.ending) return; HSFX.knock(); toast("Three knocks at the door. Nobody is there.", "", 4); }, 4500);
+          setTimeout(() => { if (!T || T.ending) return; HSFX.knock(); }, 11000);
+        }
+      }
+    }
+    HWS.hour = h;
+  }
+  // ambience
+  const A = HWS.amb, inCem = P.x >= 80 && P.x <= 101 && P.z >= 34 && P.z <= 51;
+  if (now > A.howl){ A.howl = now + 45000 + Math.random()*70000; if (dk > .4 && !inside) HSFX.howl(); }
+  if (now > A.crow){ A.crow = now + 20000 + Math.random()*30000; if (dk < .3 && !inside) HSFX.crow(); }
+  if (now > A.whisper){ A.whisper = now + (inCem ? 15000 : 55000) + Math.random()*40000; if (dk > .4 || inCem) HSFX.whisper(); }
+  hwWind(inside, dk, sky);
+  // the Watcher
+  const yaw = T3.cam.yaw, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  const can = hwCanScare() && dk > .5 && !inside;
+  if (!HWS.w && can && now > HWS.wNext){
+    const behind = HWO.jump && T.day >= 2 && HWS.jumpDay !== T.day && HWS.wCount >= 1 && (Math.random() < .35 || window.__hw.forceBehind);
+    if (behind){
+      HWS.w = {kind:"behind", t:now, yaw0:yaw}; HWS.jumpDay = T.day; HSFX.heartbeat(); setTimeout(()=>HSFX.heartbeat(), 900); setTimeout(()=>HSFX.whisper(), 1600);
+    } else {
+      const d = Math.max(12.5, 21 - HWS.wCount*1.6);
+      for (let k=0;k<8;k++){
+        const a = (Math.random()-.5)*1.1, wx = P.x + (fx*Math.cos(a) - fz*Math.sin(a))*d, wz = P.z + (fz*Math.cos(a) + fx*Math.sin(a))*d;
+        const tx = Math.floor(wx), tz = Math.floor(wz);
+        if (tx < 1 || tz < 1 || tx >= TW-1 || tz >= TH-1 || bldgOf(tx, tz)) continue;
+        HWS.w = {kind:"far", t:now, x:wx, z:wz}; W.position.set(wx, 0, wz); W.visible = true; HWS.wCount++;
+        if (Math.random() < .6) setTimeout(()=>HSFX.whisper(), 600);
+        break;
+      }
+    }
+    HWS.wNext = now + (sky.hallows ? 45000 : 80000) + Math.random()*90000;
+  }
+  const w = HWS.w;
+  if (w && w.kind==="far"){
+    W.rotation.y = Math.atan2(P.x - w.x, P.z - w.z);
+    W.position.y = Math.sin(now/700)*.02;
+    const d = Math.hypot(P.x - w.x, P.z - w.z), age = now - w.t;
+    _fv.set(w.x - T3.camera.position.x, 1.5 - T3.camera.position.y, w.z - T3.camera.position.z).normalize();
+    const fwd = new THREE.Vector3(); T3.camera.getWorldDirection(fwd); const looking = fwd.dot(_fv) > .75;
+    if (d < 10.5 || !can || age > 16000 || (age > 7000 && !looking)){ W.visible = false; HWS.w = null; if (d < 10.5 && can) { HWS.gutter = .2; sfx("door"); } }
+  }
+  if (w && w.kind==="behind"){
+    let dy = yaw - w.yaw0; while (dy > Math.PI) dy -= Math.PI*2; while (dy < -Math.PI) dy += Math.PI*2;
+    const fpTurn = T3.cam.fp && Math.abs(dy) > 2.2, tpTurn = !T3.cam.fp && Math.abs(dy) > 2.4;
+    if (!can){ HWS.w = null; }
+    else if (fpTurn || tpTurn){
+      // it was right behind you
+      const c = T3.camera.position, f2 = new THREE.Vector3(); T3.camera.getWorldDirection(f2);
+      W.position.set(c.x + f2.x*1.6, Math.max(0, c.y - 2.45), c.z + f2.z*1.6); W.rotation.y = Math.atan2(-f2.x, -f2.z); W.visible = true;
+      HWS.w = {kind:"jump", t:now}; hwJumpscare();
+    } else if (now - w.t > 11000){ HWS.w = null; }
+  }
+  if (w && w.kind==="jump" && now - w.t > 700){ W.visible = false; HWS.w = null; }
+  const want = W.visible ? .45 : 1; HWS.gutter += (want - HWS.gutter) * Math.min(1, dt*3);
+}
+function hwJumpscare(){
+  const c = HWFX.scare, g = c.getContext("2d");
+  c.hidden = false; c.style.opacity = 1; T.shake = .8;
+  try { Snd.fx.scream && Snd.fx.scream(); } catch {}
+  try { if (hqInit()){ const t0 = HQ.ac.currentTime, out = HQ.out; HQ.out = HQ.comp; for (const m of ["C3","C#3","G3","Ab3"]) INST.stab(t0, NOTE(m), 1, 1.6); INST.kick(t0, 0, 1, 1.2); HQ.out = out; noiseHit(t0, "highpass", 1500, .6, 1.2, .25); } } catch {}
+  const start = performance.now();
+  const step = () => { const k = performance.now() - start; drawScareFace(g, 96, 64, k/1000); c.style.opacity = k < 500 ? 1 : Math.max(0, 1 - (k-500)/250); if (k < 760) requestAnimationFrame(step); else c.hidden = true; };
+  step();
+}
+// wind: a filtered noise bed that rises outdoors at night
+function hwWind(inside, dk, sky){
+  if (!Snd.ac || !hqInit() || !Snd.nodes.noiseBuf) return;
+  if (!HWS.wind){
+    const ac = HQ.ac, s = ac.createBufferSource(); s.buffer = Snd.nodes.noiseBuf; s.loop = true;
+    const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 420; bp.Q.value = .7;
+    const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = .07; lg.gain.value = 260; lfo.connect(lg); lg.connect(bp.frequency); lfo.start();
+    const g = ac.createGain(); g.gain.value = 0; s.connect(bp); bp.connect(g); g.connect(HQ.comp); s.start();
+    HWS.wind = {g, s};
+  }
+  const target = Snd.musicOn === false || Snd.muted ? 0 : inside ? .006 : (dk > .4 ? .05 : .022) * (sky.hallows ? 1.3 : 1);
+  HWS.wind.g.gain.setTargetAtTime(target, HQ.ac.currentTime, 1.2);
+}
+window.__hw = {HWS, HWFX, HWO, forceBehind:false};
 
 
 // ===== town3d-src/30-standalone.js =====
@@ -5493,6 +7178,24 @@ $("mbCont").addEventListener("click", mbContinue);
   opts.append(lab);
   const box = lab.querySelector("input"); box.checked = T3.pixel !== false;
   box.addEventListener("change", () => { T3.pixel = box.checked; try { localStorage.setItem("mb3d-pixel", box.checked ? "1" : "0"); } catch {} resize3D(); });
+  // camera feel
+  const sl = document.createElement("label"); sl.className = "mbSlider";
+  sl.innerHTML = `Camera sensitivity <input type="range" id="mbSens" min="0.2" max="3" step="0.05"> <output id="mbSensV"></output>`;
+  opts.append(sl);
+  const sens = sl.querySelector("input"), sv = sl.querySelector("output");
+  const showSens = () => { sv.textContent = (+sens.value).toFixed(2) + "×"; };
+  sens.value = T3.sens || 1; showSens();
+  sens.addEventListener("input", () => { T3.sens = +sens.value; showSens(); try { localStorage.setItem("mb3d-sens", sens.value); } catch {} });
+  const iv = document.createElement("label"); iv.innerHTML = `<input type="checkbox" id="mbInvY"> Invert camera up and down`; opts.append(iv);
+  const ivb = iv.querySelector("input"); ivb.checked = !!T3.invY;
+  ivb.addEventListener("change", () => { T3.invY = ivb.checked; try { localStorage.setItem("mb3d-invy", ivb.checked ? "1" : "0"); } catch {} });
+  if (HALLOW){
+    for (const [id, key, label, get, set] of [["hwJump", "hw-jump", "Jumpscares", () => HWO.jump, v => { HWO.jump = v; }], ["hwGrainOpt", "hw-grain", "Film grain", () => HWO.grain, v => { HWO.grain = v; }]]){
+      const lb = document.createElement("label"); lb.innerHTML = `<input type="checkbox" id="${id}"> ${label}`; opts.append(lb);
+      const bx = lb.querySelector("input"); bx.checked = get();
+      bx.addEventListener("change", () => { set(bx.checked); try { localStorage.setItem(key, bx.checked ? "1" : "0"); } catch {} });
+    }
+  }
   const keys = $("tWinMenu").querySelector(".keys");
   keys.insertAdjacentHTML("beforeend", `<b>DRAG · WHEEL</b><span>turn the camera · zoom</span><b>V</b><span>first person / third person</span><b>[ ]</b><span>turn the camera in 45° steps</span>`);
 })();
@@ -5507,6 +7210,20 @@ function mbFrame(now){
   requestAnimationFrame(mbFrame);
 }
 if (matchMedia("(pointer:coarse)").matches) document.body.classList.add("touch");
+if (HALLOW){
+  document.body.classList.add("hallow");
+  document.title = "Millbrook: Hallowmere";
+  const ttl = $("mbTitle");
+  ttl.querySelector(".eyebrow").textContent = "A CELLBLOCK NINE STORY · ALL HALLOWS' WEEK";
+  ttl.querySelector(".title").innerHTML = `MILLBROOK<span class="hwSub">Hallowmere</span>`;
+  ttl.querySelector("p").textContent = "You went over the wall of Cellblock Nine and ran until the trees stopped looking like trees. Now you need a new name in a village that hangs strangers. Twenty-one neighbors, a masked festival, and someone among them who has been sent to find you. The moon is watching too.";
+  $("mbNew").textContent = "Enter the village";
+  ttl.insertAdjacentHTML("beforeend", `<p class="hwWarn">For adults. Contains violence, gore, and frightening images. Jumpscares can be turned off in the pause menu.</p>`);
+  // the title theme starts on the first touch (browsers keep audio asleep until then)
+  const wake = () => { removeEventListener("pointerdown", wake); removeEventListener("keydown", wake); Snd.init(); if (!$("mbTitle").hidden && !TOWN.active) Snd.track("title"); };
+  addEventListener("pointerdown", wake); addEventListener("keydown", wake);
+  const showT = window.MB3D.showTitle; window.MB3D.showTitle = () => { showT(); if (Snd.ac) Snd.track("title"); };
+}
 document.body.classList.add("in-town");
 buildTown();
 setTimeout(mbTitleRefresh, 800);

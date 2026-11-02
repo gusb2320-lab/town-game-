@@ -5,11 +5,13 @@
 // ===== town-src/01-core.js =====
 // Core: engine hooks from the prison game, constants, pools, items, state helpers.
 const STANDALONE = !!window.MILLBROOK_STANDALONE;   // the 3D build of Millbrook runs without the prison
+const HALLOW = !!window.MILLBROOK_HALLOW;            // the Halloween edition: a medieval Millbrook on All Hallows' week
+let THEME_NOTE = "";                                 // extra setting notes for every Claude prompt (set by an edition)
 const E = window.CB9;
 if (!E) throw new Error("Cellblock Nine engine not loaded");
 const { Snd, sfx, PAL, $, clamp, pick, rnd, shuffle, toast, banner, drawPerson, shade, wrap, contourAt } = E;
 const TS = 16, TW = 104, TH = 84, CAP = 6;
-const TSAVE = "cellblock9-town-v1";
+const TSAVE = HALLOW ? "millbrook-hallow-v1" : "cellblock9-town-v1";
 const DIRS4 = [[0,-1],[1,0],[0,1],[-1,0]];
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const PNUMT = "#4471";
@@ -156,6 +158,7 @@ const byIdT = id => folk.find(n=>n.id===id);
 const nmT = id => { const n = byIdT(id); return n ? n.first : "someone"; };
 const fullT = n => `${n.first} ${n.last}`;
 const alive = n => n && !n.dead;
+const jobKey = n => (n.jobDef && n.jobDef.key) || n.job;   // the job a rule looks for, even when an edition renames it
 const isDet = n => n && T.det && n.id===T.det.id;
 function rememberT(n, text){ if (!n || !text || n.dead) return; n.memories.push({s:stampT(), text:String(text).slice(0,300)}); if (n.memories.length>160) n.memories.splice(6,1); }
 function gossipT(n, text){ if (n && text && !n.dead) n.gossip.push({text:String(text).slice(0,240), to:[]}); }
@@ -193,6 +196,7 @@ function clearSaveT(){ try { localStorage.removeItem(TSAVE); } catch {} }
 // ===== town-src/02-map.js =====
 // Map: layout, buildings, furniture, containers, doors, tile art and roofs.
 let tmap = [];
+let onTownBuilt = null;   // an edition can reshape the town after it is laid out
 const BUILDINGS = [];
 const DOOR_AT = {};       // "x,y" -> building id
 const PLACES = {};        // routine destinations
@@ -341,6 +345,7 @@ function buildTown(){
   });
   for (const k in PLACES){ const p = PLACES[k]; if (p.rect && !p.spots){ p.spots = []; for (let y=p.rect[1];y<=p.rect[3];y++) for (let x=p.rect[0];x<=p.rect[2];x++) if (WALK_T.has(tileT(x,y)) && tileT(x,y)!=="D") p.spots.push([x,y]); } }
   // the player's room key opens Room C
+  if (onTownBuilt) onTownBuilt();
   return HOMES;
 }
 function roomRect(id){
@@ -601,7 +606,7 @@ function genLook(p){
 function newPerson(i, jobDef){
   const pron = jobDef.teen ? pick(["he","she","they"]) : Math.random()<.46 ? "he" : Math.random()<.9 ? "she" : "they";
   const p = {
-    id:"p"+i, first:pick(FIRST), last:pick(LAST), pron, age: jobDef.teen ? 16 : jobDef.job.includes("retire") ? 66+Math.floor(Math.random()*14) : 24+Math.floor(Math.random()*40),
+    id:"p"+i, first:pick(FIRST), last:pick(LAST), pron, age: jobDef.teen ? 16 : (jobDef.key||jobDef.job).includes("retire") ? 66+Math.floor(Math.random()*14) : 24+Math.floor(Math.random()*40),
     job:jobDef.job, jobDef, work:jobDef.work, hours:jobDef.hours||null, sheriff:!!jobDef.sheriff, teen:!!jobDef.teen,
     traits:shuffle(TRAITS.slice()).slice(0, 2+Math.floor(Math.random()*2)), hobbies:shuffle(HOBBIES.slice()).slice(0,2), likes:shuffle(LIKES.slice()).slice(0,3),
     dislikes:shuffle(["loud people","liars","the city","cats","rain","newcomers","the sheriff","gossip","church","card cheats"].slice()).slice(0,2),
@@ -998,7 +1003,7 @@ function detBrainPrompt(){
   const told = D.claims.slice(-10).map(c=>`- ${c}`).join("\n") || "- nothing yet";
   const missing = T.bodies.filter(b=>!b.discovered).length ? `${T.missing.length} townsperson(s) reported missing: ${T.missing.map(id=>byIdT(id).first).join(", ")}.` : (T.missing.length ? `Missing: ${T.missing.map(id=>byIdT(id).first).join(", ")}.` : "No one is missing.");
   const found = T.bodies.filter(b=>b.discovered).map(b=>`${b.name} found dead at ${b.foundAt}`).join("; ") || "none";
-  return `You are ${d.first} ${d.last}. Everyone in Millbrook knows you as the ${d.job}. Secretly you are an undercover investigator for the State Bureau, sent to find escaped convict ${PNUMT} from Cellblock Nine. You suspect the newcomer who calls themself "${T.alias}". You are patient, methodical, and quietly unsettling. Your habits: ${d.tells.map(id=>TELLS.find(t=>t.id===id).habit).join("; ")}.
+  return `${THEME_NOTE}You are ${d.first} ${d.last}. Everyone in Millbrook knows you as the ${d.job}. Secretly you are an undercover investigator for the State Bureau, sent to find escaped convict ${PNUMT} from Cellblock Nine. You suspect the newcomer who calls themself "${T.alias}". You are patient, methodical, and quietly unsettling. Your habits: ${d.tells.map(id=>TELLS.find(t=>t.id===id).habit).join("; ")}.
 
 CASE FILE — suspicion ${Math.round(D.suspicion)}/100 (100 = enough to arrest).
 Evidence:
@@ -1191,7 +1196,7 @@ async function interviewScene(d, t){
     T.aiSceneBusy = true;
     const sc = {a:d, b:t, kind:"interview", lines:[], effect:{}, waiting:true}; startSceneT(sc);
     try {
-      const r = await E.getSample().json(`Write a short exchange in "Millbrook", the second half of an 8-bit prison-escape game. ${d.first} ${d.last} (publicly the ${d.job}; secretly an undercover State Bureau investigator hunting escaped convict ${PNUMT}) is casually pumping ${t.first} ${t.last} (${t.job}; ${t.traits.join(", ")}) for information about the newcomer who calls themself "${T.alias}". ${d.first} must never reveal their real job.
+      const r = await E.getSample().json(`${THEME_NOTE}Write a short exchange in "Millbrook", the second half of an 8-bit prison-escape game. ${d.first} ${d.last} (publicly the ${d.job}; secretly an undercover State Bureau investigator hunting escaped convict ${PNUMT}) is casually pumping ${t.first} ${t.last} (${t.job}; ${t.traits.join(", ")}) for information about the newcomer who calls themself "${T.alias}". ${d.first} must never reveal their real job.
 What ${t.first} knows about the newcomer:
 ${aboutP.map(m=>"- "+m.text).join("\n") || "- almost nothing"}
 ${t.first}'s feelings about the newcomer: opinion ${Math.round(t.opinion)}/100, trust ${Math.round(t.trust)}/100${t.partner?", and they're sweethearts":""}. ${loyal ? `${t.first} is loyal and may cover for them or change the subject.` : ""}
@@ -1393,7 +1398,7 @@ function playerDownT(by){
     newsT(`${by ? by.first : "Someone"} knocked the newcomer out cold.`, by ? [by.id] : []);
     toast(`You wake up in the clinic.${stolen ? ` Your ${stolen} is gone.` : ""}`, "bad", 6);
     T.notoriety = clamp(T.notoriety+5,0,100); saveT();
-  }, "K . O .");
+  }, HALLOW ? "YOU FELL" : "K . O .");
   sfx("sad");
 }
 // Evidence reaches the detective through gossip and the sheriff, not instantly.
@@ -1729,7 +1734,7 @@ function greetingT(n){
   const h = hourNow(), part = h<12 ? "morning" : h<17 ? "afternoon" : "evening";
   if (!n.met || !n.log.length){
     if (n.sheriff) return `*tips hat* Sheriff ${n.last}. Don't believe we've met. Passing through?`;
-    if (n.job==="hotel keeper") return `Ah, our guest in Room C. Everything to your liking?`;
+    if (jobKey(n)==="hotel keeper") return `Ah, our guest in Room C. Everything to your liking?`;
     if (n.teen) return pick(["*looks up from a gameboy* …Who are you?","Whoa. A new person. Nobody new ever comes here.","You're the one staying at the hotel, right?"]);
     if (n.nosy) return `Well! You must be the new face everyone's talking about. I'm ${n.first}. ${n.first} ${n.last}. And you are?`;
     return pick([`Good ${part}. Don't think I know you.`, `*looks you up and down* New in town?`, `Hello there. I'm ${n.first}.`, `Oh! Hi. You're the one at the Millbrook Arms?`]);
@@ -1881,7 +1886,7 @@ EXTRA JSON FIELDS FOR YOU: "suspicion_change" (-10..15: how much more or less th
   const sheriffRole = n.sheriff ? `You are the town sheriff. You know nothing about any undercover investigator. You keep the peace and you're proud of this town. ${T.det.sheriffFile ? `You've been building your own file on the newcomer (${Math.round(T.det.sheriffFile)}/100).` : ""}` : "";
   const warn = n.warn && n.warn.day >= T.day-2 ? `You recently noticed ${n.warn.who ? byIdT(n.warn.who).first+" asking a lot of pointed questions about the newcomer" : "someone asking questions about the newcomer"}. ${n.trust >= 45 ? "You like them enough that you might warn them." : ""}` : "";
   const cover = n.coverFor && n.coverFor > absT() ? "You promised to cover for the newcomer if anyone asks." : "";
-  return `You are voicing ${fullT(n)} in "Millbrook", the second half of the 8-bit game "Cellblock Nine". It's a small, sleepy, nosy town where anything can happen. Stay completely in character. Never mention AI, games or players.
+  return `${THEME_NOTE}You are voicing ${fullT(n)} in "Millbrook", the second half of the 8-bit game "Cellblock Nine". It's a small, sleepy, nosy town where anything can happen. Stay completely in character. Never mention AI, games or players.
 
 WHO YOU ARE: ${n.bio}
 AGE ${n.age}. JOB: ${n.job}${n.work ? ` (you work at ${placeName(n.work)}${n.hours ? `, ${n.hours[0]}:00 to ${n.hours[1]%24}:00` : ""})` : ""}. HOME: ${homeLine(n)}. FAMILY: ${familyLine(n)}.
@@ -2447,7 +2452,7 @@ function townScenePrompt(a, b){
   const aboutP = n => n.memories.filter(m=>/newcomer/i.test(m.text)).slice(-3).map(m=>m.text).join(" | ") || "barely knows them";
   const who = (n) => `${fullT(n)}, ${n.age}, the ${n.job}. ${n.bio} Personality: ${n.traits.join(", ")}. Talks: ${n.style} ${n.tells.length ? "Habits: "+n.tells.map(id=>TELLS.find(t=>t.id===id).habit).join("; ")+"." : ""} Family: ${familyLine(n)}. Carries: ${n.inv.join(", ")||"nothing"}, $${Math.round(n.money)}. Private secret (hint at most): ${n.secret}.${isDet(n) ? ` SECRETLY an undercover State Bureau investigator hunting escaped convict ${PNUMT}; suspects the newcomer (suspicion ${Math.round(T.det.suspicion)}/100). Never reveals it; may steer talk toward the newcomer.` : ""}`;
   const near = distT(a, pl) < 6;
-  return `Write a short in-character exchange between two neighbors in "Millbrook", a small nosy town in the 8-bit game "Cellblock Nine". These are ongoing lives with their own storylines: romances, feuds, debts, affairs, rivalries, friendships. The player (a newcomer called "${T.alias}") is not part of this conversation.
+  return `${THEME_NOTE}Write a short in-character exchange between two neighbors in "Millbrook", a small nosy town in the 8-bit game "Cellblock Nine". These are ongoing lives with their own storylines: romances, feuds, debts, affairs, rivalries, friendships. The player (a newcomer called "${T.alias}") is not part of this conversation.
 
 A = ${who(a)}
 B = ${who(b)}
@@ -2564,7 +2569,7 @@ function approachReasonT(n){
   if (n.opinion >= 25 && Math.random()<.18) return `You like them. Invite them to do something (${n.hobbies.join(" or ")}) with an invite action.`;
   if (n.nosy && Math.random()<.5) return "You're the town busybody. Pry into the newcomer's business: where they're from, what they do all day.";
   if (n.teen && Math.random()<.12) return "You're bored. Dare them to do something, or tell them something weird you saw.";
-  if (n.job.includes("salesman") && Math.random()<.15) return "Try to sell them something you carry with a trade_offer.";
+  if (jobKey(n).includes("salesman") && Math.random()<.15) return "Try to sell them something you carry with a trade_offer.";
   const recent = T.news.slice(-4).filter(x=>!x.who.includes(n.id));
   if (recent.length && Math.random()<.3) return `Share your take on this news: ${pick(recent).text}`;
   if (!n.met && Math.random()<.35) return "Introduce yourself to the new face in town.";
@@ -2635,7 +2640,7 @@ async function printGazette(){
   if (T.day===2) issue.stories.unshift(`ESCAPED CONVICT STILL AT LARGE: State police say inmate ${PNUMT} broke out of Cellblock Nine last week. Considered dangerous. Report strangers to the sheriff.`);
   if (E.aiOn() && optOn("optEvents")){
     try {
-      const r = await E.getSample().json(`Write today's front page of the Millbrook Gazette, a tiny small-town paper, in its cozy, gossipy voice. Day ${T.day}, ${dayName()}.
+      const r = await E.getSample().json(`${THEME_NOTE}Write today's front page of the Millbrook Gazette, a tiny small-town paper, in its cozy, gossipy voice. Day ${T.day}, ${dayName()}.
 Yesterday's events:\n${items.map(x=>"- "+x.text).join("\n") || "- nothing much"}
 ${T.day===2 ? `Include a short item: escaped convict ${PNUMT} from Cellblock Nine is still at large; report strangers.` : ""}
 ${T.missing.length ? `Missing: ${T.missing.map(nmT).join(", ")}.` : ""}
@@ -2656,7 +2661,7 @@ async function writeBiosT(){
   if (!E.aiOn()){ proceduralBios(); return; }
   try {
     const list = folk.map(n=>`${n.id}: ${fullT(n)}, ${n.age}, ${n.pron}, ${n.job}. Traits: ${n.traits.join(", ")}. Hobbies: ${n.hobbies.join(", ")}. Family: ${familyLine(n)}. Secret: ${n.secret}.${n.nosy?" The town busybody.":""}`).join("\n");
-    const r = await E.getSample().json(`Invent the townspeople of Millbrook, a small, sleepy, gossipy American town with a train station, a diner, a bar called the Rusty Nail, a church, an arcade and a pond. For each person write a vivid 2-3 sentence backstory consistent with the facts given (no detectives, no crime-solving pasts), a one-sentence speaking style, and a small quirk.
+    const r = await E.getSample().json(`${THEME_NOTE}Invent the townspeople of Millbrook, a small, sleepy, gossipy ${HALLOW ? "medieval village" : "American town"} with a train station, a diner, a bar called the Rusty Nail, a church, an arcade and a pond. For each person write a vivid 2-3 sentence backstory consistent with the facts given (no detectives, no crime-solving pasts), a one-sentence speaking style, and a small quirk.
 ${list}
 Reply only JSON: {"people":[{"id":"p0","bio":"...","style":"...","quirk":"..."}]}`, {modelTier:"default", cache:false});
     for (const p of (r && Array.isArray(r.people) ? r.people : [])){ const n = byIdT(p.id); if (!n) continue; if (typeof p.bio==="string") n.bio = p.bio.slice(0,500); if (typeof p.style==="string") n.style = p.style.slice(0,200); if (typeof p.quirk==="string") n.quirk = p.quirk.slice(0,120); }
@@ -2859,7 +2864,7 @@ function startDarts(opp){
 const SUITS_C = ["♠","♥","♦","♣"], RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
 function handVal(h){ let v = 0, aces = 0; for (const c of h){ const r = c.r; if (r==="A"){ aces++; v += 11; } else if ("JQK".includes(r)) v += 10; else v += Number(r); } while (v > 21 && aces){ v -= 10; aces--; } return v; }
 function startCards(opp){
-  const dealer = opp || folk.find(n=>alive(n) && n.job==="bartender" && insideOf(n)==="bar") || null;
+  const dealer = opp || folk.find(n=>alive(n) && jobKey(n)==="bartender" && insideOf(n)==="bar") || null;
   const cheat = dealer && /cheats at cards/.test(dealer.secret);
   const G = {kind:"cards", opp:dealer, phase:"bet", bet:5, me:[], them:[], deck:[], won:0, hands:0, info:`Blackjack. Get closer to 21 than ${dealer ? dealer.first : "the house"} without going over.`};
   const deal = () => { if (G.deck.length < 12){ G.deck = []; for (const s of SUITS_C) for (const r of RANKS) G.deck.push({r, s}); shuffle(G.deck); } return G.deck.pop(); };
@@ -2916,7 +2921,7 @@ function startCards(opp){
 // ---------- arcade: Brick Breaker ----------
 function seedScores(){
   if (T.highscores.arcade) return;
-  const teen = folk.find(n=>n.teen), owner = folk.find(n=>n.job==="arcade owner");
+  const teen = folk.find(n=>n.teen), owner = folk.find(n=>jobKey(n)==="arcade owner");
   T.highscores.arcade = [[teen ? teen.first : "ACE", 4200],[owner ? owner.first : "BOB", 2600],[pick(folk).first, 1500],[pick(folk).first, 900],[pick(folk).first, 400]];
 }
 function startArcade(opp){
@@ -3012,7 +3017,7 @@ function workAt(x, y){
   const c = tileT(x,y), bid = buildingAt(x,y);
   const w = WORK.find(j => j.tiles.includes(c) && (j.bid ? bid===j.bid : !bid));
   if (!w) return null;
-  const boss = folk.find(n=>alive(n) && n.job===w.boss);
+  const boss = folk.find(n=>alive(n) && jobKey(n)===w.boss);
   if (!boss) return null;
   const present = w.bid ? insideOf(boss)===w.bid : distT(boss, T.player) < 14;
   if (!present) return null;
@@ -3046,7 +3051,7 @@ const SHOPS = {
   garage:{keeper:"mechanic", name:"Rusty's Garage", sell:["wrench","rope","flashlight"]}
 };
 let shopId = null, shopTab = "buy";
-function shopKeeper(id){ const s = SHOPS[id]; return folk.find(n=>alive(n) && (n.job===s.keeper || n.job===s.alt) && insideOf(n)===id && !n.away); }
+function shopKeeper(id){ const s = SHOPS[id]; return folk.find(n=>alive(n) && (jobKey(n)===s.keeper || jobKey(n)===s.alt) && insideOf(n)===id && !n.away); }
 function openShop(id){
   const s = SHOPS[id]; if (!s) return;
   const k = shopKeeper(id);
@@ -3969,7 +3974,7 @@ function begin(){
   genTown();
   T.containers = makeContainers();
   // the traveling salesman can get you papers, for a price
-  const sales = folk.find(n=>n.job.includes("salesman")); if (sales) sales.inv.push("fake ID");
+  const sales = folk.find(n=>jobKey(n).includes("salesman")); if (sales) sales.inv.push("fake ID");
   const junk = Object.keys(T.containers).filter(k=>T.containers[k].name==="Junk pile"); if (junk.length) T.containers[pick(junk)].items.push("lockpick");
   const back = Object.keys(T.containers).find(k=>T.containers[k].bid==="barback" && T.containers[k].name==="Wardrobe"); if (back) T.containers[back].items.push("shotgun","bullets","bullets","bullets");
   for (const n of folk) n.suitCols = E.SUITS["t_"+n.id];
@@ -3990,7 +3995,7 @@ function begin(){
     const tip = (txt, ms, secs) => setTimeout(()=>{ if (TOWN.active && T && !T.mode && !T.ending) toast(txt, "", secs); }, ms);
     tip("Talk to anyone (E). Make friends, take odd jobs, play games. Someone in town is not who they say they are.", 5200, 9);
     tip("Get rid of that jumpsuit. Watch for habits. Keep your story straight.", 15000, 7);
-    const hk = folk.find(n=>n.job==="hotel keeper"); if (hk){ hk.x = hk.fx = 82; hk.y = hk.fy = 26; hk.order = {type:"approach", reason:"Welcome the new guest of Room C to the Millbrook Arms. Their first two nights are paid; rent is $15 a night after that, at the front desk. Ask their name for the ledger.", until:absT()+40}; }
+    const hk = folk.find(n=>jobKey(n)==="hotel keeper"); if (hk){ hk.x = hk.fx = 82; hk.y = hk.fy = 26; hk.order = {type:"approach", reason:"Welcome the new guest of Room C to the Millbrook Arms. Their first two nights are paid; rent is $15 a night after that, at the front desk. Ask their name for the ledger.", until:absT()+40}; }
     lastHourT = hourNow(); saveT(); renderHotbarT();
   });
 }
@@ -4068,6 +4073,7 @@ function onHourT(h){
   if (T.debts.some(d=>!d.paid && T.day-d.day >= 4) && h===12){ const d = T.debts.find(x=>!x.paid && T.day-x.day >= 4); const n = byIdT(d.who); if (n && alive(n)){ n.opinion = clamp(n.opinion-5,-100,100); gossipT(n, `The newcomer owes me $${d.amount} and won't pay up.`); } }
   saveT();
 }
+let onNewDay = null;   // an edition can add its own daily events
 function newDayT(){
   const dn = dayName();
   T.weather = Math.random() < .22 ? "rain" : "clear";
@@ -4086,10 +4092,11 @@ function newDayT(){
   for (const n of folk) if (alive(n)){ n.mood = n.mood==="grieving" && Math.random()<.5 ? "grieving" : pick(["fine","cheerful","tired","busy","chatty","grumpy","fine"]); n.habitKnow = null; }
   // creepy: sometimes you wake up and something has moved
   const D = T.det; if (D && detAlive() && D.suspicion >= 55 && insideOf(T.player)==="roomC" && Math.random() < .3){ const tell = TELLS.find(t=>t.id===pick(detP().tells)); setTimeout(()=>{ toast(`You wake up. The chair has been turned to face your bed. ${tell.clue} on the seat.`, "bad", 8); sfx("stinger"); T.clues.push({s:stampT(), text:`Morning: the chair turned to face my bed. ${tell.clue}.`, tell:tell.id}); }, 1500); D.notes.push({s:stampT(), text:"Watched them sleep. They talk in their sleep. Numbers."}); addEvidence("They mumble a prison number in their sleep.", 6, "sleep"); }
+  if (onNewDay) onNewDay();
 }
 function rentCheck(){
   if (T.day <= T.rentPaid) return;
-  const hk = folk.find(n=>n.job==="hotel keeper" && alive(n));
+  const hk = folk.find(n=>jobKey(n)==="hotel keeper" && alive(n));
   if (T.day > T.rentPaid + 2 && T.player.inv.includes("room key")){
     removeItemT("room key"); T.evicted = true; toast("The hotel keeper changed your lock. Pay what you owe at the front desk to get back in.", "bad", 7);
     for (const k of ["89,15","89,19"]){ const box = T.containers[k]; if (hk && box) for (const it of box.items.splice(0)) hk.inv.push(it); }

@@ -68,7 +68,7 @@ function detBrainPrompt(){
   const told = D.claims.slice(-10).map(c=>`- ${c}`).join("\n") || "- nothing yet";
   const missing = T.bodies.filter(b=>!b.discovered).length ? `${T.missing.length} townsperson(s) reported missing: ${T.missing.map(id=>byIdT(id).first).join(", ")}.` : (T.missing.length ? `Missing: ${T.missing.map(id=>byIdT(id).first).join(", ")}.` : "No one is missing.");
   const found = T.bodies.filter(b=>b.discovered).map(b=>`${b.name} found dead at ${b.foundAt}`).join("; ") || "none";
-  return `You are ${d.first} ${d.last}. Everyone in Millbrook knows you as the ${d.job}. Secretly you are an undercover investigator for the State Bureau, sent to find escaped convict ${PNUMT} from Cellblock Nine. You suspect the newcomer who calls themself "${T.alias}". You are patient, methodical, and quietly unsettling. Your habits: ${d.tells.map(id=>TELLS.find(t=>t.id===id).habit).join("; ")}.
+  return `${THEME_NOTE}You are ${d.first} ${d.last}. Everyone in Millbrook knows you as the ${d.job}. Secretly you are an undercover investigator for the State Bureau, sent to find escaped convict ${PNUMT} from Cellblock Nine. You suspect the newcomer who calls themself "${T.alias}". You are patient, methodical, and quietly unsettling. Your habits: ${d.tells.map(id=>TELLS.find(t=>t.id===id).habit).join("; ")}.
 
 CASE FILE — suspicion ${Math.round(D.suspicion)}/100 (100 = enough to arrest).
 Evidence:
@@ -261,7 +261,7 @@ async function interviewScene(d, t){
     T.aiSceneBusy = true;
     const sc = {a:d, b:t, kind:"interview", lines:[], effect:{}, waiting:true}; startSceneT(sc);
     try {
-      const r = await E.getSample().json(`Write a short exchange in "Millbrook", the second half of an 8-bit prison-escape game. ${d.first} ${d.last} (publicly the ${d.job}; secretly an undercover State Bureau investigator hunting escaped convict ${PNUMT}) is casually pumping ${t.first} ${t.last} (${t.job}; ${t.traits.join(", ")}) for information about the newcomer who calls themself "${T.alias}". ${d.first} must never reveal their real job.
+      const r = await E.getSample().json(`${THEME_NOTE}Write a short exchange in "Millbrook", the second half of an 8-bit prison-escape game. ${d.first} ${d.last} (publicly the ${d.job}; secretly an undercover State Bureau investigator hunting escaped convict ${PNUMT}) is casually pumping ${t.first} ${t.last} (${t.job}; ${t.traits.join(", ")}) for information about the newcomer who calls themself "${T.alias}". ${d.first} must never reveal their real job.
 What ${t.first} knows about the newcomer:
 ${aboutP.map(m=>"- "+m.text).join("\n") || "- almost nothing"}
 ${t.first}'s feelings about the newcomer: opinion ${Math.round(t.opinion)}/100, trust ${Math.round(t.trust)}/100${t.partner?", and they're sweethearts":""}. ${loyal ? `${t.first} is loyal and may cover for them or change the subject.` : ""}

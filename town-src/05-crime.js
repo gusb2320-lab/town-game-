@@ -114,7 +114,7 @@ function playerDownT(by){
     newsT(`${by ? by.first : "Someone"} knocked the newcomer out cold.`, by ? [by.id] : []);
     toast(`You wake up in the clinic.${stolen ? ` Your ${stolen} is gone.` : ""}`, "bad", 6);
     T.notoriety = clamp(T.notoriety+5,0,100); saveT();
-  }, "K . O .");
+  }, HALLOW ? "YOU FELL" : "K . O .");
   sfx("sad");
 }
 // Evidence reaches the detective through gossip and the sheriff, not instantly.

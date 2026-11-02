@@ -120,7 +120,7 @@ function townScenePrompt(a, b){
   const aboutP = n => n.memories.filter(m=>/newcomer/i.test(m.text)).slice(-3).map(m=>m.text).join(" | ") || "barely knows them";
   const who = (n) => `${fullT(n)}, ${n.age}, the ${n.job}. ${n.bio} Personality: ${n.traits.join(", ")}. Talks: ${n.style} ${n.tells.length ? "Habits: "+n.tells.map(id=>TELLS.find(t=>t.id===id).habit).join("; ")+"." : ""} Family: ${familyLine(n)}. Carries: ${n.inv.join(", ")||"nothing"}, $${Math.round(n.money)}. Private secret (hint at most): ${n.secret}.${isDet(n) ? ` SECRETLY an undercover State Bureau investigator hunting escaped convict ${PNUMT}; suspects the newcomer (suspicion ${Math.round(T.det.suspicion)}/100). Never reveals it; may steer talk toward the newcomer.` : ""}`;
   const near = distT(a, pl) < 6;
-  return `Write a short in-character exchange between two neighbors in "Millbrook", a small nosy town in the 8-bit game "Cellblock Nine". These are ongoing lives with their own storylines: romances, feuds, debts, affairs, rivalries, friendships. The player (a newcomer called "${T.alias}") is not part of this conversation.
+  return `${THEME_NOTE}Write a short in-character exchange between two neighbors in "Millbrook", a small nosy town in the 8-bit game "Cellblock Nine". These are ongoing lives with their own storylines: romances, feuds, debts, affairs, rivalries, friendships. The player (a newcomer called "${T.alias}") is not part of this conversation.
 
 A = ${who(a)}
 B = ${who(b)}
@@ -237,7 +237,7 @@ function approachReasonT(n){
   if (n.opinion >= 25 && Math.random()<.18) return `You like them. Invite them to do something (${n.hobbies.join(" or ")}) with an invite action.`;
   if (n.nosy && Math.random()<.5) return "You're the town busybody. Pry into the newcomer's business: where they're from, what they do all day.";
   if (n.teen && Math.random()<.12) return "You're bored. Dare them to do something, or tell them something weird you saw.";
-  if (n.job.includes("salesman") && Math.random()<.15) return "Try to sell them something you carry with a trade_offer.";
+  if (jobKey(n).includes("salesman") && Math.random()<.15) return "Try to sell them something you carry with a trade_offer.";
   const recent = T.news.slice(-4).filter(x=>!x.who.includes(n.id));
   if (recent.length && Math.random()<.3) return `Share your take on this news: ${pick(recent).text}`;
   if (!n.met && Math.random()<.35) return "Introduce yourself to the new face in town.";
@@ -308,7 +308,7 @@ async function printGazette(){
   if (T.day===2) issue.stories.unshift(`ESCAPED CONVICT STILL AT LARGE: State police say inmate ${PNUMT} broke out of Cellblock Nine last week. Considered dangerous. Report strangers to the sheriff.`);
   if (E.aiOn() && optOn("optEvents")){
     try {
-      const r = await E.getSample().json(`Write today's front page of the Millbrook Gazette, a tiny small-town paper, in its cozy, gossipy voice. Day ${T.day}, ${dayName()}.
+      const r = await E.getSample().json(`${THEME_NOTE}Write today's front page of the Millbrook Gazette, a tiny small-town paper, in its cozy, gossipy voice. Day ${T.day}, ${dayName()}.
 Yesterday's events:\n${items.map(x=>"- "+x.text).join("\n") || "- nothing much"}
 ${T.day===2 ? `Include a short item: escaped convict ${PNUMT} from Cellblock Nine is still at large; report strangers.` : ""}
 ${T.missing.length ? `Missing: ${T.missing.map(nmT).join(", ")}.` : ""}
@@ -329,7 +329,7 @@ async function writeBiosT(){
   if (!E.aiOn()){ proceduralBios(); return; }
   try {
     const list = folk.map(n=>`${n.id}: ${fullT(n)}, ${n.age}, ${n.pron}, ${n.job}. Traits: ${n.traits.join(", ")}. Hobbies: ${n.hobbies.join(", ")}. Family: ${familyLine(n)}. Secret: ${n.secret}.${n.nosy?" The town busybody.":""}`).join("\n");
-    const r = await E.getSample().json(`Invent the townspeople of Millbrook, a small, sleepy, gossipy American town with a train station, a diner, a bar called the Rusty Nail, a church, an arcade and a pond. For each person write a vivid 2-3 sentence backstory consistent with the facts given (no detectives, no crime-solving pasts), a one-sentence speaking style, and a small quirk.
+    const r = await E.getSample().json(`${THEME_NOTE}Invent the townspeople of Millbrook, a small, sleepy, gossipy ${HALLOW ? "medieval village" : "American town"} with a train station, a diner, a bar called the Rusty Nail, a church, an arcade and a pond. For each person write a vivid 2-3 sentence backstory consistent with the facts given (no detectives, no crime-solving pasts), a one-sentence speaking style, and a small quirk.
 ${list}
 Reply only JSON: {"people":[{"id":"p0","bio":"...","style":"...","quirk":"..."}]}`, {modelTier:"default", cache:false});
     for (const p of (r && Array.isArray(r.people) ? r.people : [])){ const n = byIdT(p.id); if (!n) continue; if (typeof p.bio==="string") n.bio = p.bio.slice(0,500); if (typeof p.style==="string") n.style = p.style.slice(0,200); if (typeof p.quirk==="string") n.quirk = p.quirk.slice(0,120); }

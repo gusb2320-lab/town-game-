@@ -53,7 +53,7 @@ function genLook(p){
 function newPerson(i, jobDef){
   const pron = jobDef.teen ? pick(["he","she","they"]) : Math.random()<.46 ? "he" : Math.random()<.9 ? "she" : "they";
   const p = {
-    id:"p"+i, first:pick(FIRST), last:pick(LAST), pron, age: jobDef.teen ? 16 : jobDef.job.includes("retire") ? 66+Math.floor(Math.random()*14) : 24+Math.floor(Math.random()*40),
+    id:"p"+i, first:pick(FIRST), last:pick(LAST), pron, age: jobDef.teen ? 16 : (jobDef.key||jobDef.job).includes("retire") ? 66+Math.floor(Math.random()*14) : 24+Math.floor(Math.random()*40),
     job:jobDef.job, jobDef, work:jobDef.work, hours:jobDef.hours||null, sheriff:!!jobDef.sheriff, teen:!!jobDef.teen,
     traits:shuffle(TRAITS.slice()).slice(0, 2+Math.floor(Math.random()*2)), hobbies:shuffle(HOBBIES.slice()).slice(0,2), likes:shuffle(LIKES.slice()).slice(0,3),
     dislikes:shuffle(["loud people","liars","the city","cats","rain","newcomers","the sheriff","gossip","church","card cheats"].slice()).slice(0,2),

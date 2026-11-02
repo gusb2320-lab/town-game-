@@ -178,7 +178,7 @@ function startDarts(opp){
 const SUITS_C = ["♠","♥","♦","♣"], RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
 function handVal(h){ let v = 0, aces = 0; for (const c of h){ const r = c.r; if (r==="A"){ aces++; v += 11; } else if ("JQK".includes(r)) v += 10; else v += Number(r); } while (v > 21 && aces){ v -= 10; aces--; } return v; }
 function startCards(opp){
-  const dealer = opp || folk.find(n=>alive(n) && n.job==="bartender" && insideOf(n)==="bar") || null;
+  const dealer = opp || folk.find(n=>alive(n) && jobKey(n)==="bartender" && insideOf(n)==="bar") || null;
   const cheat = dealer && /cheats at cards/.test(dealer.secret);
   const G = {kind:"cards", opp:dealer, phase:"bet", bet:5, me:[], them:[], deck:[], won:0, hands:0, info:`Blackjack. Get closer to 21 than ${dealer ? dealer.first : "the house"} without going over.`};
   const deal = () => { if (G.deck.length < 12){ G.deck = []; for (const s of SUITS_C) for (const r of RANKS) G.deck.push({r, s}); shuffle(G.deck); } return G.deck.pop(); };
@@ -235,7 +235,7 @@ function startCards(opp){
 // ---------- arcade: Brick Breaker ----------
 function seedScores(){
   if (T.highscores.arcade) return;
-  const teen = folk.find(n=>n.teen), owner = folk.find(n=>n.job==="arcade owner");
+  const teen = folk.find(n=>n.teen), owner = folk.find(n=>jobKey(n)==="arcade owner");
   T.highscores.arcade = [[teen ? teen.first : "ACE", 4200],[owner ? owner.first : "BOB", 2600],[pick(folk).first, 1500],[pick(folk).first, 900],[pick(folk).first, 400]];
 }
 function startArcade(opp){
@@ -331,7 +331,7 @@ function workAt(x, y){
   const c = tileT(x,y), bid = buildingAt(x,y);
   const w = WORK.find(j => j.tiles.includes(c) && (j.bid ? bid===j.bid : !bid));
   if (!w) return null;
-  const boss = folk.find(n=>alive(n) && n.job===w.boss);
+  const boss = folk.find(n=>alive(n) && jobKey(n)===w.boss);
   if (!boss) return null;
   const present = w.bid ? insideOf(boss)===w.bid : distT(boss, T.player) < 14;
   if (!present) return null;
@@ -365,7 +365,7 @@ const SHOPS = {
   garage:{keeper:"mechanic", name:"Rusty's Garage", sell:["wrench","rope","flashlight"]}
 };
 let shopId = null, shopTab = "buy";
-function shopKeeper(id){ const s = SHOPS[id]; return folk.find(n=>alive(n) && (n.job===s.keeper || n.job===s.alt) && insideOf(n)===id && !n.away); }
+function shopKeeper(id){ const s = SHOPS[id]; return folk.find(n=>alive(n) && (jobKey(n)===s.keeper || jobKey(n)===s.alt) && insideOf(n)===id && !n.away); }
 function openShop(id){
   const s = SHOPS[id]; if (!s) return;
   const k = shopKeeper(id);
